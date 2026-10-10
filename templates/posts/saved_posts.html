@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+
+{% block title %}Saved Posts - SocialPulse{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto w-full">
+    <!-- Header -->
+    <div class="sticky top-0 bg-slate-900/80 backdrop-blur-md px-4 py-3.5 border-b border-slate-800/80 flex items-center justify-between z-10">
+        <h1 class="font-bold text-lg text-white">Saved Posts</h1>
+        <span class="text-xs text-slate-400"><i class="fa-solid fa-bookmark text-amber-400 mr-1"></i> Private collection</span>
+    </div>
+
+    <!-- Posts Grid / Timeline -->
+    <div class="divide-y divide-slate-800/80">
+        {% for post in posts %}
+            {% include 'posts/post_card.html' with post=post %}
+        {% empty %}
+        <div class="py-16 text-center text-slate-500">
+            <i class="fa-regular fa-bookmark text-5xl mb-3 text-slate-600"></i>
+            <h3 class="text-base font-semibold text-slate-300">Save posts for later</h3>
+            <p class="text-sm text-slate-400 mt-1 max-w-xs mx-auto">Don't let the good ones fly away! Bookmark posts to easily find them again in the future.</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

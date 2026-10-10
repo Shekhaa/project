@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ call_session.get_call_type_display }} with @{{ remote_user.username }} - SocialPulse{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto w-full p-4 flex flex-col h-[calc(100vh-2rem)] justify-between">
+    <!-- Call Room Header -->
+    <div class="flex items-center justify-between p-4 bg-slate-900/80 border border-slate-800 rounded-2xl">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center">
+                {% if call_session.call_type == 'video' %}
+                <i class="fa-solid fa-video"></i>
+                {% else %}
+                <i class="fa-solid fa-phone"></i>
+                {% endif %}
+            </div>
+            <div>
+                <h2 class="font-bold text-base text-white">
+                    {{ call_session.get_call_type_display }} with {{ remote_user.get_full_name|default:remote_user.username }}
+                </h2>
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span class="text-xs text-slate-400">Room ID: {{ call_session.room_id|slice:":8" }}...</span>
+                </div>
+            </div>
+        </div>
+
+        <form action="{% url 'calls:end' call_session.room_id %}" method="POST">
+            {% csrf_token %}
+            <button type="submit" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg shadow-rose-600/30 transition">
+                <i class="fa-solid fa-phone-slash"></i> Leave Room
+            </button>
+        </form>
+    </div>
+
+    <!-- Video Streams Display Area -->
+    <div class="flex-1 my-4 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+        <!-- Remote User Stream Box -->
+        <div class="relative bg-slate-900 border border-slate-800 rounded-3xl h-full min-h-[300px] flex flex-col items-center justify-center overflow-hidden shadow-2xl">
+            <div class="text-center p-6" id="remote-placeholder">
+                <img src="{{ remote_user.profile.avatar_url }}" alt="{{ remote_user.username }}" class="w-24 h-24 rounded-full mx-auto object-cover border-4 border-slate-800 shadow-xl mb-3">
+                <h3 class="font-semibold text-white text-lg">{{ remote_user.get_full_name|default:remote_user.username }}</h3>
+                <p class="text-xs text-slate-400 mt-1">Waiting for remote stream to connect...</p>
+            </div>
+            <!-- Video element for remote stream (WebRTC) -->
+            <video id="remote-video" autoplay playsinline class="w-full h-full object-cover hidden"></video>
+
+            <span class="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs text-white">
+                {{ remote_user.username }}
+            </span>
+        </div>
+
+        <!-- Local User Stream Box -->
+        <div class="relative bg-slate-900 border border-slate-800 rounded-3xl h-full min-h-[300px] flex flex-col items-center justify-center overflow-hidden shadow-2xl">
+            <video id="local-video" autoplay playsinline muted class="w-full h-full object-cover"></video>
+            
+            <div id="local-placeholder" class="text-center p-6 hidden">
+                <img src="{{ user.profile.avatar_url }}" alt="{{ user.username }}" class="w-24 h-24 rounded-full mx-auto object-cover border-4 border-slate-800 shadow-xl mb-3">
+                <h3 class="font-semibold text-white text-lg">You</h3>
+                <p class="text-xs text-slate-400 mt-1">Camera is off</p>
+            </div>
+
+            <span class="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs text-white">
+                You (Local)
+            </span>
+        </div>
+    </div>
+
+    <!-- Media Controls Dock -->
+    <div class="flex items-center justify-center gap-4 p-4 bg-slate-900/90 border border-slate-800 rounded-2xl backdrop-blur-md">
+        <!-- Microphone Toggle -->
+        <button id="toggle-mic-btn" class="w-12 h-12 rounded-full bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center transition shadow-md">
+            <i class="fa-solid fa-microphone text-lg" id="mic-icon"></i>
+        </button>
+
+        <!-- Camera Toggle -->
+        <button id="toggle-cam-btn" class="w-12 h-12 rounded-full bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center transition shadow-md">
+            <i class="fa-solid fa-video text-lg" id="cam-icon"></i>
+        </button>
+
+        <!-- Screen Share -->
+        <button id="share-screen-btn" class="w-12 h-12 rounded-full bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center transition shadow-md" title="Screen Share">
+            <i class="fa-solid fa-desktop text-lg"></i>
+        </button>
+
+        <!-- Hang Up -->
+        <form action="{% url 'calls:end' call_session.room_id %}" method="POST" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="w-12 h-12 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center transition shadow-lg shadow-rose-600/30" title="End Call">
+                <i class="fa-solid fa-phone-slash text-lg"></i>
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let localStream = null;
+    let isMicMuted = false;
+    let isCamOff = false;
+
+    const localVideo = document.getElementById('local-video');
+    const localPlaceholder = document.getElementById('local-placeholder');
+    const micBtn = document.getElementById('toggle-mic-btn');
+    const camBtn = document.getElementById('toggle-cam-btn');
+    const micIcon = document.getElementById('mic-icon');
+    const camIcon = document.getElementById('cam-icon');
+
+    // Initialize Local Media
+    async function startMedia() {
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({
+                video: {% if call_session.call_type == 'video' %}true{% else %}false{% endif %},
+                audio: true
+            });
+            localVideo.srcObject = localStream;
+        } catch (err) {
+            console.warn("Could not access camera/mic:", err);
+            localVideo.classList.add('hidden');
+            localPlaceholder.classList.remove('hidden');
+        }
+    }
+
+    startMedia();
+
+    // Toggle Mic
+    micBtn.addEventListener('click', () => {
+        if (localStream) {
+            localStream.getAudioTracks().forEach(track => {
+                track.enabled = !track.enabled;
+            });
+            isMicMuted = !isMicMuted;
+            if (isMicMuted) {
+                micBtn.classList.replace('bg-slate-800', 'bg-rose-600');
+                micIcon.classList.replace('fa-microphone', 'fa-microphone-slash');
+            } else {
+                micBtn.classList.replace('bg-rose-600', 'bg-slate-800');
+                micIcon.classList.replace('fa-microphone-slash', 'fa-microphone');
+            }
+        }
+    });
+
+    // Toggle Cam
+    camBtn.addEventListener('click', () => {
+        if (localStream) {
+            localStream.getVideoTracks().forEach(track => {
+                track.enabled = !track.enabled;
+            });
+            isCamOff = !isCamOff;
+            if (isCamOff) {
+                camBtn.classList.replace('bg-slate-800', 'bg-rose-600');
+                camIcon.classList.replace('fa-video', 'fa-video-slash');
+                localVideo.classList.add('hidden');
+                localPlaceholder.classList.remove('hidden');
+            } else {
+                camBtn.classList.replace('bg-rose-600', 'bg-slate-800');
+                camIcon.classList.replace('fa-video-slash', 'fa-video');
+                localVideo.classList.remove('hidden');
+                localPlaceholder.classList.add('hidden');
+            }
+        }
+    });
+</script>
+{% endblock %}

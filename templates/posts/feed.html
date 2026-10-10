@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+
+{% block title %}Home Feed - SocialPulse{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto w-full">
+    <!-- Top Sticky Header -->
+    <div class="sticky top-0 bg-slate-900/80 backdrop-blur-md px-4 py-3.5 border-b border-slate-800/80 flex items-center justify-between z-10">
+        <h1 class="font-bold text-lg text-white">Home</h1>
+        <div class="flex items-center gap-2">
+            <a href="{% url 'posts:explore' %}" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20">
+                Explore Feed <i class="fa-solid fa-arrow-right ml-1"></i>
+            </a>
+        </div>
+    </div>
+
+    <!-- Stories Bar (Social Media Style) -->
+    <div class="p-4 border-b border-slate-800/80 overflow-x-auto">
+        <div class="flex items-center gap-4 min-w-max">
+            <!-- Add Story -->
+            <div class="flex flex-col items-center gap-1 cursor-pointer group">
+                <div class="relative w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center">
+                    <img src="{{ user.profile.avatar_url }}" alt="Your story" class="w-full h-full rounded-full object-cover">
+                    <div class="absolute bottom-0 right-0 w-4 h-4 bg-indigo-600 rounded-full flex items-center justify-center text-white text-[10px] border-2 border-slate-900">
+                        <i class="fa-solid fa-plus"></i>
+                    </div>
+                </div>
+                <span class="text-[11px] text-slate-300 font-medium truncate w-14 text-center">Your Story</span>
+            </div>
+
+            <!-- Example Stories from contacts -->
+            {% for su in suggested_users %}
+            <a href="{% url 'accounts:profile' su.username %}" class="flex flex-col items-center gap-1 cursor-pointer group">
+                <div class="w-14 h-14 rounded-full p-[2px] bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-500">
+                    <img src="{{ su.profile.avatar_url }}" alt="{{ su.username }}" class="w-full h-full rounded-full object-cover border-2 border-[#0b0f19]">
+                </div>
+                <span class="text-[11px] text-slate-400 font-medium truncate w-14 text-center">{{ su.username }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Create Post Composer -->
+    <div id="create-post-card" class="p-4 border-b border-slate-800/80 bg-slate-900/40">
+        <form method="POST" enctype="multipart/form-data" action="{% url 'posts:feed' %}">
+            {% csrf_token %}
+            <div class="flex gap-3">
+                <a href="{% url 'accounts:profile' user.username %}" class="shrink-0">
+                    <img src="{{ user.profile.avatar_url }}" alt="{{ user.username }}" class="w-10 h-10 rounded-full object-cover border border-slate-700">
+                </a>
+                <div class="flex-1">
+                    {{ form.content }}
+                    
+                    <!-- Selected Image Preview Container -->
+                    <div id="image-preview-wrapper" class="relative mt-2 hidden">
+                        <img id="image-preview" src="#" alt="Preview" class="max-h-60 w-auto rounded-xl object-cover border border-slate-700">
+                        <button type="button" id="remove-image-btn" class="absolute top-2 left-2 bg-black/70 hover:bg-black text-white rounded-full w-7 h-7 flex items-center justify-center transition">
+                            <i class="fa-solid fa-xmark text-xs"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex items-center justify-between mt-3 pt-3 border-t border-slate-800">
+                        <!-- Action Icons (Photo, Video, Emoji) -->
+                        <div class="flex items-center gap-1 text-indigo-400">
+                            <label for="post-image-input" class="p-2 hover:bg-indigo-500/10 rounded-full cursor-pointer transition" title="Attach Image">
+                                <i class="fa-regular fa-image text-lg"></i>
+                            </label>
+                            {{ form.image }}
+
+                            <button type="button" class="p-2 hover:bg-indigo-500/10 rounded-full transition text-indigo-400" title="Add Poll / Option">
+                                <i class="fa-solid fa-chart-simple text-lg"></i>
+                            </button>
+                            <button type="button" class="p-2 hover:bg-indigo-500/10 rounded-full transition text-indigo-400" title="Emoji">
+                                <i class="fa-regular fa-face-smile text-lg"></i>
+                            </button>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <button type="submit" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-md shadow-indigo-600/30 transition">
+                            Post
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Feed Posts List -->
+    <div class="divide-y divide-slate-800/80">
+        {% for post in posts %}
+            {% include 'posts/post_card.html' with post=post %}
+        {% empty %}
+        <div class="py-16 text-center text-slate-500">
+            <i class="fa-solid fa-meteor text-5xl mb-3 text-slate-600"></i>
+            <h3 class="text-base font-semibold text-slate-300">Welcome to SocialPulse!</h3>
+            <p class="text-sm text-slate-400 mt-1 max-w-sm mx-auto">Create your first post above, or follow other members to populate your timeline.</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    const imageInput = document.getElementById('post-image-input');
+    const previewWrapper = document.getElementById('image-preview-wrapper');
+    const previewImg = document.getElementById('image-preview');
+    const removeBtn = document.getElementById('remove-image-btn');
+
+    if (imageInput) {
+        imageInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    previewImg.src = event.target.result;
+                    previewWrapper.classList.remove('hidden');
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        removeBtn.addEventListener('click', function() {
+            imageInput.value = '';
+            previewImg.src = '#';
+            previewWrapper.classList.add('hidden');
+        });
+    }
+</script>
+{% endblock %}

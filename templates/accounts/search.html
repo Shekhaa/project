@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+
+{% block title %}Search: {{ query }} - SocialPulse{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto w-full p-4 sm:p-6">
+    <div class="mb-6">
+        <h1 class="text-xl font-bold text-white">Search Results</h1>
+        <p class="text-sm text-slate-400">Showing users matching "<span class="text-indigo-400 font-semibold">{{ query }}</span>"</p>
+    </div>
+
+    <div class="space-y-3">
+        {% for u in users %}
+        <div class="flex items-center justify-between p-4 bg-slate-900/60 border border-slate-800 rounded-2xl hover:border-slate-700 transition">
+            <a href="{% url 'accounts:profile' u.username %}" class="flex items-center gap-3">
+                <img src="{{ u.profile.avatar_url }}" alt="{{ u.username }}" class="w-12 h-12 rounded-full object-cover border border-slate-700">
+                <div>
+                    <h3 class="font-semibold text-white hover:text-indigo-400 transition">{{ u.get_full_name|default:u.username }}</h3>
+                    <p class="text-xs text-slate-400">@{{ u.username }}</p>
+                    {% if u.profile.bio %}
+                    <p class="text-xs text-slate-300 mt-1 line-clamp-1">{{ u.profile.bio }}</p>
+                    {% endif %}
+                </div>
+            </a>
+            <div class="flex items-center gap-2">
+                <a href="{% url 'accounts:follow_toggle' u.username %}" class="px-4 py-1.5 rounded-full text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-md">
+                    Follow
+                </a>
+            </div>
+        </div>
+        {% empty %}
+        <div class="py-16 text-center text-slate-500">
+            <i class="fa-solid fa-magnifying-glass text-4xl mb-3 block opacity-40"></i>
+            <p class="font-medium text-slate-400">No users found</p>
+            <p class="text-xs text-slate-500 mt-1">Try searching for a different username or full name.</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

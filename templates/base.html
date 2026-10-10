@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SocialPulse - Connect with the World{% endblock %}</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                        },
+                        dark: {
+                            bg: '#0f172a',
+                            card: '#1e293b',
+                            border: '#334155',
+                            hover: '#273549'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts & FontAwesome -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b0f19;
+            color: #f1f5f9;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0b0f19;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="min-h-screen flex flex-col bg-[#0b0f19] text-slate-100">
+
+    <!-- Flash Messages Container -->
+    {% if messages %}
+    <div class="fixed top-5 right-5 z-50 flex flex-col space-y-3 max-w-sm w-full">
+        {% for message in messages %}
+        <div class="flex items-center p-4 rounded-xl shadow-2xl border text-sm font-medium transition-all duration-300
+            {% if message.tags == 'error' %}bg-rose-950/90 text-rose-200 border-rose-800
+            {% elif message.tags == 'success' %}bg-emerald-950/90 text-emerald-200 border-emerald-800
+            {% else %}bg-indigo-950/90 text-indigo-200 border-indigo-800{% endif %}"
+            id="toast-{{ forloop.counter }}">
+            <div class="mr-3">
+                {% if message.tags == 'error' %}<i class="fa-solid fa-circle-exclamation text-rose-400"></i>
+                {% elif message.tags == 'success' %}<i class="fa-solid fa-circle-check text-emerald-400"></i>
+                {% else %}<i class="fa-solid fa-bell text-indigo-400"></i>{% endif %}
+            </div>
+            <div class="flex-1">{{ message }}</div>
+            <button onclick="this.parentElement.remove()" class="text-slate-400 hover:text-white ml-2">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Main Navigation or Shell -->
+    {% if user.is_authenticated %}
+    <div class="max-w-7xl mx-auto w-full px-2 sm:px-4 lg:px-6 flex flex-1">
+        <!-- Left Sidebar Navigation -->
+        {% include 'sidebar.html' %}
+
+        <!-- Center Main Content -->
+        <main class="flex-1 min-w-0 border-x border-slate-800/80 min-h-screen pb-20 md:pb-6">
+            {% block content %}{% endblock %}
+        </main>
+
+        <!-- Right Auxiliary Sidebar (Search, Who to Follow, Trends) -->
+        {% block right_sidebar %}
+        <aside class="hidden lg:block w-80 shrink-0 pl-6 py-6 space-y-6">
+            <!-- Search bar -->
+            <form action="{% url 'accounts:search' %}" method="GET" class="relative">
+                <i class="fa-solid fa-magnifying-glass absolute left-4 top-3.5 text-slate-500 text-sm"></i>
+                <input type="text" name="q" placeholder="Search people, tags..."
+                    class="w-full pl-11 pr-4 py-2.5 bg-slate-900 border border-slate-800 rounded-full text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition">
+            </form>
+
+            <!-- Trending Topics -->
+            <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4">
+                <h3 class="font-bold text-slate-200 text-base mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-fire text-amber-500"></i> Trending Today
+                </h3>
+                <div class="space-y-3 text-sm">
+                    <div class="cursor-pointer hover:bg-slate-800/40 p-2 rounded-lg transition">
+                        <p class="text-xs text-slate-500">Technology · Trending</p>
+                        <p class="font-semibold text-slate-200">#DjangoApp</p>
+                        <p class="text-xs text-slate-500">14.2K posts</p>
+                    </div>
+                    <div class="cursor-pointer hover:bg-slate-800/40 p-2 rounded-lg transition">
+                        <p class="text-xs text-slate-500">Development · Trending</p>
+                        <p class="font-semibold text-slate-200">#WebRTC</p>
+                        <p class="text-xs text-slate-500">8.9K posts</p>
+                    </div>
+                    <div class="cursor-pointer hover:bg-slate-800/40 p-2 rounded-lg transition">
+                        <p class="text-xs text-slate-500">Innovation · Trending</p>
+                        <p class="font-semibold text-slate-200">#PythonDev</p>
+                        <p class="text-xs text-slate-500">22.5K posts</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer links -->
+            <div class="px-2 text-xs text-slate-500 leading-relaxed space-x-2">
+                <span>© 2026 SocialPulse</span> · 
+                <a href="#" class="hover:underline">Privacy</a> · 
+                <a href="#" class="hover:underline">Terms</a> · 
+                <a href="#" class="hover:underline">About</a>
+            </div>
+        </aside>
+        {% endblock %}
+    </div>
+
+    <!-- Mobile Bottom Navigation Bar -->
+    <div class="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-4 py-2 flex justify-around items-center z-40">
+        <a href="{% url 'posts:feed' %}" class="p-2 text-slate-300 hover:text-indigo-400">
+            <i class="fa-solid fa-house text-lg"></i>
+        </a>
+        <a href="{% url 'posts:explore' %}" class="p-2 text-slate-300 hover:text-indigo-400">
+            <i class="fa-solid fa-compass text-lg"></i>
+        </a>
+        <a href="{% url 'chat:inbox' %}" class="p-2 text-slate-300 hover:text-indigo-400 relative">
+            <i class="fa-solid fa-paper-plane text-lg"></i>
+            {% if unread_messages_count > 0 %}
+            <span class="absolute top-1 right-1 w-2 h-2 bg-indigo-500 rounded-full"></span>
+            {% endif %}
+        </a>
+        <a href="{% url 'notifications:list' %}" class="p-2 text-slate-300 hover:text-indigo-400 relative">
+            <i class="fa-solid fa-bell text-lg"></i>
+            {% if unread_notifications_count > 0 %}
+            <span class="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full"></span>
+            {% endif %}
+        </a>
+        <a href="{% url 'accounts:profile' user.username %}" class="p-2">
+            <img src="{{ user.profile.avatar_url }}" alt="{{ user.username }}" class="w-6 h-6 rounded-full object-cover border border-slate-700">
+        </a>
+    </div>
+
+    {% else %}
+    <!-- Guest Layout (Login / Register) -->
+    <div class="flex-1 flex flex-col justify-center items-center p-4">
+        {% block auth_content %}{% endblock %}
+    </div>
+    {% endif %}
+
+    <script>
+        // Auto-dismiss toasts after 4 seconds
+        setTimeout(() => {
+            document.querySelectorAll('[id^="toast-"]').forEach(toast => {
+                toast.classList.add('opacity-0', 'transition-opacity');
+                setTimeout(() => toast.remove(), 400);
+            });
+        }, 4000);
+    </script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

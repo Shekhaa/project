@@ -1,0 +1,3 @@
+"""
+Campus Connect Configuration Package
+"""

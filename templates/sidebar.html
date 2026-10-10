@@ -1,0 +1,89 @@
+<!-- Left Sidebar -->
+<aside class="w-16 md:w-64 shrink-0 py-6 pr-2 md:pr-6 flex flex-col justify-between sticky top-0 h-screen overflow-y-auto">
+    <div class="space-y-6">
+        <!-- Logo -->
+        <a href="{% url 'posts:feed' %}" class="flex items-center gap-3 px-3 py-2 text-indigo-400 hover:text-indigo-300 transition">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white text-xl shadow-lg shadow-indigo-500/30">
+                <i class="fa-solid fa-shapes"></i>
+            </div>
+            <span class="hidden md:inline font-bold text-xl tracking-tight text-white">SocialPulse</span>
+        </a>
+
+        <!-- Main Navigation Links -->
+        <nav class="space-y-1">
+            <a href="{% url 'posts:feed' %}" 
+               class="flex items-center gap-4 px-4 py-3 rounded-2xl text-slate-300 hover:bg-slate-900 hover:text-white transition font-medium group">
+                <i class="fa-solid fa-house text-xl w-6 text-center text-slate-400 group-hover:text-indigo-400 transition"></i>
+                <span class="hidden md:inline">Feed</span>
+            </a>
+
+            <a href="{% url 'posts:explore' %}" 
+               class="flex items-center gap-4 px-4 py-3 rounded-2xl text-slate-300 hover:bg-slate-900 hover:text-white transition font-medium group">
+                <i class="fa-solid fa-compass text-xl w-6 text-center text-slate-400 group-hover:text-indigo-400 transition"></i>
+                <span class="hidden md:inline">Explore</span>
+            </a>
+
+            <a href="{% url 'notifications:list' %}" 
+               class="flex items-center gap-4 px-4 py-3 rounded-2xl text-slate-300 hover:bg-slate-900 hover:text-white transition font-medium group relative">
+                <div class="relative">
+                    <i class="fa-solid fa-bell text-xl w-6 text-center text-slate-400 group-hover:text-indigo-400 transition"></i>
+                    {% if unread_notifications_count > 0 %}
+                    <span class="absolute -top-1 -right-1 bg-rose-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                        {{ unread_notifications_count }}
+                    </span>
+                    {% endif %}
+                </div>
+                <span class="hidden md:inline">Notifications</span>
+            </a>
+
+            <a href="{% url 'chat:inbox' %}" 
+               class="flex items-center gap-4 px-4 py-3 rounded-2xl text-slate-300 hover:bg-slate-900 hover:text-white transition font-medium group relative">
+                <div class="relative">
+                    <i class="fa-solid fa-paper-plane text-xl w-6 text-center text-slate-400 group-hover:text-indigo-400 transition"></i>
+                    {% if unread_messages_count > 0 %}
+                    <span class="absolute -top-1 -right-1 bg-indigo-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                        {{ unread_messages_count }}
+                    </span>
+                    {% endif %}
+                </div>
+                <span class="hidden md:inline">Messages</span>
+            </a>
+
+            <a href="{% url 'posts:saved_posts' %}" 
+               class="flex items-center gap-4 px-4 py-3 rounded-2xl text-slate-300 hover:bg-slate-900 hover:text-white transition font-medium group">
+                <i class="fa-solid fa-bookmark text-xl w-6 text-center text-slate-400 group-hover:text-indigo-400 transition"></i>
+                <span class="hidden md:inline">Saved</span>
+            </a>
+
+            <a href="{% url 'accounts:profile' user.username %}" 
+               class="flex items-center gap-4 px-4 py-3 rounded-2xl text-slate-300 hover:bg-slate-900 hover:text-white transition font-medium group">
+                <i class="fa-solid fa-user text-xl w-6 text-center text-slate-400 group-hover:text-indigo-400 transition"></i>
+                <span class="hidden md:inline">Profile</span>
+            </a>
+        </nav>
+
+        <!-- New Post Action Button -->
+        <a href="{% url 'posts:feed' %}#create-post-card" 
+           class="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold py-3 px-4 rounded-2xl shadow-lg shadow-indigo-600/30 transition duration-200">
+            <i class="fa-solid fa-feather-pointed"></i>
+            <span class="hidden md:inline">Post</span>
+        </a>
+    </div>
+
+    <!-- User Profile Dropdown / Pill -->
+    <div class="border-t border-slate-800/80 pt-4">
+        <div class="flex items-center justify-between p-2 rounded-2xl hover:bg-slate-900 transition">
+            <a href="{% url 'accounts:profile' user.username %}" class="flex items-center gap-3 min-w-0">
+                <img src="{{ user.profile.avatar_url }}" alt="{{ user.username }}" 
+                     class="w-10 h-10 rounded-full object-cover border border-slate-700">
+                <div class="hidden md:block truncate">
+                    <p class="font-semibold text-sm text-slate-100 truncate">{{ user.get_full_name|default:user.username }}</p>
+                    <p class="text-xs text-slate-400 truncate">@{{ user.username }}</p>
+                </div>
+            </a>
+            <a href="{% url 'accounts:logout' %}" title="Log out" class="hidden md:block text-slate-400 hover:text-rose-400 p-2">
+                <i class="fa-solid fa-arrow-right-from-bracket"></i>
+            </a>
+        </div>
+    </div>
+</aside>

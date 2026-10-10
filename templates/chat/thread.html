@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+
+{% block title %}Chat with @{{ other_user.username }} - SocialPulse{% endblock %}
+
+{% block content %}
+<div class="flex flex-col h-[calc(100vh-4rem)] md:h-screen max-w-2xl mx-auto w-full">
+    <!-- Chat Header with Direct Audio & Video Call Actions -->
+    <div class="px-4 py-3 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+            <a href="{% url 'chat:inbox' %}" class="p-1.5 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition">
+                <i class="fa-solid fa-arrow-left"></i>
+            </a>
+            <a href="{% url 'accounts:profile' other_user.username %}" class="flex items-center gap-2.5">
+                <img src="{{ other_user.profile.avatar_url }}" alt="{{ other_user.username }}" class="w-9 h-9 rounded-full object-cover border border-slate-700">
+                <div>
+                    <h3 class="font-bold text-sm text-white leading-tight hover:underline">{{ other_user.get_full_name|default:other_user.username }}</h3>
+                    <p class="text-xs text-slate-400">@{{ other_user.username }}</p>
+                </div>
+            </a>
+        </div>
+
+        <!-- Quick Call Actions -->
+        <div class="flex items-center gap-2">
+            <!-- Voice Call Trigger -->
+            <a href="{% url 'calls:start' other_user.username %}?type=audio" title="Start Voice Call"
+               class="p-2.5 hover:bg-slate-800 rounded-full text-slate-300 hover:text-emerald-400 transition">
+                <i class="fa-solid fa-phone"></i>
+            </a>
+            <!-- Video Call Trigger -->
+            <a href="{% url 'calls:start' other_user.username %}?type=video" title="Start Video Call"
+               class="p-2.5 hover:bg-slate-800 rounded-full text-slate-300 hover:text-indigo-400 transition">
+                <i class="fa-solid fa-video"></i>
+            </a>
+        </div>
+    </div>
+
+    <!-- Messages Bubble Flow -->
+    <div id="messages-container" class="flex-1 overflow-y-auto p-4 space-y-3">
+        {% for msg in messages_list %}
+            {% if msg.sender == user %}
+            <!-- Sent Message -->
+            <div class="flex justify-end items-end gap-2">
+                <div class="max-w-xs sm:max-w-md bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-4 py-2.5 rounded-2xl rounded-br-xs shadow-md">
+                    <p class="text-sm leading-relaxed">{{ msg.text }}</p>
+                    <div class="flex items-center justify-end gap-1 mt-1 text-[10px] text-indigo-200">
+                        <span>{{ msg.created_at|date:"H:i" }}</span>
+                        {% if msg.is_read %}
+                        <i class="fa-solid fa-check-double text-[9px] text-cyan-200"></i>
+                        {% else %}
+                        <i class="fa-solid fa-check text-[9px]"></i>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <!-- Received Message -->
+            <div class="flex justify-start items-end gap-2">
+                <img src="{{ other_user.profile.avatar_url }}" alt="{{ other_user.username }}" class="w-7 h-7 rounded-full object-cover border border-slate-700 mb-1">
+                <div class="max-w-xs sm:max-w-md bg-slate-800 text-slate-100 px-4 py-2.5 rounded-2xl rounded-bl-xs border border-slate-700/60 shadow-md">
+                    <p class="text-sm leading-relaxed">{{ msg.text }}</p>
+                    <span class="block text-right mt-1 text-[10px] text-slate-400">{{ msg.created_at|date:"H:i" }}</span>
+                </div>
+            </div>
+            {% endif %}
+        {% empty %}
+        <div class="py-16 text-center text-slate-500">
+            <i class="fa-regular fa-comment-dots text-4xl mb-2 opacity-30"></i>
+            <p class="text-xs text-slate-400">Say hello to @{{ other_user.username }} to begin your chat!</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Message Composer Input -->
+    <div class="p-3 bg-slate-900 border-t border-slate-800 shrink-0">
+        <form method="POST" action="{% url 'chat:thread' conversation.id %}" class="flex items-center gap-2">
+            {% csrf_token %}
+            <input type="text" name="text" required autofocus autocomplete="off" placeholder="Write a message..."
+                class="flex-1 bg-slate-800 border border-slate-700 rounded-full px-5 py-3 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition">
+            
+            <button type="submit" class="w-11 h-11 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center transition shadow-lg shadow-indigo-600/30">
+                <i class="fa-solid fa-paper-plane text-sm"></i>
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Automatically scroll to bottom of chat
+    const container = document.getElementById('messages-container');
+    if (container) {
+        container.scrollTop = container.scrollHeight;
+    }
+</script>
+{% endblock %}
