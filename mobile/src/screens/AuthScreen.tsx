@@ -233,15 +233,46 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       }
 
       if (channel === 'WHATSAPP') {
+        if (data.whatsapp_link) {
+          if (Platform.OS === 'web' && typeof window !== 'undefined') {
+            window.open(data.whatsapp_link, '_blank');
+          } else {
+            Linking.openURL(data.whatsapp_link).catch(() => {});
+          }
+        }
         Alert.alert(
-          'WhatsApp OTP Generated! 💬',
-          `Your 6-digit code is [${data.dev_otp || '123456'}].\n\nAuto-filled below for instant testing! Tap 'Verify Code' to continue.`
+          'WhatsApp Dispatched! 💬',
+          `Verification code [${data.dev_otp || '123456'}] dispatched to your WhatsApp (+91 ${clean}).\n\nAuto-filled below for instant testing! Tap 'Verify Code' to continue.`
         );
       } else {
         Alert.alert('SMS OTP Ready 📱', `Verification code [${data.dev_otp || '123456'}] auto-filled below!`);
       }
     } catch (e: any) {
-      Alert.alert('Campus Geofence Notice', e.response?.data?.error || 'Failed to dispatch verification code.');
+      if (e.response?.status === 403) {
+        Alert.alert(
+          '📍 Campus Geofence Alert',
+          `Aap Graphic Era campus ke bahar ho (~${distanceKm} km door).\n\nPhone-based registration sirf campus premises ke andar allowed hai. Testing ke liye simulation mode enable karein ya College Email / ID Card use karein:`,
+          [
+            {
+              text: '⚡ Enable Simulation & Continue',
+              onPress: () => {
+                setSimulateCampus(true);
+                setTimeout(() => handleSendPhoneOTP(channel), 200);
+              },
+            },
+            {
+              text: '✉️ Use College Email (.ac.in)',
+              onPress: () => setSignupTab('COLLEGE_EMAIL'),
+            },
+            {
+              text: 'Cancel',
+              style: 'cancel',
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Notice', e.response?.data?.error || 'Failed to dispatch verification code.');
+      }
     } finally {
       setLoading(false);
     }
@@ -288,7 +319,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       setEmailOtpSent(true);
       if (data.detected_college) setDetectedCollege(data.detected_college.name);
       if (data.magic_link) setMagicLinkUrl(data.magic_link);
-      Alert.alert('Verification Sent! 📬', `6-digit code dispatched to ${email}. Valid for 5 minutes.`);
+      if (data.dev_otp) {
+        setEmailOtp(data.dev_otp);
+      }
+      Alert.alert(
+        'Verification Sent! 📬',
+        `Verification code [${data.dev_otp || '123456'}] dispatched to ${email}.\n\nAuto-filled below for instant testing!`
+      );
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || 'Failed to send OTP.');
     } finally {
@@ -721,6 +758,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                         )}
                       </TouchableOpacity>
 
+                      {whatsappLink && selectedChannel === 'WHATSAPP' && (
+                        <TouchableOpacity
+                          style={[styles.whatsappButton, { marginTop: 10, marginBottom: 4 }]}
+                          onPress={() => {
+                            if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                              window.open(whatsappLink, '_blank');
+                            } else {
+                              Linking.openURL(whatsappLink).catch(() => {});
+                            }
+                          }}
+                        >
+                          <Text style={styles.whatsappButtonText}>💬 Re-open in WhatsApp</Text>
+                        </TouchableOpacity>
+                      )}
+
                       <TouchableOpacity
                         style={styles.changeEmailButton}
                         onPress={() => setPhoneOtpSent(false)}
@@ -931,12 +983,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+    minHeight: (Platform.OS === 'web' ? '100vh' : undefined) as any,
   },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
     padding: 16,
     paddingVertical: 32,
+    backgroundColor: colors.background,
+    minHeight: (Platform.OS === 'web' ? '100vh' : undefined) as any,
   },
   card: {
     backgroundColor: colors.surface,

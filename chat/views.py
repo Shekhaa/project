@@ -24,11 +24,19 @@ class InboxView(generics.ListAPIView):
             user=self.request.user
         ).values_list("conversation_id", flat=True)
 
-        return (
+        include_communities = self.request.query_params.get("include_communities", "false").lower() == "true"
+
+        qs = (
             Conversation.objects.filter(id__in=user_conv_ids)
             .exclude(is_ephemeral=True, expires_at__lt=timezone.now())
             .prefetch_related("members", "messages")
         )
+
+        if not include_communities:
+            # Keeps personal Chats tab clean: only 1-on-1 direct chats and temporary hangout groups
+            qs = qs.filter(Q(is_group=False) | Q(is_ephemeral=True))
+
+        return qs
 
 
 class StartDirectChatView(APIView):

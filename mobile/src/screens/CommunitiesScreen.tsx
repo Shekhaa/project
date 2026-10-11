@@ -9,19 +9,33 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { communityService, Community } from '../services/communityService';
+import { chatService, Message } from '../services/chatService';
 
 interface CommunitiesScreenProps {
+  currentUser?: any;
   onOpenCommunityChat?: (conversation: any) => void;
 }
 
-export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ onOpenCommunityChat }) => {
+export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ currentUser, onOpenCommunityChat }) => {
   const [communities, setCommunities] = useState<Community[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [openingChatSlug, setOpeningChatSlug] = useState<string | null>(null);
+
+  // In-Screen Community Hub Chat State (Completely separate from personal 1-to-1 chats)
+  const [activeCommunityChat, setActiveCommunityChat] = useState<{
+    conv: any;
+    community: Community;
+  } | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [messageText, setMessageText] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
 
   // Custom community creation form
   const [newTitle, setNewTitle] = useState('');
@@ -43,6 +57,49 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ onOpenComm
   useEffect(() => {
     loadCommunities();
   }, []);
+
+  // Poll messages every 2.5 seconds when Hub Chat is active
+  useEffect(() => {
+    if (!activeCommunityChat) return;
+
+    let isMounted = true;
+    const fetchChatMessages = async (silent = false) => {
+      if (!silent) setChatLoading(true);
+      try {
+        const msgs = await chatService.getMessages(activeCommunityChat.conv.id);
+        if (isMounted) setMessages(msgs);
+      } catch (e) {
+        if (!silent) console.log('Error fetching hub messages', e);
+      } finally {
+        if (!silent && isMounted) setChatLoading(false);
+      }
+    };
+
+    fetchChatMessages(false);
+    const interval = setInterval(() => fetchChatMessages(true), 2500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [activeCommunityChat]);
+
+  const handleSendHubMessage = async () => {
+    if (!messageText.trim() || !activeCommunityChat || sendingMessage) return;
+
+    const textToSend = messageText.trim();
+    setMessageText('');
+    setSendingMessage(true);
+
+    try {
+      const newMsg = await chatService.sendMessage(activeCommunityChat.conv.id, textToSend);
+      setMessages((prev) => [...prev, newMsg]);
+    } catch (e: any) {
+      Alert.alert('Send Failed', e.response?.data?.error || 'Message could not be delivered.');
+    } finally {
+      setSendingMessage(false);
+    }
+  };
 
   const handleCreateCustom = async () => {
     if (!newTitle.trim()) {
@@ -77,14 +134,17 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ onOpenComm
     (c) => c.community_type === 'CUSTOM'
   );
 
-  const handleOpenChat = async (slug: string, name: string) => {
-    setOpeningChatSlug(slug);
+  const handleOpenChat = async (item: Community) => {
+    setOpeningChatSlug(item.slug);
     try {
-      const conv = await communityService.openCommunityChat(slug);
+      const conv = await communityService.openCommunityChat(item.slug);
+      // Dedicated Hub Chat stays inside the Hubs tab!
+      setActiveCommunityChat({
+        conv,
+        community: item,
+      });
       if (onOpenCommunityChat) {
         onOpenCommunityChat(conv);
-      } else {
-        Alert.alert('Group Chat Active!', `Connected to ${name} chat. Switch to Chats tab.`);
       }
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || 'Could not open community chat.');
@@ -106,6 +166,133 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ onOpenComm
     }
   };
 
+  // 1. ACTIVE HUB CHAT VIEW (Dedicated to Hubs, WhatsApp-style bubbles)
+  if (activeCommunityChat) {
+    return (
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        {/* Hub Chat Header */}
+        <View style={styles.chatRoomHeader}>
+          <TouchableOpacity
+            style={styles.chatBackBtn}
+            onPress={() => setActiveCommunityChat(null)}
+          >
+            <Text style={styles.chatBackBtnText}>←</Text>
+          </TouchableOpacity>
+          <View style={styles.chatHeaderInfo}>
+            <Text style={styles.chatRoomTitle} numberOfLines={1}>
+              {activeCommunityChat.community.name}
+            </Text>
+            <View style={styles.chatHeaderBadgeRow}>
+              <View
+                style={[
+                  styles.typeBadge,
+                  { backgroundColor: getBadgeColor(activeCommunityChat.community.community_type) },
+                ]}
+              >
+                <Text style={styles.typeBadgeText}>
+                  {activeCommunityChat.community.community_type}
+                </Text>
+              </View>
+              <Text style={styles.chatRoomSubtitle}>
+                👥 {activeCommunityChat.community.total_members} members • Campus Hub
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Message Stream */}
+        {chatLoading && messages.length === 0 ? (
+          <View style={styles.chatLoadingCenter}>
+            <ActivityIndicator color={colors.primary} size="large" />
+            <Text style={styles.chatLoadingText}>Loading hub conversations...</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={messages}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.chatMessagesContent}
+            renderItem={({ item }) => {
+              const isMe = currentUser
+                ? item.sender === currentUser.id || item.sender_email === currentUser.email
+                : false;
+
+              return (
+                <View
+                  style={[
+                    styles.messageBubbleWrapper,
+                    isMe ? styles.bubbleWrapperRight : styles.bubbleWrapperLeft,
+                  ]}
+                >
+                  {/* Sender Name in Bright Sky Blue on others' messages */}
+                  {!isMe && (
+                    <Text style={styles.senderHeaderName}>
+                      {item.sender_name || 'Campus Student'}
+                    </Text>
+                  )}
+                  <View
+                    style={[
+                      styles.messageBubble,
+                      isMe ? styles.bubbleRight : styles.bubbleLeft,
+                    ]}
+                  >
+                    <Text style={[styles.messageText, isMe && styles.messageTextRight]}>
+                      {item.text}
+                    </Text>
+                    <Text style={[styles.messageTime, isMe && styles.messageTimeRight]}>
+                      {new Date(item.created_at).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                  </View>
+                </View>
+              );
+            }}
+            ListEmptyComponent={
+              <View style={styles.emptyMessages}>
+                <Text style={styles.emptyMessagesIcon}>🏛️</Text>
+                <Text style={styles.emptyMessagesTitle}>
+                  Welcome to {activeCommunityChat.community.name}!
+                </Text>
+                <Text style={styles.emptyMessagesText}>
+                  This is the official campus discussion channel. Say hello to your batchmates!
+                </Text>
+              </View>
+            }
+          />
+        )}
+
+        {/* Hub Chat Input Bar */}
+        <View style={styles.chatInputBar}>
+          <TextInput
+            style={styles.chatInput}
+            placeholder={`Message ${activeCommunityChat.community.name}...`}
+            placeholderTextColor={colors.textMuted}
+            value={messageText}
+            onChangeText={setMessageText}
+            multiline
+          />
+          <TouchableOpacity
+            style={[styles.sendBtn, !messageText.trim() && styles.sendBtnDisabled]}
+            onPress={handleSendHubMessage}
+            disabled={!messageText.trim() || sendingMessage}
+          >
+            {sendingMessage ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.sendBtnText}>Send</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    );
+  }
+
+  // 2. MAIN COMMUNITIES HUB DIRECTORY
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -160,7 +347,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ onOpenComm
 
                 <TouchableOpacity
                   style={styles.chatActionBtn}
-                  onPress={() => handleOpenChat(item.slug, item.name)}
+                  onPress={() => handleOpenChat(item)}
                   disabled={openingChatSlug === item.slug}
                 >
                   {openingChatSlug === item.slug ? (
@@ -168,7 +355,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ onOpenComm
                   ) : (
                     <>
                       <Text style={styles.chatActionIcon}>💬</Text>
-                      <Text style={styles.chatActionText}>Open Group Chat</Text>
+                      <Text style={styles.chatActionText}>Open Hub Chat</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -320,6 +507,197 @@ const styles = StyleSheet.create({
     marginTop: 4,
     lineHeight: 18,
   },
+  chatActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.35)',
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    marginTop: 12,
+    gap: 8,
+  },
+  chatActionIcon: {
+    fontSize: 14,
+  },
+  chatActionText: {
+    color: '#818cf8',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  // Dedicated Hub Chat Room Styles
+  chatRoomHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 48,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.cardBorder,
+    backgroundColor: colors.surface,
+  },
+  chatBackBtn: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: colors.card,
+    marginRight: 12,
+  },
+  chatBackBtnText: {
+    fontSize: 22,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  chatHeaderInfo: {
+    flex: 1,
+  },
+  chatRoomTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  chatHeaderBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 3,
+    gap: 8,
+  },
+  chatRoomSubtitle: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  chatLoadingCenter: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  chatLoadingText: {
+    color: colors.textMuted,
+    fontSize: 13,
+  },
+  chatMessagesContent: {
+    padding: 16,
+    paddingBottom: 24,
+  },
+  messageBubbleWrapper: {
+    marginVertical: 4,
+    maxWidth: '82%',
+  },
+  bubbleWrapperRight: {
+    alignSelf: 'flex-end',
+    alignItems: 'flex-end',
+  },
+  bubbleWrapperLeft: {
+    alignSelf: 'flex-start',
+    alignItems: 'flex-start',
+  },
+  senderHeaderName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#38bdf8', // WhatsApp-style distinct bright sender name
+    marginBottom: 3,
+    marginLeft: 6,
+  },
+  messageBubble: {
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  bubbleRight: {
+    backgroundColor: colors.primary,
+    borderBottomRightRadius: 4,
+  },
+  bubbleLeft: {
+    backgroundColor: '#1e293b',
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  messageText: {
+    fontSize: 14,
+    color: '#f8fafc',
+    lineHeight: 20,
+  },
+  messageTextRight: {
+    color: '#ffffff',
+  },
+  messageTime: {
+    fontSize: 10,
+    color: '#94a3b8',
+    marginTop: 4,
+    alignSelf: 'flex-end',
+  },
+  messageTimeRight: {
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  emptyMessages: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 80,
+    paddingHorizontal: 30,
+  },
+  emptyMessagesIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  emptyMessagesTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  emptyMessagesText: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  chatInputBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.cardBorder,
+    backgroundColor: colors.surface,
+  },
+  chatInput: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    color: colors.textPrimary,
+    fontSize: 14,
+    maxHeight: 100,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  sendBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    marginLeft: 8,
+  },
+  sendBtnDisabled: {
+    opacity: 0.5,
+  },
+  sendBtnText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+
+  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
@@ -390,27 +768,6 @@ const styles = StyleSheet.create({
   },
   confirmBtnText: {
     color: '#fff',
-    fontWeight: '700',
-  },
-  chatActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.35)',
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    marginTop: 12,
-    gap: 8,
-  },
-  chatActionIcon: {
-    fontSize: 14,
-  },
-  chatActionText: {
-    color: '#818cf8',
-    fontSize: 13,
     fontWeight: '700',
   },
 });

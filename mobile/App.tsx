@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Modal,
   Alert,
+  Platform,
 } from 'react-native';
 import { colors } from './src/theme/colors';
 import { authService, User } from './src/services/authService';
@@ -29,6 +30,7 @@ interface ActiveCallState {
   peerName: string;
   peerEmail?: string;
   callType: CallType;
+  isIncoming?: boolean;
 }
 
 export default function App() {
@@ -40,8 +42,42 @@ export default function App() {
   const [composerTrigger, setComposerTrigger] = useState(0);
 
   useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.body.style.backgroundColor = '#0b0f19';
+      document.documentElement.style.backgroundColor = '#0b0f19';
+      document.body.style.margin = '0';
+      document.body.style.padding = '0';
+    }
+  }, []);
+
+  useEffect(() => {
     checkInitialSession();
   }, []);
+
+  // Real-time incoming call listener across devices
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const activeCalls = await callService.getActiveCalls();
+        const incoming = activeCalls.find(
+          (c) => c.receiver === currentUser.id && c.status === 'RINGING'
+        );
+        if (incoming && (!activeCall || activeCall.roomId !== incoming.room_id)) {
+          setActiveCall({
+            roomId: incoming.room_id,
+            peerName: incoming.caller_name || 'Campus Student',
+            peerEmail: incoming.caller_email,
+            callType: incoming.call_type,
+            isIncoming: true,
+          });
+        }
+      } catch (e) {}
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [currentUser, activeCall]);
 
   const checkInitialSession = async () => {
     try {
@@ -149,10 +185,11 @@ export default function App() {
       <View style={styles.mainContent}>
         {activeTab === 'FEED' && <FeedScreen composerTrigger={composerTrigger} />}
         {activeTab === 'COMMUNITIES' && (
-          <CommunitiesScreen onOpenCommunityChat={handleOpenCommunityChat} />
+          <CommunitiesScreen currentUser={currentUser} />
         )}
         {activeTab === 'CHAT' && (
           <ChatScreen
+            currentUser={currentUser}
             initialConversation={selectedCommunityConv}
             onClearInitialConversation={() => setSelectedCommunityConv(null)}
             onStartCall={handleStartCall}
@@ -248,6 +285,7 @@ export default function App() {
             peerName={activeCall.peerName}
             peerEmail={activeCall.peerEmail}
             callType={activeCall.callType}
+            isIncoming={Boolean(activeCall.isIncoming)}
             onClose={() => setActiveCall(null)}
           />
         </Modal>
@@ -260,6 +298,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+    minHeight: (Platform.OS === 'web' ? '100vh' : undefined) as any,
   },
   loadingContainer: {
     flex: 1,

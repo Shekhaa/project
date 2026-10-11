@@ -108,6 +108,16 @@ export const CallScreen: React.FC<CallScreenProps> = ({
     }, 1200);
   };
 
+  const handleAcceptCall = async () => {
+    try {
+      await callService.answerCall(roomId);
+      setCallStatus('ACCEPTED');
+    } catch (e) {
+      console.log('Accept call error', e);
+      setCallStatus('ACCEPTED');
+    }
+  };
+
   const handleEndCall = async () => {
     try {
       await callService.endCall(roomId);
@@ -269,10 +279,23 @@ export const CallScreen: React.FC<CallScreenProps> = ({
           <Text style={styles.controlLabel}>Speaker</Text>
         </TouchableOpacity>
 
-        {/* End Call Button */}
-        <TouchableOpacity style={styles.endCallBtn} onPress={handleEndCall}>
-          <Text style={styles.endCallIcon}>📞</Text>
-        </TouchableOpacity>
+        {/* Call Action Buttons */}
+        {isIncoming && callStatus === 'RINGING' ? (
+          <View style={styles.incomingActionRow}>
+            <TouchableOpacity style={styles.declineCallBtn} onPress={handleEndCall}>
+              <Text style={styles.actionIcon}>❌</Text>
+              <Text style={styles.actionText}>Decline</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.acceptCallBtn} onPress={handleAcceptCall}>
+              <Text style={styles.actionIcon}>📞</Text>
+              <Text style={styles.actionText}>Accept</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.endCallBtn} onPress={handleEndCall}>
+            <Text style={styles.endCallIcon}>📞</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -554,5 +577,46 @@ const styles = StyleSheet.create({
   endCallIcon: {
     fontSize: 26,
     color: '#fff',
+  },
+  incomingActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 24,
+  },
+  acceptCallBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#10b981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  declineCallBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  actionIcon: {
+    fontSize: 22,
+    color: '#fff',
+  },
+  actionText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '800',
+    marginTop: 2,
   },
 });

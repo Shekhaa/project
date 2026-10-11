@@ -52,7 +52,8 @@ class SendEmailOTPView(APIView):
             "email": email,
             "detected_college": college_info,
             "magic_token": str(otp_record.magic_token),
-            "magic_link": magic_link
+            "magic_link": magic_link,
+            "dev_otp": otp_record.otp,
         }, status=status.HTTP_200_OK)
 
 

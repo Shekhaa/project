@@ -16,12 +16,14 @@ import { colors } from '../theme/colors';
 import { chatService, Conversation, Message } from '../services/chatService';
 
 interface ChatScreenProps {
+  currentUser?: any;
   initialConversation?: Conversation | null;
   onClearInitialConversation?: () => void;
   onStartCall?: (receiverId: number, receiverName: string, callType: 'AUDIO' | 'VIDEO') => void;
 }
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({
+  currentUser,
   initialConversation,
   onClearInitialConversation,
   onStartCall,
@@ -242,7 +244,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           keyExtractor={(m) => m.id}
           contentContainerStyle={styles.messagesList}
           renderItem={({ item }) => {
-            const isMe = item.sender_name !== activeConv.recipient?.full_name;
+            const isMe = currentUser
+              ? item.sender === currentUser.id || (currentUser.email && item.sender_email?.toLowerCase() === currentUser.email?.toLowerCase())
+              : (activeConv.recipient ? item.sender_name !== activeConv.recipient?.full_name : false);
+
             return (
               <View
                 style={[
@@ -251,7 +256,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 ]}
               >
                 {!isMe && (
-                  <Text style={styles.senderHeaderName}>{item.sender_name}</Text>
+                  <Text style={styles.senderHeaderName}>{item.sender_name || 'Campus Student'}</Text>
                 )}
                 <View
                   style={[
@@ -717,8 +722,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   senderHeaderName: {
-    color: colors.textMuted,
+    color: '#38bdf8',
     fontSize: 11,
+    fontWeight: '700',
     marginBottom: 2,
     marginLeft: 6,
   },
