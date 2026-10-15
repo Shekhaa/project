@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { colors } from './src/theme/colors';
+import { Home, Building2, Plus, MessageSquare, User as UserIcon } from 'lucide-react-native';
 import { authService, User } from './src/services/authService';
 import { callService, CallType } from './src/services/callService';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -212,9 +213,11 @@ export default function App() {
           style={styles.tabItem}
           onPress={() => setActiveTab('FEED')}
         >
-          <Text style={[styles.tabIcon, activeTab === 'FEED' && styles.tabActiveText]}>
-            🏠
-          </Text>
+          <Home
+            size={22}
+            color={activeTab === 'FEED' ? colors.primary : colors.textSecondary}
+            strokeWidth={activeTab === 'FEED' ? 2.5 : 1.8}
+          />
           <Text style={[styles.tabLabel, activeTab === 'FEED' && styles.tabActiveText]}>
             Feed
           </Text>
@@ -224,9 +227,11 @@ export default function App() {
           style={styles.tabItem}
           onPress={() => setActiveTab('COMMUNITIES')}
         >
-          <Text style={[styles.tabIcon, activeTab === 'COMMUNITIES' && styles.tabActiveText]}>
-            🏛️
-          </Text>
+          <Building2
+            size={22}
+            color={activeTab === 'COMMUNITIES' ? colors.primary : colors.textSecondary}
+            strokeWidth={activeTab === 'COMMUNITIES' ? 2.5 : 1.8}
+          />
           <Text style={[styles.tabLabel, activeTab === 'COMMUNITIES' && styles.tabActiveText]}>
             Hubs
           </Text>
@@ -242,7 +247,7 @@ export default function App() {
           activeOpacity={0.8}
         >
           <View style={styles.createPlusCircle}>
-            <Text style={styles.createPlusIcon}>＋</Text>
+            <Plus size={24} color="#ffffff" strokeWidth={3} />
           </View>
           <Text style={styles.createPlusLabel}>Post</Text>
         </TouchableOpacity>
@@ -251,9 +256,11 @@ export default function App() {
           style={styles.tabItem}
           onPress={() => setActiveTab('CHAT')}
         >
-          <Text style={[styles.tabIcon, activeTab === 'CHAT' && styles.tabActiveText]}>
-            💬
-          </Text>
+          <MessageSquare
+            size={22}
+            color={activeTab === 'CHAT' ? colors.primary : colors.textSecondary}
+            strokeWidth={activeTab === 'CHAT' ? 2.5 : 1.8}
+          />
           <Text style={[styles.tabLabel, activeTab === 'CHAT' && styles.tabActiveText]}>
             Chats
           </Text>
@@ -263,9 +270,11 @@ export default function App() {
           style={styles.tabItem}
           onPress={() => setActiveTab('PROFILE')}
         >
-          <Text style={[styles.tabIcon, activeTab === 'PROFILE' && styles.tabActiveText]}>
-            👤
-          </Text>
+          <UserIcon
+            size={22}
+            color={activeTab === 'PROFILE' ? colors.primary : colors.textSecondary}
+            strokeWidth={activeTab === 'PROFILE' ? 2.5 : 1.8}
+          />
           <Text style={[styles.tabLabel, activeTab === 'PROFILE' && styles.tabActiveText]}>
             Profile
           </Text>
