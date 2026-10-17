@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,11 @@ import {
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { chatService, Conversation, Message } from '../services/chatService';
+import { api } from '../config/api';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface ChatScreenProps {
   currentUser?: any;
@@ -22,45 +27,140 @@ interface ChatScreenProps {
   onStartCall?: (receiverId: number, receiverName: string, callType: 'AUDIO' | 'VIDEO') => void;
 }
 
+interface SearchUser {
+  id: number;
+  full_name: string;
+  email: string;
+  username?: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Returns 'HH:MM' for today's messages, or day abbreviation ('Mon') for older ones. */
+const formatCardTime = (isoString?: string): string => {
+  if (!isoString) return '';
+  const date = new Date(isoString);
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  if (isToday) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  return date.toLocaleDateString([], { weekday: 'short' });
+};
+
+/** Returns a colour deterministically based on a string (for avatar circles). */
+const avatarColor = (name: string): string => {
+  const palette = [
+    '#7c3aed', '#0ea5e9', '#10b981', '#f59e0b',
+    '#ef4444', '#ec4899', '#8b5cf6', '#06b6d4',
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return palette[Math.abs(hash) % palette.length];
+};
+
+const initial = (name: string): string => (name ? name.trim()[0].toUpperCase() : '?');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const ChatScreen: React.FC<ChatScreenProps> = ({
   currentUser,
   initialConversation,
   onClearInitialConversation,
   onStartCall,
 }) => {
-  // Inbox State
+  // ── Inbox State ──────────────────────────────────────────────────────────
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(false);
+  const [inboxSearch, setInboxSearch] = useState('');
 
-  // Active Chat Room State
+  // ── Active Chat Room State ────────────────────────────────────────────────
   const [activeConv, setActiveConv] = useState<Conversation | null>(initialConversation || null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const flatListRef = useRef<FlatList<Message>>(null);
 
-  useEffect(() => {
-    if (initialConversation) {
-      setActiveConv(initialConversation);
-      if (onClearInitialConversation) {
-        onClearInitialConversation();
-      }
-    }
-  }, [initialConversation]);
-
-  // Ephemeral Group Modal State
+  // ── Ephemeral Group Modal State ───────────────────────────────────────────
   const [ephemeralModalVisible, setEphemeralModalVisible] = useState(false);
   const [groupName, setGroupName] = useState('');
   const [purposeTag, setPurposeTag] = useState('Trip');
   const [duration, setDuration] = useState<'10_MIN' | '1_HOUR' | '12_HOURS' | '24_HOURS'>('24_HOURS');
   const [creatingGroup, setCreatingGroup] = useState(false);
 
-  // Start Direct Chat Modal State
+  // ── Direct Chat Modal State ───────────────────────────────────────────────
   const [directModalVisible, setDirectModalVisible] = useState(false);
-  const [targetStudent, setTargetStudent] = useState('');
+  const [userQuery, setUserQuery] = useState('');
+  const [userResults, setUserResults] = useState<SearchUser[]>([]);
+  const [searchingUsers, setSearchingUsers] = useState(false);
   const [startingChat, setStartingChat] = useState(false);
+  const userSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load Inbox
+  // ─────────────────────────────────────────────────────────────────────────
+  // Effects
+  // ─────────────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (initialConversation) {
+      setActiveConv(initialConversation);
+      onClearInitialConversation?.();
+    }
+  }, [initialConversation]);
+
+  useEffect(() => {
+    setLoading(true);
+    loadInbox().finally(() => setLoading(false));
+  }, []);
+
+  // Poll messages when a conversation is open
+  useEffect(() => {
+    if (!activeConv) {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      return;
+    }
+
+    loadMessages(activeConv.id);
+
+    pollIntervalRef.current = setInterval(() => {
+      loadMessages(activeConv.id, true);
+    }, 3000);
+
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, [activeConv]);
+
+  // Debounced user search inside Direct Chat modal
+  useEffect(() => {
+    if (userSearchDebounceRef.current) clearTimeout(userSearchDebounceRef.current);
+
+    if (!userQuery.trim()) {
+      setUserResults([]);
+      return;
+    }
+
+    userSearchDebounceRef.current = setTimeout(() => {
+      searchUsers(userQuery.trim());
+    }, 300);
+
+    return () => {
+      if (userSearchDebounceRef.current) clearTimeout(userSearchDebounceRef.current);
+    };
+  }, [userQuery]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Inbox
+  // ─────────────────────────────────────────────────────────────────────────
+
   const loadInbox = async () => {
     try {
       const data = await chatService.getInbox();
@@ -70,29 +170,19 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   };
 
-  useEffect(() => {
-    setLoading(true);
-    loadInbox().finally(() => setLoading(false));
-  }, []);
+  /** Client-side fuzzy filter of conversations by name/email. */
+  const filteredConversations = inboxSearch.trim()
+    ? conversations.filter((c) => {
+        const query = inboxSearch.toLowerCase();
+        const title = getConvTitle(c).toLowerCase();
+        const email = c.recipient?.email?.toLowerCase() ?? '';
+        return title.includes(query) || email.includes(query);
+      })
+    : conversations;
 
-  // When active conversation opens, load messages & start polling
-  useEffect(() => {
-    if (!activeConv) {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-      return;
-    }
-
-    loadMessages(activeConv.id);
-
-    // Auto-poll messages every 3 seconds for real-time live chat feel
-    pollIntervalRef.current = setInterval(() => {
-      loadMessages(activeConv.id, true);
-    }, 3000);
-
-    return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    };
-  }, [activeConv]);
+  // ─────────────────────────────────────────────────────────────────────────
+  // Messages
+  // ─────────────────────────────────────────────────────────────────────────
 
   const loadMessages = async (convId: string, isSilent = false) => {
     try {
@@ -113,6 +203,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     try {
       const newMsg = await chatService.sendMessage(activeConv.id, textToSend);
       setMessages((prev) => [...prev, newMsg]);
+      // Scroll to bottom
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e: any) {
       Alert.alert('Send Failed', e.response?.data?.error || 'Message could not be delivered.');
     } finally {
@@ -120,28 +212,51 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   };
 
-  // Start 1-to-1 Chat
-  const handleStartDirectChat = async () => {
-    if (!targetStudent.trim()) {
-      Alert.alert('Error', 'Please enter a student username or college email.');
-      return;
-    }
+  // ─────────────────────────────────────────────────────────────────────────
+  // User search (Direct Chat modal)
+  // ─────────────────────────────────────────────────────────────────────────
 
+  const searchUsers = async (q: string) => {
+    setSearchingUsers(true);
+    try {
+      const response = await api.get<any>(`/authentication/users/search/?q=${encodeURIComponent(q)}`);
+      const data = response.data;
+      if (data && Array.isArray(data.results)) {
+        setUserResults(data.results);
+      } else if (Array.isArray(data)) {
+        setUserResults(data);
+      } else {
+        setUserResults([]);
+      }
+    } catch (e) {
+      console.log('User search error', e);
+      setUserResults([]);
+    } finally {
+      setSearchingUsers(false);
+    }
+  };
+
+  /** Start a 1-to-1 chat with a search result user (by email as identifier). */
+  const handleSelectSearchUser = async (user: SearchUser) => {
     setStartingChat(true);
     try {
-      const conv = await chatService.startDirectChat(targetStudent.trim());
+      const conv = await chatService.startDirectChat(user.email);
       setDirectModalVisible(false);
-      setTargetStudent('');
+      setUserQuery('');
+      setUserResults([]);
       await loadInbox();
       setActiveConv(conv);
     } catch (e: any) {
-      Alert.alert('User Not Found', e.response?.data?.error || 'Could not find student.');
+      Alert.alert('Error', e.response?.data?.error || 'Could not start chat.');
     } finally {
       setStartingChat(false);
     }
   };
 
-  // Create Ephemeral Group
+  // ─────────────────────────────────────────────────────────────────────────
+  // Ephemeral Group
+  // ─────────────────────────────────────────────────────────────────────────
+
   const handleCreateEphemeral = async () => {
     if (!groupName.trim()) {
       Alert.alert('Error', 'Please enter a group title.');
@@ -153,7 +268,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       const conv = await chatService.createEphemeralGroup({
         name: groupName.trim(),
         purpose_tag: purposeTag,
-        duration: duration,
+        duration,
       });
       setEphemeralModalVisible(false);
       setGroupName('');
@@ -170,7 +285,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   };
 
-  const getConvTitle = (item: Conversation) => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Utilities
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const getConvTitle = (item: Conversation): string => {
     if (item.name) return item.name;
     if (item.recipient) {
       return item.recipient.full_name || item.recipient.username || item.recipient.email;
@@ -178,7 +297,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     return 'Campus Chat';
   };
 
-  // If a chat conversation is active, render the Chat Room View!
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER: Active Chat Room
+  // ─────────────────────────────────────────────────────────────────────────
+
   if (activeConv) {
     return (
       <KeyboardAvoidingView
@@ -187,14 +309,16 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       >
         {/* Chat Room Top Bar */}
         <View style={styles.roomHeader}>
+          {/* ← Back Button */}
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => {
               setActiveConv(null);
               loadInbox();
             }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={styles.backBtnText}>‹ Back</Text>
+            <Text style={styles.backArrow}>←</Text>
           </TouchableOpacity>
 
           <View style={styles.roomHeaderTitleCol}>
@@ -208,6 +332,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             )}
           </View>
 
+          {/* Call buttons for direct chats */}
           {!activeConv.is_group && activeConv.recipient && onStartCall && (
             <View style={styles.roomCallActions}>
               <TouchableOpacity
@@ -240,13 +365,20 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
         {/* Message Bubble List */}
         <FlatList
+          ref={flatListRef}
           data={messages}
           keyExtractor={(m) => m.id}
           contentContainerStyle={styles.messagesList}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
           renderItem={({ item }) => {
-            const isMe = currentUser
-              ? item.sender === currentUser.id || (currentUser.email && item.sender_email?.toLowerCase() === currentUser.email?.toLowerCase())
-              : (activeConv.recipient ? item.sender_name !== activeConv.recipient?.full_name : false);
+            const isMe: boolean = currentUser
+              ? item.sender === currentUser.id ||
+                (item.sender_email?.toLowerCase() === currentUser.email?.toLowerCase())
+              : false;
+
+            const senderName = item.sender_name || 'Campus Student';
+            const senderInitial = initial(senderName);
+            const senderAvatarBg = avatarColor(senderName);
 
             return (
               <View
@@ -256,12 +388,19 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 ]}
               >
                 {!isMe && (
-                  <Text style={styles.senderHeaderName}>{item.sender_name || 'Campus Student'}</Text>
+                  <View style={styles.senderRow}>
+                    {/* Colored initials avatar */}
+                    <View style={[styles.senderAvatar, { backgroundColor: senderAvatarBg }]}>
+                      <Text style={styles.senderAvatarText}>{senderInitial}</Text>
+                    </View>
+                    <Text style={styles.senderHeaderName}>{senderName}</Text>
+                  </View>
                 )}
                 <View
                   style={[
                     styles.messageBubble,
                     isMe ? styles.bubbleRight : styles.bubbleLeft,
+                    !isMe && { marginLeft: 32 }, // indent to align under avatar
                   ]}
                 >
                   <Text style={[styles.messageText, isMe && styles.messageTextRight]}>
@@ -313,9 +452,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     );
   }
 
-  // Otherwise, render the Main Chat Inbox!
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER: Main Chat Inbox
+  // ─────────────────────────────────────────────────────────────────────────
+
   return (
     <View style={styles.container}>
+      {/* ── Header ─────────────────────────────────────────────────────── */}
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Messages</Text>
@@ -323,9 +466,21 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         </View>
 
         <View style={styles.headerButtonsRow}>
+          {/* Notification Bell */}
+          <TouchableOpacity
+            style={styles.bellBtn}
+            onPress={() => Alert.alert('Notifications', 'Coming soon! 🔔')}
+          >
+            <Text style={styles.bellIcon}>🔔</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.directBtn}
-            onPress={() => setDirectModalVisible(true)}
+            onPress={() => {
+              setUserQuery('');
+              setUserResults([]);
+              setDirectModalVisible(true);
+            }}
           >
             <Text style={styles.directBtnText}>+ Chat</Text>
           </TouchableOpacity>
@@ -339,101 +494,203 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         </View>
       </View>
 
+      {/* ── Instagram-style Search Bar ─────────────────────────────────── */}
+      <View style={styles.searchBarWrapper}>
+        <Text style={styles.searchIcon}>🔍</Text>
+        <TextInput
+          style={styles.searchBar}
+          placeholder="Search chats..."
+          placeholderTextColor={colors.textMuted}
+          value={inboxSearch}
+          onChangeText={setInboxSearch}
+          clearButtonMode="while-editing"
+          autoCorrect={false}
+        />
+      </View>
+
+      {/* ── Conversation List ───────────────────────────────────────────── */}
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
       ) : (
         <FlatList
-          data={conversations}
+          data={filteredConversations}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.chatCard}
-              onPress={() => setActiveConv(item)}
-            >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {item.is_ephemeral ? '🔥' : item.is_group ? '👥' : '💬'}
-                </Text>
-              </View>
+          renderItem={({ item }) => {
+            const unread = (item.unread_count ?? 0) > 0;
+            const lastTime = formatCardTime(item.last_message?.created_at ?? item.updated_at);
 
-              <View style={styles.chatInfo}>
-                <View style={styles.chatHeaderRow}>
-                  <Text style={styles.chatTitle} numberOfLines={1}>
-                    {getConvTitle(item)}
+            return (
+              <TouchableOpacity
+                style={styles.chatCard}
+                onPress={() => setActiveConv(item)}
+                activeOpacity={0.75}
+              >
+                {/* Avatar */}
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>
+                    {item.is_ephemeral ? '🔥' : item.is_group ? '👥' : '💬'}
                   </Text>
-                  {item.is_ephemeral ? (
-                    <View style={styles.ephemeralBadge}>
-                      <Text style={styles.ephemeralBadgeText}>
-                        ⏳ {item.duration?.replace('_', ' ') || 'TEMP'}
-                      </Text>
-                    </View>
-                  ) : null}
                 </View>
 
-                <Text style={styles.lastMsg} numberOfLines={1}>
-                  {item.last_message?.text || 'Tap to open chat...'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          )}
+                {/* Info */}
+                <View style={styles.chatInfo}>
+                  <View style={styles.chatHeaderRow}>
+                    <Text
+                      style={[styles.chatTitle, unread && styles.chatTitleUnread]}
+                      numberOfLines={1}
+                    >
+                      {getConvTitle(item)}
+                    </Text>
+
+                    <View style={styles.chatMeta}>
+                      {lastTime ? (
+                        <Text style={styles.chatTime}>{lastTime}</Text>
+                      ) : null}
+
+                      {item.is_ephemeral && (
+                        <View style={styles.ephemeralBadge}>
+                          <Text style={styles.ephemeralBadgeText}>
+                            ⏳ {item.duration?.replace('_', ' ') || 'TEMP'}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={styles.chatBottomRow}>
+                    <Text
+                      style={[styles.lastMsg, unread && styles.lastMsgUnread]}
+                      numberOfLines={1}
+                    >
+                      {item.last_message?.text || 'Tap to open chat...'}
+                    </Text>
+
+                    {/* Unread count badge */}
+                    {unread && (
+                      <View style={styles.unreadBadge}>
+                        <Text style={styles.unreadBadgeText}>
+                          {(item.unread_count ?? 0) > 99 ? '99+' : item.unread_count}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
           ListEmptyComponent={
             <View style={styles.emptyInbox}>
-              <Text style={styles.emptyInboxIcon}>📬</Text>
-              <Text style={styles.emptyInboxTitle}>No Active Chats Yet</Text>
+              <Text style={styles.emptyInboxIcon}>{inboxSearch ? '🔎' : '📬'}</Text>
+              <Text style={styles.emptyInboxTitle}>
+                {inboxSearch ? 'No chats found' : 'No Active Chats Yet'}
+              </Text>
               <Text style={styles.emptyInboxSubtitle}>
-                Tap "+ Chat" to message a batchmate, or create a "🔥 Temp" hangout group!
+                {inboxSearch
+                  ? `No conversations match "${inboxSearch}"`
+                  : 'Tap "+ Chat" to message a batchmate, or create a "🔥 Temp" hangout group!'}
               </Text>
             </View>
           }
         />
       )}
 
-      {/* Modal: Start Direct Chat */}
-      <Modal visible={directModalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+      {/* ── Modal: Start Direct Chat (with live user search) ──────────── */}
+      <Modal
+        visible={directModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setDirectModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalCard, { maxHeight: '80%' }]}>
             <Text style={styles.modalTitle}>💬 Start Direct Chat</Text>
             <Text style={styles.modalSubtitle}>
-              Enter any student's username or college email
+              Search by name or email to find a batchmate
             </Text>
 
-            <Text style={styles.label}>Student Username or Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. aarav_cse or student@geu.ac.in"
-              placeholderTextColor={colors.textMuted}
-              value={targetStudent}
-              onChangeText={setTargetStudent}
-              autoCapitalize="none"
-            />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setDirectModalVisible(false)}
-              >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.confirmBtnPrimary}
-                onPress={handleStartDirectChat}
-                disabled={startingChat}
-              >
-                {startingChat ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.confirmBtnText}>Open Chat</Text>
-                )}
-              </TouchableOpacity>
+            {/* Live search input */}
+            <View style={styles.userSearchWrapper}>
+              <Text style={styles.userSearchIcon}>🔍</Text>
+              <TextInput
+                style={styles.userSearchInput}
+                placeholder="Search by name or email..."
+                placeholderTextColor={colors.textMuted}
+                value={userQuery}
+                onChangeText={setUserQuery}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {searchingUsers && (
+                <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 8 }} />
+              )}
             </View>
+
+            {/* User search results list */}
+            {userResults.length > 0 && (
+              <FlatList
+                data={userResults}
+                keyExtractor={(u) => String(u.id)}
+                style={styles.userResultsList}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item: user }) => (
+                  <TouchableOpacity
+                    style={styles.userResultRow}
+                    onPress={() => handleSelectSearchUser(user)}
+                    disabled={startingChat}
+                  >
+                    <View style={[styles.userResultAvatar, { backgroundColor: avatarColor(user.full_name || user.email) }]}>
+                      <Text style={styles.userResultAvatarText}>
+                        {initial(user.full_name || user.email)}
+                      </Text>
+                    </View>
+                    <View style={styles.userResultInfo}>
+                      <Text style={styles.userResultName}>{user.full_name}</Text>
+                      <Text style={styles.userResultEmail}>{user.email}</Text>
+                    </View>
+                    {startingChat ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Text style={styles.userResultAction}>→</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+                ItemSeparatorComponent={() => <View style={styles.userResultSeparator} />}
+              />
+            )}
+
+            {/* Empty state when typed but no results */}
+            {userQuery.trim().length > 0 && !searchingUsers && userResults.length === 0 && (
+              <View style={styles.userSearchEmpty}>
+                <Text style={styles.userSearchEmptyText}>No students found for "{userQuery}"</Text>
+              </View>
+            )}
+
+            {/* Cancel button */}
+            <TouchableOpacity
+              style={[styles.cancelBtn, { marginTop: 16 }]}
+              onPress={() => {
+                setDirectModalVisible(false);
+                setUserQuery('');
+                setUserResults([]);
+              }}
+            >
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
-      {/* Modal: Create Ephemeral Group */}
-      <Modal visible={ephemeralModalVisible} animationType="slide" transparent>
+      {/* ── Modal: Create Ephemeral Group ─────────────────────────────── */}
+      <Modal
+        visible={ephemeralModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setEphemeralModalVisible(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>🔥 Create Self-Destructing Group</Text>
@@ -476,7 +733,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 <TouchableOpacity
                   key={d.value}
                   style={[styles.durationBtn, duration === d.value && styles.durationBtnActive]}
-                  onPress={() => setDuration(d.value as any)}
+                  onPress={() => setDuration(d.value as typeof duration)}
                 >
                   <Text style={[styles.durationText, duration === d.value && styles.durationTextActive]}>
                     {d.label}
@@ -512,11 +769,17 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   );
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
+
+  // ── Header ──────────────────────────────────────────────────────────────
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -539,7 +802,21 @@ const styles = StyleSheet.create({
   },
   headerButtonsRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
+  },
+  bellBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  bellIcon: {
+    fontSize: 16,
   },
   directBtn: {
     backgroundColor: colors.surfaceLight,
@@ -567,8 +844,36 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 12,
   },
+
+  // ── Search Bar ───────────────────────────────────────────────────────────
+  searchBarWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e1e2e',
+    borderRadius: 14,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  searchIcon: {
+    fontSize: 14,
+    marginRight: 8,
+  },
+  searchBar: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 14,
+    paddingVertical: 0, // keep height consistent on Android
+  },
+
+  // ── Chat List ────────────────────────────────────────────────────────────
   listContent: {
     padding: 16,
+    paddingTop: 12,
   },
   chatCard: {
     backgroundColor: colors.surface,
@@ -606,6 +911,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     flex: 1,
   },
+  chatTitleUnread: {
+    fontWeight: '800',
+    color: '#fff',
+  },
+  chatMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  chatTime: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginLeft: 6,
+  },
   ephemeralBadge: {
     backgroundColor: '#431407',
     borderWidth: 1,
@@ -620,10 +939,35 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
+  chatBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
   lastMsg: {
     color: colors.textMuted,
     fontSize: 13,
-    marginTop: 4,
+    flex: 1,
+  },
+  lastMsgUnread: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  unreadBadge: {
+    backgroundColor: '#ef4444',
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+    marginLeft: 8,
+  },
+  unreadBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
   },
   emptyInbox: {
     alignItems: 'center',
@@ -648,7 +992,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // Active Chat Room Styles
+  // ── Active Chat Room ─────────────────────────────────────────────────────
   chatRoomContainer: {
     flex: 1,
     backgroundColor: colors.background,
@@ -664,12 +1008,23 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.cardBorder,
   },
   backBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: colors.card,
-    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
+  backArrow: {
+    color: colors.primary,
+    fontSize: 20,
+    fontWeight: '700',
+    lineHeight: 22,
+  },
+  // Keep legacy name so nothing else breaks
   backBtnText: {
     color: colors.primary,
     fontSize: 16,
@@ -707,6 +1062,8 @@ const styles = StyleSheet.create({
   roomCallIcon: {
     fontSize: 16,
   },
+
+  // ── Message Bubbles ──────────────────────────────────────────────────────
   messagesList: {
     padding: 16,
     paddingBottom: 16,
@@ -721,12 +1078,28 @@ const styles = StyleSheet.create({
   bubbleWrapperLeft: {
     alignSelf: 'flex-start',
   },
+  senderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  senderAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  senderAvatarText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
   senderHeaderName: {
     color: '#38bdf8',
     fontSize: 11,
     fontWeight: '700',
-    marginBottom: 2,
-    marginLeft: 6,
   },
   messageBubble: {
     borderRadius: 16,
@@ -773,6 +1146,8 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 13,
   },
+
+  // ── Input Bar ────────────────────────────────────────────────────────────
   inputBar: {
     flexDirection: 'row',
     padding: 12,
@@ -808,7 +1183,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
-  // Modals
+  // ── Modals ───────────────────────────────────────────────────────────────
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.75)',
@@ -850,6 +1225,90 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 14,
   },
+
+  // Live user search (Direct Chat modal)
+  userSearchWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  userSearchIcon: {
+    fontSize: 14,
+    marginRight: 8,
+  },
+  userSearchInput: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 14,
+    paddingVertical: 0,
+  },
+  userResultsList: {
+    maxHeight: 260,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    marginBottom: 4,
+    backgroundColor: colors.card,
+  },
+  userResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  userResultAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  userResultAvatarText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  userResultInfo: {
+    flex: 1,
+  },
+  userResultName: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  userResultEmail: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 1,
+  },
+  userResultAction: {
+    color: colors.primary,
+    fontSize: 18,
+    fontWeight: '700',
+    marginLeft: 8,
+  },
+  userResultSeparator: {
+    height: 1,
+    backgroundColor: colors.cardBorder,
+    marginHorizontal: 14,
+  },
+  userSearchEmpty: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  userSearchEmptyText: {
+    color: colors.textMuted,
+    fontSize: 13,
+  },
+
+  // Ephemeral group form
   tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -903,6 +1362,8 @@ const styles = StyleSheet.create({
     color: '#fdba74',
     fontWeight: '700',
   },
+
+  // Modal action buttons
   modalActions: {
     flexDirection: 'row',
     gap: 12,
@@ -936,5 +1397,10 @@ const styles = StyleSheet.create({
   confirmBtnText: {
     color: '#fff',
     fontWeight: '700',
+  },
+
+  // Keep for legacy compat
+  surfaceLight: {
+    backgroundColor: colors.surfaceLight,
   },
 });

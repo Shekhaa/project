@@ -16,6 +16,8 @@ import {
   Image,
   ScrollView,
   Animated,
+  Share,
+  PanResponder,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { postService, Post, Comment } from '../services/postService';
@@ -62,19 +64,30 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
   // Media Playback Simulation State
   const [playingVideoId, setPlayingVideoId] = useState<number | null>(null);
 
-  // Watch composer trigger from bottom tab +
-  useEffect(() => {
-    if (composerTrigger && composerTrigger > 0) {
-      setComposerVisible(true);
-    }
-  }, [composerTrigger]);
+  // Campus Notifications State
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
 
-  // Instagram-style Media Picker (Access Photos & Videos from Device)
-  const handlePickDeviceMedia = (type: 'IMAGE' | 'VIDEO' | 'TEXT') => {
+  // Swipe down PanResponder for Comments Sheet (Instagram style)
+  const commentsPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 80) {
+          setActiveCommentPost(null);
+        }
+      },
+    })
+  ).current;
+
+  // Instagram-style Media Picker (Access Photos & Videos from Device + Camera + Client-side Resize)
+  const handlePickDeviceMedia = (type: 'IMAGE' | 'VIDEO' | 'TEXT', useCamera = false) => {
     const targetType = type === 'VIDEO' ? 'VIDEO' : 'IMAGE';
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const input = document.createElement('input');
       input.type = 'file';
+      if (useCamera) {
+        input.capture = 'environment';
+      }
       input.accept =
         targetType === 'VIDEO'
           ? 'video/mp4,video/quicktime,video/webm,video/*'
@@ -84,10 +97,42 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
         if (file) {
           const reader = new FileReader();
           reader.onload = (uploadEvent: any) => {
-            const result = uploadEvent.target?.result as string;
-            if (result) {
-              setMediaUrl(result);
-              setMediaType(targetType);
+            const rawResult = uploadEvent.target?.result as string;
+            if (rawResult) {
+              if (targetType === 'IMAGE') {
+                // Resize & Compress Image to Max 1080px via HTML5 Canvas
+                const img = new (window as any).Image();
+                img.onload = () => {
+                  const maxDim = 1080;
+                  let { width, height } = img;
+                  if (width > maxDim || height > maxDim) {
+                    if (width > height) {
+                      height = Math.round((height * maxDim) / width);
+                      width = maxDim;
+                    } else {
+                      width = Math.round((width * maxDim) / height);
+                      height = maxDim;
+                    }
+                  }
+                  const canvas = document.createElement('canvas');
+                  canvas.width = width;
+                  canvas.height = height;
+                  const ctx = canvas.getContext('2d');
+                  if (ctx) {
+                    ctx.drawImage(img, 0, 0, width, height);
+                    const compressedUrl = canvas.toDataURL('image/jpeg', 0.82);
+                    setMediaUrl(compressedUrl);
+                    setMediaType('IMAGE');
+                    return;
+                  }
+                  setMediaUrl(rawResult);
+                  setMediaType('IMAGE');
+                };
+                img.src = rawResult;
+              } else {
+                setMediaUrl(rawResult);
+                setMediaType(targetType);
+              }
             }
           };
           reader.readAsDataURL(file);
@@ -99,6 +144,30 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
         `Select ${targetType === 'VIDEO' ? 'Video Reel' : 'Photo'}`,
         'Choose a campus preset below or paste any direct media link!'
       );
+    }
+  };
+
+  const handleSharePost = async (post: Post) => {
+    const postSnippet = post.content ? post.content.slice(0, 100) : 'Campus Story';
+    const shareText = `Check out this GEHU Campus Post by ${post.author_name}:\n\n"${postSnippet}"\n\nShared via GEHU Campus Connect 🎓`;
+    try {
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && (navigator as any).share) {
+        await (navigator as any).share({
+          title: `GEHU Campus Post by ${post.author_name}`,
+          text: shareText,
+          url: window.location.href,
+        });
+        return;
+      }
+      await Share.share({
+        message: shareText,
+        title: 'GEHU Campus Post',
+      });
+    } catch (e) {
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+        navigator.clipboard.writeText(shareText);
+        Alert.alert('Link Copied! 🔗', 'Post text and link copied to campus clipboard.');
+      }
     }
   };
 
@@ -372,9 +441,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
           {/* Share */}
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() =>
-              Alert.alert('Share', `Post link copied to campus clipboard! 🔗`)
-            }
+            onPress={() => handleSharePost(item)}
           >
             <Text style={styles.actionIcon}>🔗</Text>
             <Text style={styles.actionText}>Share</Text>
@@ -401,7 +468,20 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
             <Text style={styles.headerPostIcon}>＋</Text>
             <Text style={styles.headerPostText}>Post</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.refreshIconBtn} onPress={handleRefresh}>
+
+          <TouchableOpacity
+            style={styles.refreshIconBtn}
+            onPress={() => setNotificationsVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.refreshIconText}>🔔</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.refreshIconBtn}
+            onPress={handleRefresh}
+            activeOpacity={0.8}
+          >
             <Text style={styles.refreshIconText}>🔄</Text>
           </TouchableOpacity>
         </View>
@@ -425,20 +505,11 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
             <Text style={styles.emptyIcon}>📸</Text>
             <Text style={styles.emptyTitle}>Campus feed is empty!</Text>
             <Text style={styles.emptySubtitle}>
-              Tap the + button to post the first campus photo, reel, or anonymous story.
+              Tap the "+ Post" button to share the first campus photo, reel, or story.
             </Text>
           </View>
         }
       />
-
-      {/* Twitter-style Floating Action Button (+) */}
-      <TouchableOpacity
-        style={styles.fabButton}
-        onPress={() => setComposerVisible(true)}
-        activeOpacity={0.85}
-      >
-        <Text style={styles.fabIcon}>＋</Text>
-      </TouchableOpacity>
 
       {/* Post Composer Modal (Instagram + Reddit Hybrid) */}
       <Modal
@@ -567,34 +638,48 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
                     Access camera photos, reels or device files with the ＋ button
                   </Text>
 
-                  {/* Two Main Instagram '+' Media Access Cards */}
+                  {/* Instagram-style Media Access Cards (Camera + Gallery + Reel) */}
                   <View style={styles.instaTilesRow}>
-                    {/* + Add Photo Card */}
+                    {/* Camera */}
                     <TouchableOpacity
                       style={styles.instaTileCard}
-                      onPress={() => handlePickDeviceMedia('IMAGE')}
+                      onPress={() => handlePickDeviceMedia('IMAGE', true)}
+                      activeOpacity={0.75}
+                    >
+                      <View style={styles.instaTilePlusBadge}>
+                        <Text style={styles.instaTilePlusIcon}>📸</Text>
+                      </View>
+                      <Text style={styles.instaTileEmoji}>🤳</Text>
+                      <Text style={styles.instaTileTitle}>Take Photo</Text>
+                      <Text style={styles.instaTileSub}>Live Camera</Text>
+                    </TouchableOpacity>
+
+                    {/* Gallery Photo */}
+                    <TouchableOpacity
+                      style={styles.instaTileCard}
+                      onPress={() => handlePickDeviceMedia('IMAGE', false)}
                       activeOpacity={0.75}
                     >
                       <View style={styles.instaTilePlusBadge}>
                         <Text style={styles.instaTilePlusIcon}>＋</Text>
                       </View>
-                      <Text style={styles.instaTileEmoji}>📷</Text>
+                      <Text style={styles.instaTileEmoji}>🖼️</Text>
                       <Text style={styles.instaTileTitle}>Add Photo</Text>
-                      <Text style={styles.instaTileSub}>Device / Gallery</Text>
+                      <Text style={styles.instaTileSub}>Gallery / File</Text>
                     </TouchableOpacity>
 
-                    {/* + Add Video Reel Card */}
+                    {/* Video Reel */}
                     <TouchableOpacity
                       style={[styles.instaTileCard, styles.instaTileCardVideo]}
                       onPress={() => handlePickDeviceMedia('VIDEO')}
                       activeOpacity={0.75}
                     >
                       <View style={[styles.instaTilePlusBadge, styles.instaTilePlusBadgeVideo]}>
-                        <Text style={styles.instaTilePlusIcon}>＋</Text>
+                        <Text style={styles.instaTilePlusIcon}>▶</Text>
                       </View>
                       <Text style={styles.instaTileEmoji}>📹</Text>
                       <Text style={styles.instaTileTitle}>Add Video</Text>
-                      <Text style={styles.instaTileSub}>Reel / MP4 Clip</Text>
+                      <Text style={styles.instaTileSub}>Reel Clip</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -656,7 +741,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Comments Drawer / Modal */}
+      {/* Comments Drawer / Modal (Instagram Drag-to-Dismiss) */}
       <Modal
         visible={activeCommentPost !== null}
         animationType="slide"
@@ -667,7 +752,22 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalBackdrop}
         >
+          {/* Backdrop Tap to Dismiss */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setActiveCommentPost(null)}
+          />
+
           <View style={styles.commentsSheet}>
+            {/* Instagram-style Drag Handle Bar (Swipe down to dismiss) */}
+            <View
+              style={styles.dragHandleArea}
+              {...commentsPanResponder.panHandlers}
+            >
+              <View style={styles.dragHandleBar} />
+            </View>
+
             <View style={styles.commentsHeader}>
               <View>
                 <Text style={styles.commentsTitle}>Comments</Text>
@@ -769,6 +869,62 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Campus Notifications Drawer / Modal */}
+      <Modal
+        visible={notificationsVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setNotificationsVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setNotificationsVisible(false)}
+          />
+          <View style={styles.notificationsSheet}>
+            <View style={styles.dragHandleArea}>
+              <View style={styles.dragHandleBar} />
+            </View>
+
+            <View style={styles.notificationsHeader}>
+              <View>
+                <Text style={styles.commentsTitle}>Campus Notifications 🔔</Text>
+                <Text style={styles.commentsSubtitle}>Activity, updates & campus alerts</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setNotificationsVisible(false)}
+              >
+                <Text style={styles.modalCloseText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ padding: 16 }}>
+              {[
+                { icon: '🎓', title: 'Campus Geofence Verified', sub: 'You are verified inside Graphic Era Clement Town Campus.', time: 'Just now' },
+                { icon: '🎉', title: 'Grafest 2026 Announced!', sub: 'Annual college fest registration is now live in Hubs.', time: '2 hours ago' },
+                { icon: '❤️', title: 'New Likes on your Story', sub: '3 batchmates liked your campus canteen reel.', time: '5 hours ago' },
+                { icon: '💬', title: 'New Comment in CSE Hub', sub: 'Priya Rawat replied: "Check library 2nd floor for notes".', time: 'Yesterday' },
+              ].map((notif, idx) => (
+                <View key={idx} style={styles.notificationCard}>
+                  <View style={styles.notifIconCircle}>
+                    <Text style={{ fontSize: 18 }}>{notif.icon}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={styles.notifTitle}>{notif.title}</Text>
+                      <Text style={styles.notifTime}>{notif.time}</Text>
+                    </View>
+                    <Text style={styles.notifSub}>{notif.sub}</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -1539,5 +1695,69 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 10,
     marginTop: 2,
+  },
+  dragHandleArea: {
+    width: '100%',
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dragHandleBar: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#475569',
+  },
+  notificationsSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    height: '70%',
+    padding: 18,
+    borderTopWidth: 1,
+    borderTopColor: colors.cardBorder,
+  },
+  notificationsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.cardBorder,
+    marginBottom: 6,
+  },
+  notificationCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.card,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    gap: 12,
+  },
+  notifIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifTitle: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  notifTime: {
+    color: colors.textMuted,
+    fontSize: 10,
+  },
+  notifSub: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 3,
+    lineHeight: 16,
   },
 });

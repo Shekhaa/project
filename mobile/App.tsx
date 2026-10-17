@@ -10,9 +10,10 @@ import {
   Modal,
   Alert,
   Platform,
+  BackHandler,
 } from 'react-native';
 import { colors } from './src/theme/colors';
-import { Home, Building2, Plus, MessageSquare, User as UserIcon } from 'lucide-react-native';
+import { Home, Building2, MessageSquare, User as UserIcon } from 'lucide-react-native';
 import { authService, User } from './src/services/authService';
 import { callService, CallType } from './src/services/callService';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -50,6 +51,43 @@ export default function App() {
       document.body.style.padding = '0';
     }
   }, []);
+
+  // Instagram-style Back Button Support (Android Hardware + Web Browser history)
+  useEffect(() => {
+    const onBackPress = () => {
+      if (activeCall) {
+        setActiveCall(null);
+        return true;
+      }
+      if (activeTab !== 'FEED') {
+        setActiveTab('FEED');
+        return true;
+      }
+      return false;
+    };
+
+    const backSubscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const handlePopState = () => {
+        onBackPress();
+      };
+      window.addEventListener('popstate', handlePopState);
+      return () => {
+        backSubscription.remove();
+        window.removeEventListener('popstate', handlePopState);
+      };
+    }
+
+    return () => backSubscription.remove();
+  }, [activeCall, activeTab]);
+
+  const navigateToTab = (tab: TabType) => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history) {
+      window.history.pushState({ tab }, '', `#${tab.toLowerCase()}`);
+    }
+    setActiveTab(tab);
+  };
 
   useEffect(() => {
     checkInitialSession();
@@ -207,11 +245,12 @@ export default function App() {
         )}
       </View>
 
-      {/* 5-Tab Bottom Navigation Bar (Instagram Layout with Central '+' Button) */}
+      {/* 4-Tab Bottom Navigation Bar (Feed, Hubs, Chats, Profile) */}
       <View style={styles.tabBar}>
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() => setActiveTab('FEED')}
+          onPress={() => navigateToTab('FEED')}
+          activeOpacity={0.7}
         >
           <Home
             size={22}
@@ -225,7 +264,8 @@ export default function App() {
 
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() => setActiveTab('COMMUNITIES')}
+          onPress={() => navigateToTab('COMMUNITIES')}
+          activeOpacity={0.7}
         >
           <Building2
             size={22}
@@ -237,24 +277,10 @@ export default function App() {
           </Text>
         </TouchableOpacity>
 
-        {/* Central Instagram-style '+' Media Post Button */}
-        <TouchableOpacity
-          style={styles.tabCreateBtn}
-          onPress={() => {
-            setActiveTab('FEED');
-            setComposerTrigger((prev) => prev + 1);
-          }}
-          activeOpacity={0.8}
-        >
-          <View style={styles.createPlusCircle}>
-            <Plus size={24} color="#ffffff" strokeWidth={3} />
-          </View>
-          <Text style={styles.createPlusLabel}>Post</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() => setActiveTab('CHAT')}
+          onPress={() => navigateToTab('CHAT')}
+          activeOpacity={0.7}
         >
           <MessageSquare
             size={22}
@@ -268,7 +294,8 @@ export default function App() {
 
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() => setActiveTab('PROFILE')}
+          onPress={() => navigateToTab('PROFILE')}
+          activeOpacity={0.7}
         >
           <UserIcon
             size={22}
@@ -323,59 +350,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.cardBorder,
-    paddingVertical: 10,
-    paddingBottom: 14,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+    alignItems: 'center',
+    justifyContent: 'space-around',
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  tabIcon: {
-    fontSize: 20,
-    opacity: 0.6,
+    paddingVertical: 4,
   },
   tabLabel: {
     color: colors.textSecondary,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '600',
-    marginTop: 3,
+    marginTop: 4,
   },
   tabActiveText: {
     color: colors.primary,
-    opacity: 1,
     fontWeight: '800',
-  },
-  tabCreateBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    marginTop: -10,
-  },
-  createPlusCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  createPlusIcon: {
-    color: '#ffffff',
-    fontSize: 22,
-    fontWeight: '800',
-    lineHeight: 24,
-  },
-  createPlusLabel: {
-    color: colors.primary,
-    fontSize: 10,
-    fontWeight: '700',
-    marginTop: 2,
   },
 });
 

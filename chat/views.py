@@ -47,9 +47,12 @@ class StartDirectChatView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, identifier):
-        target_user = User.objects.filter(
-            Q(email__iexact=identifier) | Q(profile__username__iexact=identifier)
-        ).first()
+        filters = Q(email__iexact=identifier) | Q(username__iexact=identifier)
+        if hasattr(User, 'profile'):
+            filters |= Q(profile__username__iexact=identifier)
+        if str(identifier).isdigit():
+            filters |= Q(id=int(identifier))
+        target_user = User.objects.filter(filters).first()
 
         if not target_user:
             return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)

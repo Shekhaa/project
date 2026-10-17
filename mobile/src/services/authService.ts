@@ -191,4 +191,11 @@ export const authService = {
       await AsyncStorage.multiRemove(['access_token', 'refresh_token', 'user_info']);
     }
   },
+
+  // Instant Student Discovery Search (Instagram / TikTok style fuzzy discovery)
+  async searchStudents(query: string = '') {
+    const res = await api.get(`/authentication/users/search/?q=${encodeURIComponent(query)}`);
+    return res.data.results || [];
+  },
 };
+

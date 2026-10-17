@@ -217,8 +217,12 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ currentUse
             contentContainerStyle={styles.chatMessagesContent}
             renderItem={({ item }) => {
               const isMe = currentUser
-                ? item.sender === currentUser.id || item.sender_email === currentUser.email
+                ? item.sender === currentUser.id ||
+                  (item.sender_email && currentUser.email && item.sender_email.toLowerCase() === currentUser.email.toLowerCase())
                 : false;
+
+              const senderName = item.sender_name || 'Campus Student';
+              const initialLetter = senderName.trim()[0]?.toUpperCase() || '?';
 
               return (
                 <View
@@ -227,16 +231,20 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ currentUse
                     isMe ? styles.bubbleWrapperRight : styles.bubbleWrapperLeft,
                   ]}
                 >
-                  {/* Sender Name in Bright Sky Blue on others' messages */}
+                  {/* Sender Name & Initials Avatar on others' messages */}
                   {!isMe && (
-                    <Text style={styles.senderHeaderName}>
-                      {item.sender_name || 'Campus Student'}
-                    </Text>
+                    <View style={styles.senderHeaderRow}>
+                      <View style={styles.senderAvatarMini}>
+                        <Text style={styles.senderAvatarMiniText}>{initialLetter}</Text>
+                      </View>
+                      <Text style={styles.senderHeaderName}>{senderName}</Text>
+                    </View>
                   )}
                   <View
                     style={[
                       styles.messageBubble,
                       isMe ? styles.bubbleRight : styles.bubbleLeft,
+                      !isMe && { marginLeft: 28 },
                     ]}
                   >
                     <Text style={[styles.messageText, isMe && styles.messageTextRight]}>
@@ -599,12 +607,29 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     alignItems: 'flex-start',
   },
+  senderHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  senderAvatarMini: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#3b82f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  senderAvatarMiniText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
+  },
   senderHeaderName: {
     fontSize: 12,
     fontWeight: '700',
     color: '#38bdf8', // WhatsApp-style distinct bright sender name
-    marginBottom: 3,
-    marginLeft: 6,
   },
   messageBubble: {
     borderRadius: 16,

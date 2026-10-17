@@ -982,3 +982,42 @@ class IDCardLoginView(APIView):
         }, status=status.HTTP_200_OK)
 
 
+class SearchUsersView(APIView):
+    """
+    GET /api/authentication/users/search/?q=<query>
+    Instant Instagram/TikTok-style student discovery and search.
+    Searches by name, username, email, roll number.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        query = request.GET.get("q", "").strip()
+        users_qs = User.objects.filter(is_active=True).exclude(id=request.user.id)
+
+        if query:
+            users_qs = users_qs.filter(
+                Q(full_name__icontains=query) |
+                Q(username__icontains=query) |
+                Q(email__icontains=query) |
+                Q(admission_number__icontains=query)
+            )
+
+        users = users_qs.order_by("full_name")[:25]
+        results = []
+        for u in users:
+            prof = getattr(u, "profile", None)
+            results.append({
+                "id": u.id,
+                "email": u.email,
+                "full_name": u.full_name or (getattr(prof, "username", "") if prof else "") or u.email.split("@")[0],
+                "username": (getattr(prof, "username", "") if prof else "") or u.username or u.email.split("@")[0],
+                "admission_number": u.admission_number or "",
+                "college_name": getattr(prof, "college_name", "") if prof else "",
+                "branch_name": getattr(prof, "branch_name", "") if prof else "",
+                "verified": getattr(u, "verified", True),
+                "verification_tier": getattr(u, "verification_tier", "SEMI_VERIFIED"),
+            })
+        return Response({"results": results})
+
+
+

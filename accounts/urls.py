@@ -18,9 +18,13 @@ from .views import (
     SendPhoneLoginOTPView,
     VerifyPhoneLoginOTPView,
     IDCardLoginView,
+    SearchUsersView,
 )
 
 urlpatterns = [
+    # Instant Student Discovery / Search
+    path("users/search/", SearchUsersView.as_view(), name="auth-users-search"),
+
     # Primary Email OTP & Magic Link Authentication
     path("email/send-otp/", SendEmailOTPView.as_view(), name="auth-email-send-otp"),
     path("email/verify-otp/", VerifyEmailOTPView.as_view(), name="auth-email-verify-otp"),
