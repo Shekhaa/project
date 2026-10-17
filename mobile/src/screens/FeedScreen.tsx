@@ -64,15 +64,60 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
   // Media Playback Simulation State
   const [playingVideoId, setPlayingVideoId] = useState<number | null>(null);
 
-  // Campus Notifications State
+  // Campus Notifications State & Interactive Notifications
   const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const [notifications, setNotifications] = useState([
+    {
+      id: 1,
+      icon: '🎓',
+      title: 'Campus Geofence Verified',
+      sub: 'You are verified inside Graphic Era Clement Town Campus.',
+      time: 'Just now',
+      read: false,
+      detail: '📍 Campus Geofence Active!\n\nYour GPS coordinates match Graphic Era University (Clement Town Campus). All features and community channels are fully unlocked.',
+    },
+    {
+      id: 2,
+      icon: '🎉',
+      title: 'Grafest 2026 Live!',
+      sub: 'Annual college fest registration is now live in Campus channels.',
+      time: '2 hours ago',
+      read: false,
+      detail: '🎉 Grafest 2026 Announced!\n\nRegistrations opened for Dance, Music, Hackathon, and Battle of Bands in the Campus tab. Head over to register!',
+    },
+    {
+      id: 3,
+      icon: '❤️',
+      title: 'New Likes on your Story',
+      sub: '3 batchmates liked your campus canteen reel.',
+      time: '5 hours ago',
+      read: false,
+      detail: '❤️ Post Activity\n\nYour recent campus post received love from 3 students in your department.',
+    },
+    {
+      id: 4,
+      icon: '💬',
+      title: 'New Reply in CSE Hub',
+      sub: 'Priya Rawat replied: "Check library 2nd floor for notes".',
+      time: 'Yesterday',
+      read: false,
+      detail: '💬 Campus Channel Reply\n\nPriya Rawat: "Check library 2nd floor for notes". Join the discussion in the Campus tab.',
+    },
+  ]);
 
-  // Swipe down PanResponder for Comments Sheet (Instagram style)
+  const handleNotificationPress = (notif: (typeof notifications)[0]) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notif.id ? { ...n, read: true } : n))
+    );
+    Alert.alert(notif.title, notif.detail, [{ text: 'OK', style: 'default' }]);
+  };
+
+  // Swipe down PanResponder for Comments Sheet (Instagram style with 50px threshold)
   const commentsPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderMove: (_, gestureState) => {
-        if (gestureState.dy > 80) {
+        if (gestureState.dy > 50) {
           setActiveCommentPost(null);
         }
       },
@@ -82,6 +127,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
   // Aspect Ratio & Fit State (Instagram Style: 16:9, 1:1, 4:5, auto)
   const [mediaCropMode, setMediaCropMode] = useState<'AUTO' | '16:9' | '1:1' | '4:5'>('AUTO');
   const [imageFitMode, setImageFitMode] = useState<'contain' | 'cover'>('contain');
+  const [cropModalVisible, setCropModalVisible] = useState(false);
 
   // Instagram-style Unified Media Picker (Photo or Video in 1-Click with Auto Aspect Ratio Detection)
   const handlePickMedia = (useCamera = false) => {
@@ -134,9 +180,11 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
                     ctx.drawImage(img, 0, 0, width, height);
                     const compressedUrl = canvas.toDataURL('image/jpeg', 0.85);
                     setMediaUrl(compressedUrl);
+                    setCropModalVisible(true); // Open Crop Studio immediately!
                     return;
                   }
                   setMediaUrl(rawResult);
+                  setCropModalVisible(true);
                 };
                 img.src = rawResult;
               }
@@ -715,11 +763,19 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
                   </View>
 
                   <View style={styles.previewActionsRow}>
+                    {mediaType === 'IMAGE' && (
+                      <TouchableOpacity
+                        style={styles.adjustCropBtn}
+                        onPress={() => setCropModalVisible(true)}
+                      >
+                        <Text style={styles.adjustCropText}>✂️ Crop Studio</Text>
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                       style={styles.changeMediaBtn}
                       onPress={() => handlePickMedia(false)}
                     >
-                      <Text style={styles.changeMediaText}>＋ Change Media</Text>
+                      <Text style={styles.changeMediaText}>＋ Change</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.removeMediaBtn}
@@ -829,6 +885,121 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* Instagram-style Dedicated Crop & Frame Studio Modal */}
+      <Modal
+        visible={cropModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setCropModalVisible(false)}
+      >
+        <View style={styles.cropStudioModalContainer}>
+          <SafeAreaView style={styles.cropStudioSafeArea}>
+            {/* Studio Top Header */}
+            <View style={styles.cropStudioHeader}>
+              <TouchableOpacity
+                style={styles.cropCancelBtn}
+                onPress={() => setCropModalVisible(false)}
+              >
+                <Text style={styles.cropCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={styles.cropStudioTitle}>Crop & Frame Studio ✂️</Text>
+              <TouchableOpacity
+                style={styles.cropApplyBtn}
+                onPress={() => setCropModalVisible(false)}
+              >
+                <Text style={styles.cropApplyText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Interactive Crop Frame Canvas */}
+            <View style={styles.cropPreviewViewport}>
+              <View
+                style={[
+                  styles.cropFrameBox,
+                  mediaCropMode === '1:1' && styles.cropFrame1x1,
+                  mediaCropMode === '4:5' && styles.cropFrame4x5,
+                  mediaCropMode === '16:9' && styles.cropFrame16x9,
+                  mediaCropMode === 'AUTO' && styles.cropFrameAuto,
+                ]}
+              >
+                {mediaUrl ? (
+                  <Image
+                    source={{ uri: mediaUrl }}
+                    style={styles.cropTargetImage}
+                    resizeMode={imageFitMode}
+                  />
+                ) : null}
+
+                {/* Rule-of-Thirds Grid Overlay (Instagram Style) */}
+                <View style={styles.gridOverlayContainer} pointerEvents="none">
+                  <View style={styles.gridLineH1} />
+                  <View style={styles.gridLineH2} />
+                  <View style={styles.gridLineV1} />
+                  <View style={styles.gridLineV2} />
+                </View>
+              </View>
+            </View>
+
+            {/* Bottom Controls Bar */}
+            <View style={styles.cropStudioBottomControls}>
+              <Text style={styles.cropRatioLabel}>SELECT FRAME RATIO</Text>
+              <View style={styles.cropStudioRatioRow}>
+                {[
+                  { label: 'Original', mode: 'AUTO', icon: '📐' },
+                  { label: '1:1 Square', mode: '1:1', icon: '⏹' },
+                  { label: '4:5 Portrait', mode: '4:5', icon: '📱' },
+                  { label: '16:9 Wide', mode: '16:9', icon: '🖥' },
+                ].map((c) => (
+                  <TouchableOpacity
+                    key={c.mode}
+                    style={[
+                      styles.cropStudioRatioBtn,
+                      mediaCropMode === c.mode && styles.cropStudioRatioBtnActive,
+                    ]}
+                    onPress={() => setMediaCropMode(c.mode as any)}
+                  >
+                    <Text style={styles.cropStudioRatioIcon}>{c.icon}</Text>
+                    <Text
+                      style={[
+                        styles.cropStudioRatioText,
+                        mediaCropMode === c.mode && styles.cropStudioRatioTextActive,
+                      ]}
+                    >
+                      {c.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={styles.cropFitToggleRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.cropFitChoiceBtn,
+                    imageFitMode === 'contain' && styles.cropFitChoiceBtnActive,
+                  ]}
+                  onPress={() => setImageFitMode('contain')}
+                >
+                  <Text style={[styles.cropFitChoiceText, imageFitMode === 'contain' && styles.cropFitChoiceTextActive]}>
+                    🔍 Fit Entire Photo
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.cropFitChoiceBtn,
+                    imageFitMode === 'cover' && styles.cropFitChoiceBtnActive,
+                  ]}
+                  onPress={() => setImageFitMode('cover')}
+                >
+                  <Text style={[styles.cropFitChoiceText, imageFitMode === 'cover' && styles.cropFitChoiceTextActive]}>
+                    🖼️ Fill Frame
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
+
       {/* Comments Drawer / Modal (Instagram Drag-to-Dismiss) */}
       <Modal
         visible={activeCommentPost !== null}
@@ -854,6 +1025,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
               {...commentsPanResponder.panHandlers}
             >
               <View style={styles.dragHandleBar} />
+              <Text style={styles.dragHandleHint}>↓ Drag down to dismiss</Text>
             </View>
 
             <View style={styles.commentsHeader}>
@@ -864,10 +1036,10 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
                 </Text>
               </View>
               <TouchableOpacity
-                style={styles.modalCloseBtn}
+                style={styles.commentsCloseIconBtn}
                 onPress={() => setActiveCommentPost(null)}
               >
-                <Text style={styles.modalCloseText}>Done</Text>
+                <Text style={styles.commentsCloseIcon}>✕</Text>
               </TouchableOpacity>
             </View>
 
@@ -975,40 +1147,51 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
           <View style={styles.notificationsSheet}>
             <View style={styles.dragHandleArea}>
               <View style={styles.dragHandleBar} />
+              <Text style={styles.dragHandleHint}>↓ Drag down to dismiss</Text>
             </View>
 
             <View style={styles.notificationsHeader}>
               <View>
                 <Text style={styles.commentsTitle}>Campus Notifications 🔔</Text>
-                <Text style={styles.commentsSubtitle}>Activity, updates & campus alerts</Text>
+                <Text style={styles.commentsSubtitle}>Tap any notification to view details</Text>
               </View>
               <TouchableOpacity
-                style={styles.modalCloseBtn}
+                style={styles.commentsCloseIconBtn}
                 onPress={() => setNotificationsVisible(false)}
               >
-                <Text style={styles.modalCloseText}>Done</Text>
+                <Text style={styles.commentsCloseIcon}>✕</Text>
               </TouchableOpacity>
             </View>
 
             <ScrollView style={{ padding: 16 }}>
-              {[
-                { icon: '🎓', title: 'Campus Geofence Verified', sub: 'You are verified inside Graphic Era Clement Town Campus.', time: 'Just now' },
-                { icon: '🎉', title: 'Grafest 2026 Announced!', sub: 'Annual college fest registration is now live in Hubs.', time: '2 hours ago' },
-                { icon: '❤️', title: 'New Likes on your Story', sub: '3 batchmates liked your campus canteen reel.', time: '5 hours ago' },
-                { icon: '💬', title: 'New Comment in CSE Hub', sub: 'Priya Rawat replied: "Check library 2nd floor for notes".', time: 'Yesterday' },
-              ].map((notif, idx) => (
-                <View key={idx} style={styles.notificationCard}>
-                  <View style={styles.notifIconCircle}>
+              {notifications.map((notif) => (
+                <TouchableOpacity
+                  key={notif.id}
+                  style={[
+                    styles.notificationCard,
+                    notif.read && styles.notificationCardRead,
+                  ]}
+                  onPress={() => handleNotificationPress(notif)}
+                  activeOpacity={0.75}
+                >
+                  <View style={[styles.notifIconCircle, notif.read && styles.notifIconCircleRead]}>
                     <Text style={{ fontSize: 18 }}>{notif.icon}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                      <Text style={styles.notifTitle}>{notif.title}</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={[styles.notifTitle, notif.read && styles.notifTitleRead]}>
+                        {notif.title}
+                      </Text>
                       <Text style={styles.notifTime}>{notif.time}</Text>
                     </View>
                     <Text style={styles.notifSub}>{notif.sub}</Text>
+                    {!notif.read && (
+                      <View style={styles.notifTapPill}>
+                        <Text style={styles.notifTapPillText}>👉 Tap to View Details</Text>
+                      </View>
+                    )}
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </ScrollView>
           </View>
@@ -1924,6 +2107,251 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   fitBtnTextActive: {
+    color: '#34d399',
+    fontWeight: '800',
+  },
+  adjustCropBtn: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+  },
+  adjustCropText: {
+    color: '#34d399',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dragHandleHint: {
+    color: colors.textMuted,
+    fontSize: 10,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  commentsCloseIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commentsCloseIcon: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  notificationCardRead: {
+    opacity: 0.7,
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+  },
+  notifIconCircleRead: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  notifTitleRead: {
+    color: colors.textSecondary,
+  },
+  notifTapPill: {
+    marginTop: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  notifTapPillText: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+
+  // Dedicated Crop Studio Modal Styles
+  cropStudioModalContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  cropStudioSafeArea: {
+    flex: 1,
+    backgroundColor: '#000000',
+    justifyContent: 'space-between',
+  },
+  cropStudioHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e293b',
+    backgroundColor: '#0a0f1d',
+  },
+  cropStudioTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  cropCancelBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  cropCancelText: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  cropApplyBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+  },
+  cropApplyText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  cropPreviewViewport: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    backgroundColor: '#05070f',
+  },
+  cropFrameBox: {
+    width: '100%',
+    maxHeight: '100%',
+    backgroundColor: '#000000',
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+  },
+  cropFrameAuto: {
+    maxHeight: 460,
+  },
+  cropFrame1x1: {
+    aspectRatio: 1,
+    maxHeight: 380,
+  },
+  cropFrame4x5: {
+    aspectRatio: 4 / 5,
+    maxHeight: 440,
+  },
+  cropFrame16x9: {
+    aspectRatio: 16 / 9,
+    maxHeight: 280,
+  },
+  cropTargetImage: {
+    width: '100%',
+    height: '100%',
+  },
+  gridOverlayContainer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  gridLineH1: {
+    position: 'absolute',
+    top: '33.33%',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  gridLineH2: {
+    position: 'absolute',
+    top: '66.66%',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  gridLineV1: {
+    position: 'absolute',
+    left: '33.33%',
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  gridLineV2: {
+    position: 'absolute',
+    left: '66.66%',
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  cropStudioBottomControls: {
+    backgroundColor: '#0a0f1d',
+    borderTopWidth: 1,
+    borderTopColor: '#1e293b',
+    padding: 18,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 18,
+  },
+  cropRatioLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  cropStudioRatioRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  cropStudioRatioBtn: {
+    flex: 1,
+    backgroundColor: '#131b2e',
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  cropStudioRatioBtnActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  cropStudioRatioIcon: {
+    fontSize: 16,
+    marginBottom: 4,
+  },
+  cropStudioRatioText: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  cropStudioRatioTextActive: {
+    color: '#ffffff',
+  },
+  cropFitToggleRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cropFitChoiceBtn: {
+    flex: 1,
+    backgroundColor: '#131b2e',
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  cropFitChoiceBtnActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderColor: '#10b981',
+  },
+  cropFitChoiceText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cropFitChoiceTextActive: {
     color: '#34d399',
     fontWeight: '800',
   },

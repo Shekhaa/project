@@ -273,7 +273,7 @@ export default function App() {
             strokeWidth={activeTab === 'COMMUNITIES' ? 2.5 : 1.8}
           />
           <Text style={[styles.tabLabel, activeTab === 'COMMUNITIES' && styles.tabActiveText]}>
-            Hubs
+            Campus
           </Text>
         </TouchableOpacity>
 

@@ -305,8 +305,8 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ currentUse
     <View style={styles.container}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Communities</Text>
-          <Text style={styles.headerSubtitle}>Core Academic Hubs & Student Clubs</Text>
+          <Text style={styles.headerTitle}>Campus</Text>
+          <Text style={styles.headerSubtitle}>Official Channels, Clubs & Circles</Text>
         </View>
 
         <TouchableOpacity
