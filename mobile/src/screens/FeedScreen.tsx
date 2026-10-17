@@ -79,31 +79,43 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
     })
   ).current;
 
-  // Instagram-style Media Picker (Access Photos & Videos from Device + Camera + Client-side Resize)
-  const handlePickDeviceMedia = (type: 'IMAGE' | 'VIDEO' | 'TEXT', useCamera = false) => {
-    const targetType = type === 'VIDEO' ? 'VIDEO' : 'IMAGE';
+  // Aspect Ratio & Fit State (Instagram Style: 16:9, 1:1, 4:5, auto)
+  const [mediaCropMode, setMediaCropMode] = useState<'AUTO' | '16:9' | '1:1' | '4:5'>('AUTO');
+  const [imageFitMode, setImageFitMode] = useState<'contain' | 'cover'>('contain');
+
+  // Instagram-style Unified Media Picker (Photo or Video in 1-Click with Auto Aspect Ratio Detection)
+  const handlePickMedia = (useCamera = false) => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const input = document.createElement('input');
       input.type = 'file';
       if (useCamera) {
         input.capture = 'environment';
+        input.accept = 'image/*';
+      } else {
+        input.accept = 'image/*,video/*,video/mp4,video/quicktime,video/webm';
       }
-      input.accept =
-        targetType === 'VIDEO'
-          ? 'video/mp4,video/quicktime,video/webm,video/*'
-          : 'image/jpeg,image/png,image/webp,image/*';
       input.onchange = (e: any) => {
         const file = e.target?.files?.[0];
         if (file) {
+          const isVideoFile =
+            file.type?.startsWith('video/') ||
+            file.name?.toLowerCase().endsWith('.mp4') ||
+            file.name?.toLowerCase().endsWith('.mov') ||
+            file.name?.toLowerCase().endsWith('.webm');
+
           const reader = new FileReader();
           reader.onload = (uploadEvent: any) => {
             const rawResult = uploadEvent.target?.result as string;
             if (rawResult) {
-              if (targetType === 'IMAGE') {
-                // Resize & Compress Image to Max 1080px via HTML5 Canvas
+              if (isVideoFile) {
+                setMediaType('VIDEO');
+                setMediaUrl(rawResult);
+              } else {
+                setMediaType('IMAGE');
+                // Preserve full native aspect ratio without squishing/cropping!
                 const img = new (window as any).Image();
                 img.onload = () => {
-                  const maxDim = 1080;
+                  const maxDim = 1280;
                   let { width, height } = img;
                   if (width > maxDim || height > maxDim) {
                     if (width > height) {
@@ -120,18 +132,13 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
                   const ctx = canvas.getContext('2d');
                   if (ctx) {
                     ctx.drawImage(img, 0, 0, width, height);
-                    const compressedUrl = canvas.toDataURL('image/jpeg', 0.82);
+                    const compressedUrl = canvas.toDataURL('image/jpeg', 0.85);
                     setMediaUrl(compressedUrl);
-                    setMediaType('IMAGE');
                     return;
                   }
                   setMediaUrl(rawResult);
-                  setMediaType('IMAGE');
                 };
                 img.src = rawResult;
-              } else {
-                setMediaUrl(rawResult);
-                setMediaType(targetType);
               }
             }
           };
@@ -141,7 +148,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
       input.click();
     } else {
       Alert.alert(
-        `Select ${targetType === 'VIDEO' ? 'Video Reel' : 'Photo'}`,
+        'Upload Media',
         'Choose a campus preset below or paste any direct media link!'
       );
     }
@@ -374,42 +381,62 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
         {hasMedia && item.media_url ? (
           <View style={styles.mediaContainer}>
             {isImage ? (
-              // Photo Image Card
+              // Photo Image Card (Preserves full size / aspect ratio)
               <TouchableOpacity
                 activeOpacity={0.95}
                 onPress={() => handleToggleLike(item.id)}
+                style={styles.imageWrapper}
               >
                 <Image
                   source={{ uri: item.media_url }}
                   style={styles.postImage}
-                  resizeMode="cover"
+                  resizeMode="contain"
                 />
               </TouchableOpacity>
             ) : (
-              // Video / Reel Card
-              <View style={styles.videoPlayerCard}>
-                <Image
-                  source={{
-                    uri: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800&auto=format&fit=crop',
-                  }}
-                  style={styles.postImage}
-                  resizeMode="cover"
-                />
-                {/* Video Play Overlay */}
-                <TouchableOpacity
-                  style={styles.videoPlayOverlay}
-                  onPress={() => setPlayingVideoId(isPlaying ? null : item.id)}
-                >
-                  <View style={styles.playButtonCircle}>
-                    <Text style={styles.playButtonIcon}>{isPlaying ? '⏸' : '▶'}</Text>
-                  </View>
-                  <View style={styles.reelBadge}>
-                    <Text style={styles.reelBadgeText}>
-                      📹 CAMPUS REEL {isPlaying ? '• PLAYING' : '• 0:45'}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
+              // Video / Reel Card (Full 16:9 / 9:16 aspect ratio)
+              Platform.OS === 'web' && isPlaying ? (
+                <View style={styles.webVideoWrapper}>
+                  {React.createElement('video', {
+                    src: item.media_url,
+                    controls: true,
+                    autoPlay: true,
+                    playsInline: true,
+                    style: {
+                      width: '100%',
+                      maxHeight: '440px',
+                      backgroundColor: '#000000',
+                      objectFit: 'contain',
+                    },
+                  })}
+                </View>
+              ) : (
+                <View style={styles.videoPlayerCard}>
+                  <Image
+                    source={{
+                      uri: item.media_url?.startsWith('data:image') || item.media_url?.includes('.jpg') || item.media_url?.includes('.png')
+                        ? item.media_url
+                        : 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800&auto=format&fit=crop',
+                    }}
+                    style={styles.postImage}
+                    resizeMode="cover"
+                  />
+                  {/* Video Play Overlay */}
+                  <TouchableOpacity
+                    style={styles.videoPlayOverlay}
+                    onPress={() => setPlayingVideoId(isPlaying ? null : item.id)}
+                  >
+                    <View style={styles.playButtonCircle}>
+                      <Text style={styles.playButtonIcon}>{isPlaying ? '⏸' : '▶'}</Text>
+                    </View>
+                    <View style={styles.reelBadge}>
+                      <Text style={styles.reelBadgeText}>
+                        📹 CAMPUS REEL • TAP TO PLAY FULL
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )
             )}
           </View>
         ) : null}
@@ -591,31 +618,106 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
                 multiline
               />
 
-              {/* Media Preview Box (Instagram Style) */}
+              {/* Media Preview Box (Instagram Style with Aspect Ratio / Crop Controls) */}
               {mediaUrl ? (
                 <View style={styles.mediaPreviewCard}>
                   {mediaType === 'VIDEO' ? (
-                    <View style={styles.videoPreviewBox}>
-                      <Text style={styles.videoPreviewEmoji}>📹</Text>
-                      <Text style={styles.videoPreviewTitle}>Campus Video Reel Attached</Text>
-                      <Text style={styles.videoPreviewSub} numberOfLines={1}>{mediaUrl}</Text>
-                    </View>
+                    Platform.OS === 'web' ? (
+                      <View style={{ width: '100%', alignItems: 'center', backgroundColor: '#000', borderRadius: 12, overflow: 'hidden' }}>
+                        {React.createElement('video', {
+                          src: mediaUrl,
+                          controls: true,
+                          playsInline: true,
+                          style: {
+                            width: '100%',
+                            maxHeight: '320px',
+                            objectFit: 'contain',
+                            backgroundColor: '#000',
+                          },
+                        })}
+                      </View>
+                    ) : (
+                      <View style={styles.videoPreviewBox}>
+                        <Text style={styles.videoPreviewEmoji}>📹</Text>
+                        <Text style={styles.videoPreviewTitle}>Campus Video Reel Attached</Text>
+                        <Text style={styles.videoPreviewSub} numberOfLines={1}>{mediaUrl}</Text>
+                      </View>
+                    )
                   ) : (
                     <Image
                       source={{ uri: mediaUrl }}
-                      style={styles.previewImage}
-                      resizeMode="cover"
+                      style={[
+                        styles.previewImage,
+                        mediaCropMode === '16:9' && { aspectRatio: 16 / 9, height: undefined },
+                        mediaCropMode === '1:1' && { aspectRatio: 1, height: undefined },
+                        mediaCropMode === '4:5' && { aspectRatio: 4 / 5, height: undefined },
+                      ]}
+                      resizeMode={imageFitMode}
                     />
                   )}
-                  <View style={styles.previewBadge}>
-                    <Text style={styles.previewBadgeText}>
-                      {mediaType === 'VIDEO' ? '📹 VIDEO REEL ATTACHED' : '📷 PHOTO ATTACHED'}
-                    </Text>
+
+                  {/* Aspect Ratio / Crop Controls */}
+                  <View style={styles.cropControlSection}>
+                    <Text style={styles.cropSectionTitle}>📐 Crop & Aspect Ratio:</Text>
+                    <View style={styles.cropPillRow}>
+                      {[
+                        { label: 'Auto (Full)', mode: 'AUTO' },
+                        { label: '16:9 Wide', mode: '16:9' },
+                        { label: '1:1 Square', mode: '1:1' },
+                        { label: '4:5 Portrait', mode: '4:5' },
+                      ].map((c) => (
+                        <TouchableOpacity
+                          key={c.mode}
+                          style={[
+                            styles.cropPill,
+                            mediaCropMode === c.mode && styles.cropPillActive,
+                          ]}
+                          onPress={() => setMediaCropMode(c.mode as any)}
+                        >
+                          <Text
+                            style={[
+                              styles.cropPillText,
+                              mediaCropMode === c.mode && styles.cropPillTextActive,
+                            ]}
+                          >
+                            {c.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {mediaType === 'IMAGE' && (
+                      <View style={styles.fitModeRow}>
+                        <TouchableOpacity
+                          style={[
+                            styles.fitBtn,
+                            imageFitMode === 'contain' && styles.fitBtnActive,
+                          ]}
+                          onPress={() => setImageFitMode('contain')}
+                        >
+                          <Text style={[styles.fitBtnText, imageFitMode === 'contain' && styles.fitBtnTextActive]}>
+                            🔍 Fit Full
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.fitBtn,
+                            imageFitMode === 'cover' && styles.fitBtnActive,
+                          ]}
+                          onPress={() => setImageFitMode('cover')}
+                        >
+                          <Text style={[styles.fitBtnText, imageFitMode === 'cover' && styles.fitBtnTextActive]}>
+                            🖼️ Fill Frame
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
+
                   <View style={styles.previewActionsRow}>
                     <TouchableOpacity
                       style={styles.changeMediaBtn}
-                      onPress={() => handlePickDeviceMedia(mediaType)}
+                      onPress={() => handlePickMedia(false)}
                     >
                       <Text style={styles.changeMediaText}>＋ Change Media</Text>
                     </TouchableOpacity>
@@ -631,55 +733,41 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
                   </View>
                 </View>
               ) : (
-                /* INSTAGRAM-STYLE '+' MEDIA ACCESS SECTION */
+                /* INSTAGRAM-STYLE UNIFIED '+' MEDIA PICKER */
                 <View style={styles.instaMediaSection}>
                   <Text style={styles.instaMediaHeading}>📸 Add Media (Instagram Style)</Text>
                   <Text style={styles.instaMediaSubtitle}>
-                    Access camera photos, reels or device files with the ＋ button
+                    Select any photo or video clip — full aspect ratio preserved!
                   </Text>
 
-                  {/* Instagram-style Media Access Cards (Camera + Gallery + Reel) */}
+                  {/* 2 Clean Unified Cards: Media & Camera */}
                   <View style={styles.instaTilesRow}>
-                    {/* Camera */}
+                    {/* Unified 1-Click Media Card */}
                     <TouchableOpacity
-                      style={styles.instaTileCard}
-                      onPress={() => handlePickDeviceMedia('IMAGE', true)}
-                      activeOpacity={0.75}
-                    >
-                      <View style={styles.instaTilePlusBadge}>
-                        <Text style={styles.instaTilePlusIcon}>📸</Text>
-                      </View>
-                      <Text style={styles.instaTileEmoji}>🤳</Text>
-                      <Text style={styles.instaTileTitle}>Take Photo</Text>
-                      <Text style={styles.instaTileSub}>Live Camera</Text>
-                    </TouchableOpacity>
-
-                    {/* Gallery Photo */}
-                    <TouchableOpacity
-                      style={styles.instaTileCard}
-                      onPress={() => handlePickDeviceMedia('IMAGE', false)}
+                      style={[styles.instaTileCard, { flex: 1.5, backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}
+                      onPress={() => handlePickMedia(false)}
                       activeOpacity={0.75}
                     >
                       <View style={styles.instaTilePlusBadge}>
                         <Text style={styles.instaTilePlusIcon}>＋</Text>
                       </View>
-                      <Text style={styles.instaTileEmoji}>🖼️</Text>
-                      <Text style={styles.instaTileTitle}>Add Photo</Text>
-                      <Text style={styles.instaTileSub}>Gallery / File</Text>
+                      <Text style={styles.instaTileEmoji}>📸 📹</Text>
+                      <Text style={styles.instaTileTitle}>Add Photo or Video</Text>
+                      <Text style={styles.instaTileSub}>All formats • 16:9 / 4:5 / Reels</Text>
                     </TouchableOpacity>
 
-                    {/* Video Reel */}
+                    {/* Camera */}
                     <TouchableOpacity
-                      style={[styles.instaTileCard, styles.instaTileCardVideo]}
-                      onPress={() => handlePickDeviceMedia('VIDEO')}
+                      style={[styles.instaTileCard, { flex: 1 }]}
+                      onPress={() => handlePickMedia(true)}
                       activeOpacity={0.75}
                     >
-                      <View style={[styles.instaTilePlusBadge, styles.instaTilePlusBadgeVideo]}>
-                        <Text style={styles.instaTilePlusIcon}>▶</Text>
+                      <View style={[styles.instaTilePlusBadge, { backgroundColor: '#10b981' }]}>
+                        <Text style={styles.instaTilePlusIcon}>🤳</Text>
                       </View>
-                      <Text style={styles.instaTileEmoji}>📹</Text>
-                      <Text style={styles.instaTileTitle}>Add Video</Text>
-                      <Text style={styles.instaTileSub}>Reel Clip</Text>
+                      <Text style={styles.instaTileEmoji}>📷</Text>
+                      <Text style={styles.instaTileTitle}>Take Photo</Text>
+                      <Text style={styles.instaTileSub}>Live Camera</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -1759,5 +1847,84 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 3,
     lineHeight: 16,
+  },
+  imageWrapper: {
+    width: '100%',
+    backgroundColor: '#030712',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  webVideoWrapper: {
+    width: '100%',
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cropControlSection: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  cropSectionTitle: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  cropPillRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  cropPill: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: 8,
+    paddingVertical: 6,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  cropPillActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  cropPillText: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  cropPillTextActive: {
+    color: '#ffffff',
+  },
+  fitModeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  fitBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 8,
+    paddingVertical: 5,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  fitBtnActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderColor: '#10b981',
+  },
+  fitBtnText: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  fitBtnTextActive: {
+    color: '#34d399',
+    fontWeight: '800',
   },
 });

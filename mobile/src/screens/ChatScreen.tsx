@@ -67,6 +67,14 @@ const avatarColor = (name: string): string => {
 
 const initial = (name: string): string => (name ? name.trim()[0].toUpperCase() : '?');
 
+const getConvTitle = (item: Conversation): string => {
+  if (item.name) return item.name;
+  if (item.recipient) {
+    return item.recipient.full_name || item.recipient.username || item.recipient.email;
+  }
+  return 'Campus Chat';
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -283,18 +291,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     } finally {
       setCreatingGroup(false);
     }
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Utilities
-  // ─────────────────────────────────────────────────────────────────────────
-
-  const getConvTitle = (item: Conversation): string => {
-    if (item.name) return item.name;
-    if (item.recipient) {
-      return item.recipient.full_name || item.recipient.username || item.recipient.email;
-    }
-    return 'Campus Chat';
   };
 
   // ─────────────────────────────────────────────────────────────────────────
