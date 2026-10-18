@@ -53,7 +53,15 @@ class ConversationSerializer(serializers.ModelSerializer):
         ]
 
     def get_last_message(self, obj):
-        msg = obj.messages.order_by("-created_at").first()
+        request = self.context.get("request")
+        qs = obj.messages.filter(is_unsent=False)
+        if request and request.user.is_authenticated:
+            qs = qs.exclude(deleted_for_users=request.user)
+            membership = obj.members.filter(user=request.user).first()
+            if membership and membership.cleared_at:
+                qs = qs.filter(created_at__gt=membership.cleared_at)
+
+        msg = qs.order_by("-created_at").first()
         if msg:
             return {
                 "id": str(msg.id),
@@ -82,7 +90,11 @@ class ConversationSerializer(serializers.ModelSerializer):
     def get_unread_count(self, obj):
         request = self.context.get("request")
         if request and request.user.is_authenticated:
-            return obj.messages.filter(is_read=False).exclude(sender=request.user).count()
+            qs = obj.messages.filter(is_read=False, is_unsent=False).exclude(sender=request.user).exclude(deleted_for_users=request.user)
+            membership = obj.members.filter(user=request.user).first()
+            if membership and membership.cleared_at:
+                qs = qs.filter(created_at__gt=membership.cleared_at)
+            return qs.count()
         return 0
 
 

@@ -72,4 +72,28 @@ export const chatService = {
     const res = await api.post(`/chat/${conversationId}/send/`, { text });
     return res.data;
   },
+
+  // Unsend a message (Delete for everyone)
+  async unsendMessage(messageId: string): Promise<{ message: string; id: string }> {
+    const res = await api.post(`/chat/messages/${messageId}/unsend/`);
+    return res.data;
+  },
+
+  // Delete message for me only
+  async deleteMessageForMe(messageId: string): Promise<{ message: string; id: string }> {
+    const res = await api.post(`/chat/messages/${messageId}/delete-for-me/`);
+    return res.data;
+  },
+
+  // Delete entire conversation / chat with a person
+  async deleteConversation(conversationId: string, permanent: boolean = false): Promise<{ message: string; id: string }> {
+    const res = await api.delete(`/chat/${conversationId}/delete/`, { params: { permanent } });
+    return res.data;
+  },
+
+  // Clear all messages in conversation
+  async clearChatHistory(conversationId: string): Promise<{ message: string }> {
+    const res = await api.post(`/chat/${conversationId}/clear/`);
+    return res.data;
+  },
 };

@@ -534,6 +534,155 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   };
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Conversation Deletion Handlers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleDeleteConversationFromInbox = (conv: Conversation) => {
+    const name = getConvTitle(conv);
+    Alert.alert(
+      `Delete Chat with ${name}? 🗑️`,
+      'This will remove this conversation from your inbox and clear message history.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Chat',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await chatService.deleteConversation(conv.id, true);
+              setConversations((prev) => prev.filter((c) => c.id !== conv.id));
+            } catch (e: any) {
+              Alert.alert('Error', e.response?.data?.error || 'Could not delete chat.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteActiveConversation = () => {
+    if (!activeConv) return;
+    const name = getConvTitle(activeConv);
+    Alert.alert(
+      'Delete Entire Chat? 🗑️',
+      `Delete chat with ${name}? All messages and conversation will be permanently deleted.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear Messages Only',
+          onPress: async () => {
+            try {
+              await chatService.clearChatHistory(activeConv.id);
+              setMessages([]);
+              Alert.alert('Cleared 🧹', 'All messages in this chat cleared.');
+            } catch (e: any) {
+              Alert.alert('Error', e.response?.data?.error || 'Could not clear messages.');
+            }
+          },
+        },
+        {
+          text: 'Delete Entire Chat',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await chatService.deleteConversation(activeConv.id, true);
+              setActiveConv(null);
+              await loadInbox();
+              Alert.alert('Deleted 🗑️', `Conversation with ${name} deleted.`);
+            } catch (e: any) {
+              Alert.alert('Error', e.response?.data?.error || 'Could not delete chat.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Message Options (Unsend vs Delete for Me)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleMessagePress = (msg: Message, isMe: boolean) => {
+    const options: any[] = [];
+
+    if (isMe) {
+      options.push({
+        text: '↩️ Unsend (Delete for Everyone)',
+        style: 'destructive',
+        onPress: () => handleUnsendMessage(msg),
+      });
+    }
+
+    options.push({
+      text: '🗑️ Delete for Me',
+      style: 'destructive',
+      onPress: () => handleDeleteForMe(msg),
+    });
+
+    if (msg.text) {
+      options.push({
+        text: '📋 Copy Text',
+        onPress: () => handleCopyMessageText(msg.text),
+      });
+    }
+
+    options.push({
+      text: 'Cancel',
+      style: 'cancel',
+    });
+
+    const snippet = msg.text
+      ? `"${msg.text.slice(0, 60)}${msg.text.length > 60 ? '...' : ''}"`
+      : 'Select action';
+
+    Alert.alert(
+      isMe ? 'Your Message' : (msg.sender_name || 'Message'),
+      snippet,
+      options
+    );
+  };
+
+  const handleUnsendMessage = (msg: Message) => {
+    Alert.alert(
+      'Unsend Message? ↩️',
+      'This will delete this message for everyone in the chat. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unsend',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await chatService.unsendMessage(msg.id);
+              setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+            } catch (e: any) {
+              Alert.alert('Unsend Failed', e.response?.data?.error || 'Could not unsend message.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteForMe = async (msg: Message) => {
+    try {
+      await chatService.deleteMessageForMe(msg.id);
+      setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+    } catch (e: any) {
+      Alert.alert('Delete Failed', e.response?.data?.error || 'Could not delete message for you.');
+    }
+  };
+
+  const handleCopyMessageText = async (text: string) => {
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      Alert.alert('Copied 📋', 'Message text copied to clipboard.');
+    } else {
+      Alert.alert('Copied 📋', 'Message text copied.');
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
   // RENDER: Active Chat Room
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -548,7 +697,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           {/* ← Back Button */}
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => {
+            onPress={async () => {
+              if (messages.length === 0 && !activeConv.is_group && !activeConv.is_ephemeral) {
+                try {
+                  await chatService.deleteConversation(activeConv.id, true);
+                } catch (e) {}
+              }
               setActiveConv(null);
               loadInbox();
             }}
@@ -568,35 +722,46 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             )}
           </View>
 
-          {/* Call buttons for direct chats */}
-          {!activeConv.is_group && activeConv.recipient && onStartCall && (
-            <View style={styles.roomCallActions}>
-              <TouchableOpacity
-                style={styles.roomCallBtn}
-                onPress={() =>
-                  onStartCall(
-                    activeConv.recipient!.id,
-                    activeConv.recipient!.full_name || activeConv.recipient!.username || 'Student',
-                    'AUDIO'
-                  )
-                }
-              >
-                <Text style={styles.roomCallIcon}>📞</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.roomCallBtn}
-                onPress={() =>
-                  onStartCall(
-                    activeConv.recipient!.id,
-                    activeConv.recipient!.full_name || activeConv.recipient!.username || 'Student',
-                    'VIDEO'
-                  )
-                }
-              >
-                <Text style={styles.roomCallIcon}>📹</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          {/* Room Header Action Buttons */}
+          <View style={styles.roomCallActions}>
+            {!activeConv.is_group && activeConv.recipient && onStartCall && (
+              <>
+                <TouchableOpacity
+                  style={styles.roomCallBtn}
+                  onPress={() =>
+                    onStartCall(
+                      activeConv.recipient!.id,
+                      activeConv.recipient!.full_name || activeConv.recipient!.username || 'Student',
+                      'AUDIO'
+                    )
+                  }
+                >
+                  <Text style={styles.roomCallIcon}>📞</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.roomCallBtn}
+                  onPress={() =>
+                    onStartCall(
+                      activeConv.recipient!.id,
+                      activeConv.recipient!.full_name || activeConv.recipient!.username || 'Student',
+                      'VIDEO'
+                    )
+                  }
+                >
+                  <Text style={styles.roomCallIcon}>📹</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Delete Chat Button inside Chat Header */}
+            <TouchableOpacity
+              style={styles.roomDeleteBtn}
+              onPress={handleDeleteActiveConversation}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.roomDeleteIcon}>🗑️</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Message Bubble List */}
@@ -689,31 +854,49 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                       </View>
                     </View>
 
-                    <Text style={[styles.messageTime, isMe && styles.messageTimeRight, { marginTop: 4 }]}>
-                      {new Date(item.created_at).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </Text>
+                    <View style={styles.bubbleBottomRow}>
+                      <Text style={[styles.messageTime, isMe && styles.messageTimeRight]}>
+                        {new Date(item.created_at).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => handleMessagePress(item, isMe)}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <Text style={[styles.bubbleActionHint, isMe && styles.bubbleActionHintRight]}>
+                          •••
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </TouchableOpacity>
                 ) : (
-                  <View
+                  <TouchableOpacity
                     style={[
                       styles.messageBubble,
                       isMe ? styles.bubbleRight : styles.bubbleLeft,
                       !isMe && { marginLeft: 32 }, // indent to align under avatar
                     ]}
+                    activeOpacity={0.85}
+                    onPress={() => handleMessagePress(item, isMe)}
+                    onLongPress={() => handleMessagePress(item, isMe)}
                   >
                     <Text style={[styles.messageText, isMe && styles.messageTextRight]}>
                       {item.text}
                     </Text>
-                    <Text style={[styles.messageTime, isMe && styles.messageTimeRight]}>
-                      {new Date(item.created_at).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </Text>
-                  </View>
+                    <View style={styles.bubbleBottomRow}>
+                      <Text style={[styles.messageTime, isMe && styles.messageTimeRight]}>
+                        {new Date(item.created_at).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </Text>
+                      <Text style={[styles.bubbleActionHint, isMe && styles.bubbleActionHintRight]}>
+                        •••
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
                 )}
               </View>
             );
@@ -1001,6 +1184,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                     key={item.id}
                     style={styles.chatCard}
                     onPress={() => setActiveConv(item)}
+                    onLongPress={() => handleDeleteConversationFromInbox(item)}
                     activeOpacity={0.75}
                   >
                     <View style={styles.avatar}>
@@ -1034,13 +1218,22 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                         >
                           {item.last_message?.text || 'Tap to open chat...'}
                         </Text>
-                        {unread && (
-                          <View style={styles.unreadBadge}>
-                            <Text style={styles.unreadBadgeText}>
-                              {(item.unread_count ?? 0) > 99 ? '99+' : item.unread_count}
-                            </Text>
-                          </View>
-                        )}
+                        <View style={styles.chatActionsRow}>
+                          {unread && (
+                            <View style={styles.unreadBadge}>
+                              <Text style={styles.unreadBadgeText}>
+                                {(item.unread_count ?? 0) > 99 ? '99+' : item.unread_count}
+                              </Text>
+                            </View>
+                          )}
+                          <TouchableOpacity
+                            style={styles.cardDeleteBtn}
+                            onPress={() => handleDeleteConversationFromInbox(item)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Text style={styles.cardDeleteIcon}>🗑️</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -1121,6 +1314,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               <TouchableOpacity
                 style={styles.chatCard}
                 onPress={() => setActiveConv(item)}
+                onLongPress={() => handleDeleteConversationFromInbox(item)}
                 activeOpacity={0.75}
               >
                 {/* Avatar */}
@@ -1163,14 +1357,22 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                       {item.last_message?.text || 'Tap to open chat...'}
                     </Text>
 
-                    {/* Unread count badge */}
-                    {unread && (
-                      <View style={styles.unreadBadge}>
-                        <Text style={styles.unreadBadgeText}>
-                          {(item.unread_count ?? 0) > 99 ? '99+' : item.unread_count}
-                        </Text>
-                      </View>
-                    )}
+                    <View style={styles.chatActionsRow}>
+                      {unread && (
+                        <View style={styles.unreadBadge}>
+                          <Text style={styles.unreadBadgeText}>
+                            {(item.unread_count ?? 0) > 99 ? '99+' : item.unread_count}
+                          </Text>
+                        </View>
+                      )}
+                      <TouchableOpacity
+                        style={styles.cardDeleteBtn}
+                        onPress={() => handleDeleteConversationFromInbox(item)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Text style={styles.cardDeleteIcon}>🗑️</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               </TouchableOpacity>
@@ -2434,5 +2636,49 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 13,
+  },
+
+  // ── Conversation & Message Action Styles ─────────────────────────────────
+  roomDeleteBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    marginLeft: 4,
+  },
+  roomDeleteIcon: {
+    fontSize: 16,
+  },
+  bubbleBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 6,
+    marginTop: 4,
+  },
+  bubbleActionHint: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: 'bold',
+    opacity: 0.7,
+  },
+  bubbleActionHintRight: {
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  chatActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cardDeleteBtn: {
+    padding: 4,
+    opacity: 0.75,
+  },
+  cardDeleteIcon: {
+    fontSize: 14,
   },
 });
