@@ -18,6 +18,7 @@ import {
   Animated,
   Share,
   PanResponder,
+  SafeAreaView,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { postService, Post, Comment } from '../services/postService';
@@ -1020,13 +1021,15 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
 
           <View style={styles.commentsSheet}>
             {/* Instagram-style Drag Handle Bar (Swipe down to dismiss) */}
-            <View
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setActiveCommentPost(null)}
               style={styles.dragHandleArea}
-              {...commentsPanResponder.panHandlers}
+              {...(Platform.OS !== 'web' ? commentsPanResponder.panHandlers : {})}
             >
               <View style={styles.dragHandleBar} />
               <Text style={styles.dragHandleHint}>↓ Drag down to dismiss</Text>
-            </View>
+            </TouchableOpacity>
 
             <View style={styles.commentsHeader}>
               <View>

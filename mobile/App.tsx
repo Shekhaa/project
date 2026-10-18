@@ -334,7 +334,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    minHeight: (Platform.OS === 'web' ? '100vh' : undefined) as any,
+    height: (Platform.OS === 'web' ? '100dvh' : '100%') as any,
+    maxHeight: (Platform.OS === 'web' ? '100dvh' : undefined) as any,
+    overflow: 'hidden',
   },
   loadingContainer: {
     flex: 1,
@@ -344,6 +346,7 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
+    overflow: 'hidden',
   },
   tabBar: {
     flexDirection: 'row',
@@ -351,9 +354,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.cardBorder,
     paddingTop: 8,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
     alignItems: 'center',
     justifyContent: 'space-around',
+    zIndex: 100,
+    elevation: 10,
   },
   tabItem: {
     flex: 1,
