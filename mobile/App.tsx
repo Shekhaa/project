@@ -15,7 +15,6 @@ import {
 import { colors } from './src/theme/colors';
 import { Home, Building2, MessageSquare, User as UserIcon } from 'lucide-react-native';
 import { authService, User } from './src/services/authService';
-import { callService, CallType } from './src/services/callService';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { ProfileSetupScreen } from './src/screens/ProfileSetupScreen';
 import { FeedScreen } from './src/screens/FeedScreen';
@@ -23,24 +22,14 @@ import { CommunitiesScreen } from './src/screens/CommunitiesScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { LostFoundScreen } from './src/screens/LostFoundScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
-import { CallScreen } from './src/screens/CallScreen';
 
 type TabType = 'FEED' | 'COMMUNITIES' | 'CHAT' | 'LOST_FOUND' | 'PROFILE';
-
-interface ActiveCallState {
-  roomId: string;
-  peerName: string;
-  peerEmail?: string;
-  callType: CallType;
-  isIncoming?: boolean;
-}
 
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('FEED');
   const [selectedCommunityConv, setSelectedCommunityConv] = useState<any | null>(null);
-  const [activeCall, setActiveCall] = useState<ActiveCallState | null>(null);
   const [composerTrigger, setComposerTrigger] = useState(0);
 
   useEffect(() => {
@@ -55,10 +44,6 @@ export default function App() {
   // Instagram-style Back Button Support (Android Hardware + Web Browser history)
   useEffect(() => {
     const onBackPress = () => {
-      if (activeCall) {
-        setActiveCall(null);
-        return true;
-      }
       if (activeTab !== 'FEED') {
         setActiveTab('FEED');
         return true;
@@ -80,7 +65,7 @@ export default function App() {
     }
 
     return () => backSubscription.remove();
-  }, [activeCall, activeTab]);
+  }, [activeTab]);
 
   const navigateToTab = (tab: TabType) => {
     if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history) {
@@ -92,31 +77,6 @@ export default function App() {
   useEffect(() => {
     checkInitialSession();
   }, []);
-
-  // Real-time incoming call listener across devices
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const activeCalls = await callService.getActiveCalls();
-        const incoming = activeCalls.find(
-          (c) => c.receiver === currentUser.id && c.status === 'RINGING'
-        );
-        if (incoming && (!activeCall || activeCall.roomId !== incoming.room_id)) {
-          setActiveCall({
-            roomId: incoming.room_id,
-            peerName: incoming.caller_name || 'Campus Student',
-            peerEmail: incoming.caller_email,
-            callType: incoming.call_type,
-            isIncoming: true,
-          });
-        }
-      } catch (e) {}
-    }, 2500);
-
-    return () => clearInterval(interval);
-  }, [currentUser, activeCall]);
 
   const checkInitialSession = async () => {
     try {
@@ -166,27 +126,6 @@ export default function App() {
     setActiveTab('CHAT');
   };
 
-  const handleStartCall = async (
-    receiverId: number,
-    receiverName: string,
-    callType: CallType
-  ) => {
-    try {
-      const session = await callService.initiateCall({
-        receiver_id: receiverId,
-        call_type: callType,
-      });
-      setActiveCall({
-        roomId: session.room_id,
-        peerName: receiverName,
-        peerEmail: session.receiver_email,
-        callType: callType,
-      });
-    } catch (e: any) {
-      Alert.alert('Call Failed', e.response?.data?.error || 'Could not connect call.');
-    }
-  };
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -233,7 +172,6 @@ export default function App() {
             currentUser={currentUser}
             initialConversation={selectedCommunityConv}
             onClearInitialConversation={() => setSelectedCommunityConv(null)}
-            onStartCall={handleStartCall}
           />
         )}
         {activeTab === 'LOST_FOUND' && <LostFoundScreen />}
@@ -242,7 +180,6 @@ export default function App() {
             currentUser={currentUser}
             onUserSwitched={handleUserSwitched}
             onLogout={handleLogout}
-            onStartCall={handleStartCall}
           />
         )}
       </View>
@@ -309,25 +246,6 @@ export default function App() {
           </Text>
         </TouchableOpacity>
       </View>
-
-      {/* Global Call Screen Overlay Modal */}
-      {activeCall && (
-        <Modal
-          visible={true}
-          animationType="slide"
-          presentationStyle="fullScreen"
-          onRequestClose={() => setActiveCall(null)}
-        >
-          <CallScreen
-            roomId={activeCall.roomId}
-            peerName={activeCall.peerName}
-            peerEmail={activeCall.peerEmail}
-            callType={activeCall.callType}
-            isIncoming={Boolean(activeCall.isIncoming)}
-            onClose={() => setActiveCall(null)}
-          />
-        </Modal>
-      )}
     </SafeAreaView>
   );
 }

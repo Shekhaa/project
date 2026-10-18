@@ -16,10 +16,18 @@ class Post(models.Model):
     content = models.TextField(max_length=5000, blank=True)
     media_type = models.CharField(
         max_length=20,
-        choices=[("TEXT", "Text Only"), ("IMAGE", "Image / Photo"), ("VIDEO", "Video / Reel")],
+        choices=[
+            ("TEXT", "Text Only"),
+            ("IMAGE", "Image / Photo"),
+            ("VIDEO", "Video / Reel"),
+            ("DOCUMENT", "PDF / Document"),
+        ],
         default="TEXT"
     )
     media_url = models.TextField(blank=True, default="", help_text="Direct URL or media data path")
+    document = models.FileField(upload_to="post_documents/", null=True, blank=True)
+    document_name = models.CharField(max_length=255, blank=True, default="")
+    document_size = models.CharField(max_length=50, blank=True, default="")
     is_anonymous = models.BooleanField(default=False)
     anonymous_alias = models.CharField(max_length=50, blank=True, default="")
     is_edited = models.BooleanField(default=False)

@@ -83,6 +83,17 @@ class CreatePostView(APIView):
         for img in images:
             PostImage.objects.create(post=post, image=img)
 
+        # Handle document/PDF upload
+        doc = request.FILES.get("document")
+        if doc:
+            post.document = doc
+            if not post.document_name:
+                post.document_name = doc.name
+            size_kb = doc.size / 1024
+            post.document_size = f"{size_kb:.1f} KB" if size_kb < 1024 else f"{(size_kb/1024):.1f} MB"
+            post.media_type = "DOCUMENT"
+            post.save(update_fields=["document", "document_name", "document_size", "media_type"])
+
         output_serializer = PostSerializer(post, context={"request": request})
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
 

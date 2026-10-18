@@ -3,8 +3,11 @@ import { api } from '../config/api';
 export interface Post {
   id: number;
   content: string;
-  media_type?: 'TEXT' | 'IMAGE' | 'VIDEO';
+  media_type?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
   media_url?: string;
+  document?: string;
+  document_name?: string;
+  document_size?: string;
   is_anonymous: boolean;
   author_name: string;
   author_username?: string;
@@ -48,15 +51,20 @@ export const postService = {
     return res.data;
   },
 
-  // Create post (Public or Zero-Leak Anonymous, with optional image/video media)
-  async createPost(data: {
+  // Create post (Public or Zero-Leak Anonymous, with optional image/video/document media)
+  async createPost(data: FormData | {
     community: number;
     content: string;
     is_anonymous?: boolean;
-    media_type?: 'TEXT' | 'IMAGE' | 'VIDEO';
+    media_type?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
     media_url?: string;
+    document_name?: string;
+    document_size?: string;
   }) {
-    const res = await api.post('/posts/create/', data);
+    const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
+    const res = await api.post('/posts/create/', data, isFormData ? {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    } : undefined);
     return res.data;
   },
 
