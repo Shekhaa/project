@@ -11,9 +11,13 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Image,
+  ScrollView,
+  SafeAreaView,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { chatService, Conversation, Message } from '../services/chatService';
+import { postService, Post, Comment } from '../services/postService';
 import { api } from '../config/api';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,7 +36,61 @@ interface SearchUser {
   full_name: string;
   email: string;
   username?: string;
+  admission_number?: string;
+  college_name?: string;
+  branch_name?: string;
+  verified?: boolean;
 }
+
+export interface SharedPostCardData {
+  type: 'POST_CARD';
+  postId: number;
+  authorName: string;
+  authorUsername?: string;
+  authorAvatar?: string;
+  content: string;
+  mediaType?: 'TEXT' | 'IMAGE' | 'VIDEO';
+  mediaUrl?: string;
+  likesCount?: number;
+  commentsCount?: number;
+  communityName?: string;
+}
+
+export const parseSharedPostCard = (text: string): SharedPostCardData | null => {
+  if (!text) return null;
+  const match = text.match(/\[CAMPUS_POST_CARD:(.*?)\]/);
+  if (match && match[1]) {
+    try {
+      const decoded = decodeURIComponent(match[1]);
+      return JSON.parse(decoded);
+    } catch (e) {
+      try {
+        return JSON.parse(match[1]);
+      } catch (err) {}
+    }
+  }
+
+  // Fallback for older plaintext shares
+  if (text.includes('Check out this campus post by')) {
+    const lines = text.split('\n');
+    const authorLine = lines.find((l) => l.includes('Check out this campus post by')) || '';
+    const authorName = authorLine
+      .replace('Check out this campus post by', '')
+      .replace(':', '')
+      .trim() || 'Campus Student';
+    const quoteMatch = text.match(/"([^"]+)"/);
+    const content = quoteMatch ? quoteMatch[1] : 'Campus media story';
+    return {
+      type: 'POST_CARD',
+      postId: 0,
+      authorName,
+      content,
+      mediaType: text.includes('[Photo Attached]') ? 'IMAGE' : text.includes('[Video Reel]') ? 'VIDEO' : 'TEXT',
+    };
+  }
+
+  return null;
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -89,6 +147,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(false);
   const [inboxSearch, setInboxSearch] = useState('');
+  const [directoryUsers, setDirectoryUsers] = useState<SearchUser[]>([]);
+  const [searchingDirectory, setSearchingDirectory] = useState(false);
+  const directoryDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Active Chat Room State ────────────────────────────────────────────────
   const [activeConv, setActiveConv] = useState<Conversation | null>(initialConversation || null);
@@ -97,6 +158,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [sending, setSending] = useState(false);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const flatListRef = useRef<FlatList<Message>>(null);
+
+  // ── Shared Post Viewer Modal State ─────────────────────────────────────────
+  const [viewingPost, setViewingPost] = useState<Post | null>(null);
+  const [viewingPostLoading, setViewingPostLoading] = useState(false);
+  const [postComments, setPostComments] = useState<Comment[]>([]);
+  const [loadingPostComments, setLoadingPostComments] = useState(false);
+  const [newCommentText, setNewCommentText] = useState('');
+  const [postingComment, setPostingComment] = useState(false);
 
   // ── Ephemeral Group Modal State ───────────────────────────────────────────
   const [ephemeralModalVisible, setEphemeralModalVisible] = useState(false);
@@ -161,6 +230,39 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       if (userSearchDebounceRef.current) clearTimeout(userSearchDebounceRef.current);
     };
   }, [userQuery, directModalVisible]);
+
+  // Debounced global student search for main inbox search bar
+  useEffect(() => {
+    const q = inboxSearch.trim();
+    if (!q) {
+      setDirectoryUsers([]);
+      setSearchingDirectory(false);
+      return;
+    }
+
+    if (directoryDebounceRef.current) clearTimeout(directoryDebounceRef.current);
+
+    setSearchingDirectory(true);
+    directoryDebounceRef.current = setTimeout(async () => {
+      try {
+        const response = await api.get<any>(`/authentication/users/search/?q=${encodeURIComponent(q)}`);
+        const data = response.data;
+        const list = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
+        const currentUserId = currentUser?.id;
+        const filtered = list.filter((u: any) => u.id !== currentUserId);
+        setDirectoryUsers(filtered);
+      } catch (e) {
+        console.log('Error searching campus directory in inbox', e);
+        setDirectoryUsers([]);
+      } finally {
+        setSearchingDirectory(false);
+      }
+    }, 200);
+
+    return () => {
+      if (directoryDebounceRef.current) clearTimeout(directoryDebounceRef.current);
+    };
+  }, [inboxSearch, currentUser?.id]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Inbox
@@ -291,6 +393,114 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   };
 
+  /** Start a direct chat from the main inbox campus directory */
+  const handleStartChatWithUser = async (user: SearchUser) => {
+    setStartingChat(true);
+    try {
+      const identifier = user.email || String(user.id);
+      const conv = await chatService.startDirectChat(identifier);
+      setInboxSearch('');
+      setDirectoryUsers([]);
+      await loadInbox();
+      setActiveConv(conv);
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.error || 'Could not start chat with student.');
+    } finally {
+      setStartingChat(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Shared Post Interactive Viewer Handlers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const handleOpenSharedPost = async (cardData: SharedPostCardData) => {
+    if (cardData.postId > 0) {
+      setViewingPostLoading(true);
+      try {
+        const fullPost = await postService.getPost(cardData.postId);
+        setViewingPost(fullPost);
+        loadPostComments(cardData.postId);
+      } catch (e) {
+        setViewingPost({
+          id: cardData.postId,
+          content: cardData.content,
+          media_type: cardData.mediaType || 'TEXT',
+          media_url: cardData.mediaUrl,
+          is_anonymous: false,
+          author_name: cardData.authorName,
+          author_username: cardData.authorUsername,
+          author_avatar: cardData.authorAvatar,
+          community_name: cardData.communityName || 'Campus Feed',
+          likes_count: cardData.likesCount || 0,
+          comments_count: cardData.commentsCount || 0,
+          has_liked: false,
+          created_at: new Date().toISOString(),
+        });
+        loadPostComments(cardData.postId);
+      } finally {
+        setViewingPostLoading(false);
+      }
+    } else {
+      setViewingPost({
+        id: 0,
+        content: cardData.content,
+        media_type: cardData.mediaType || 'TEXT',
+        media_url: cardData.mediaUrl,
+        is_anonymous: false,
+        author_name: cardData.authorName,
+        community_name: 'Campus Feed',
+        likes_count: 0,
+        comments_count: 0,
+        has_liked: false,
+        created_at: new Date().toISOString(),
+      });
+    }
+  };
+
+  const loadPostComments = async (postId: number) => {
+    if (!postId) return;
+    setLoadingPostComments(true);
+    try {
+      const data = await postService.getComments(postId);
+      setPostComments(data);
+    } catch (e) {
+      console.log('Error loading post comments in chat', e);
+    } finally {
+      setLoadingPostComments(false);
+    }
+  };
+
+  const handleToggleLikePost = async () => {
+    if (!viewingPost || !viewingPost.id) return;
+    const nextLiked = !viewingPost.has_liked;
+    setViewingPost({
+      ...viewingPost,
+      has_liked: nextLiked,
+      likes_count: Math.max(0, viewingPost.likes_count + (nextLiked ? 1 : -1)),
+    });
+    try {
+      const res = await postService.toggleLike(viewingPost.id);
+      setViewingPost((prev) => (prev ? { ...prev, has_liked: res.has_liked, likes_count: res.likes_count } : null));
+    } catch (e) {}
+  };
+
+  const handleAddPostComment = async () => {
+    if (!viewingPost || !viewingPost.id || !newCommentText.trim() || postingComment) return;
+    const txt = newCommentText.trim();
+    setNewCommentText('');
+    setPostingComment(true);
+    try {
+      const comment = await postService.addComment(viewingPost.id, txt, false);
+      setPostComments((prev) => [comment, ...prev]);
+      setViewingPost((prev) => (prev ? { ...prev, comments_count: (prev.comments_count || 0) + 1 } : null));
+    } catch (e: any) {
+      Alert.alert('Comment Failed', e.response?.data?.error || 'Could not post comment.');
+    } finally {
+      setPostingComment(false);
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // Ephemeral Group
   // ─────────────────────────────────────────────────────────────────────────
@@ -405,6 +615,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             const senderName = item.sender_name || 'Campus Student';
             const senderInitial = initial(senderName);
             const senderAvatarBg = avatarColor(senderName);
+            const sharedCard = parseSharedPostCard(item.text);
 
             return (
               <View
@@ -422,23 +633,88 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                     <Text style={styles.senderHeaderName}>{senderName}</Text>
                   </View>
                 )}
-                <View
-                  style={[
-                    styles.messageBubble,
-                    isMe ? styles.bubbleRight : styles.bubbleLeft,
-                    !isMe && { marginLeft: 32 }, // indent to align under avatar
-                  ]}
-                >
-                  <Text style={[styles.messageText, isMe && styles.messageTextRight]}>
-                    {item.text}
-                  </Text>
-                  <Text style={[styles.messageTime, isMe && styles.messageTimeRight]}>
-                    {new Date(item.created_at).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </Text>
-                </View>
+
+                {sharedCard ? (
+                  /* Interactive Campus Post Card Bubble */
+                  <TouchableOpacity
+                    style={[
+                      styles.sharedPostCard,
+                      isMe ? styles.sharedPostCardRight : styles.sharedPostCardLeft,
+                      !isMe && { marginLeft: 32 },
+                    ]}
+                    activeOpacity={0.88}
+                    onPress={() => handleOpenSharedPost(sharedCard)}
+                  >
+                    <View style={styles.sharedPostCardHeader}>
+                      <View style={styles.sharedPostTagBadge}>
+                        <Text style={styles.sharedPostTagText}>🎓 Campus Post</Text>
+                      </View>
+                      <Text style={styles.sharedPostAuthor} numberOfLines={1}>
+                        {sharedCard.authorName}
+                      </Text>
+                    </View>
+
+                    {sharedCard.mediaUrl ? (
+                      <View style={styles.sharedPostMediaContainer}>
+                        <Image
+                          source={{ uri: sharedCard.mediaUrl }}
+                          style={styles.sharedPostImage}
+                          resizeMode="cover"
+                        />
+                        {sharedCard.mediaType === 'VIDEO' && (
+                          <View style={styles.sharedPostVideoPill}>
+                            <Text style={styles.sharedPostVideoPillText}>▶ Video Reel</Text>
+                          </View>
+                        )}
+                      </View>
+                    ) : null}
+
+                    {sharedCard.content ? (
+                      <Text style={styles.sharedPostContentText} numberOfLines={3}>
+                        "{sharedCard.content}"
+                      </Text>
+                    ) : null}
+
+                    <View style={styles.sharedPostFooter}>
+                      <View style={styles.sharedPostStats}>
+                        <Text style={styles.sharedPostStatsText}>
+                          ❤️ {sharedCard.likesCount ?? 0}
+                        </Text>
+                        <Text style={styles.sharedPostStatsText}>
+                          💬 {sharedCard.commentsCount ?? 0}
+                        </Text>
+                      </View>
+                      <View style={styles.sharedPostCtaBtn}>
+                        <Text style={styles.sharedPostCtaText}>View Post ↗</Text>
+                      </View>
+                    </View>
+
+                    <Text style={[styles.messageTime, isMe && styles.messageTimeRight, { marginTop: 4 }]}>
+                      {new Date(item.created_at).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View
+                    style={[
+                      styles.messageBubble,
+                      isMe ? styles.bubbleRight : styles.bubbleLeft,
+                      !isMe && { marginLeft: 32 }, // indent to align under avatar
+                    ]}
+                  >
+                    <Text style={[styles.messageText, isMe && styles.messageTextRight]}>
+                      {item.text}
+                    </Text>
+                    <Text style={[styles.messageTime, isMe && styles.messageTimeRight]}>
+                      {new Date(item.created_at).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                  </View>
+                )}
               </View>
             );
           }}
@@ -474,6 +750,169 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             )}
           </TouchableOpacity>
         </View>
+
+        {/* ── Modal: Campus Post Interactive Viewer ───────────────────── */}
+        <Modal
+          visible={viewingPost !== null || viewingPostLoading}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setViewingPost(null)}
+        >
+          <View style={styles.postViewerBackdrop}>
+            <SafeAreaView style={styles.postViewerModal}>
+              {/* Header */}
+              <View style={styles.postViewerHeader}>
+                <TouchableOpacity
+                  style={styles.postViewerBackBtn}
+                  onPress={() => setViewingPost(null)}
+                >
+                  <Text style={styles.postViewerBackArrow}>✕</Text>
+                </TouchableOpacity>
+                <Text style={styles.postViewerHeaderTitle}>Campus Post 🎓</Text>
+                <View style={{ width: 36 }} />
+              </View>
+
+              {viewingPostLoading ? (
+                <View style={styles.postViewerLoadingContainer}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                  <Text style={styles.postViewerLoadingText}>Loading Campus Post...</Text>
+                </View>
+              ) : viewingPost ? (
+                <ScrollView
+                  style={{ flex: 1 }}
+                  contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {/* Author row */}
+                  <View style={styles.postViewerAuthorRow}>
+                    <View
+                      style={[
+                        styles.postViewerAvatar,
+                        { backgroundColor: avatarColor(viewingPost.author_name || 'Student') },
+                      ]}
+                    >
+                      <Text style={styles.postViewerAvatarText}>
+                        {initial(viewingPost.author_name || 'Student')}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.postViewerAuthorName}>
+                        {viewingPost.author_name}
+                      </Text>
+                      <Text style={styles.postViewerSub}>
+                        {viewingPost.community_name || 'Campus Connect'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Content */}
+                  {viewingPost.content ? (
+                    <Text style={styles.postViewerContentText}>
+                      {viewingPost.content}
+                    </Text>
+                  ) : null}
+
+                  {/* Media */}
+                  {viewingPost.media_url ? (
+                    <View style={styles.postViewerMediaWrapper}>
+                      <Image
+                        source={{ uri: viewingPost.media_url }}
+                        style={styles.postViewerImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                  ) : null}
+
+                  {/* Engagement Bar */}
+                  <View style={styles.postViewerEngageBar}>
+                    <TouchableOpacity
+                      style={[
+                        styles.postViewerLikeBtn,
+                        viewingPost.has_liked && styles.postViewerLikeBtnActive,
+                      ]}
+                      onPress={handleToggleLikePost}
+                    >
+                      <Text style={styles.postViewerLikeIcon}>
+                        {viewingPost.has_liked ? '❤️' : '🤍'}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.postViewerLikeCount,
+                          viewingPost.has_liked && styles.postViewerLikeCountActive,
+                        ]}
+                      >
+                        {viewingPost.likes_count ?? 0} Likes
+                      </Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.postViewerCommentsCountCol}>
+                      <Text style={styles.postViewerCommentsCountText}>
+                        💬 {viewingPost.comments_count ?? postComments.length} Comments
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Comments Section */}
+                  <Text style={styles.postViewerCommentsHeader}>Discussion & Comments</Text>
+
+                  {loadingPostComments ? (
+                    <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 12 }} />
+                  ) : postComments.length === 0 ? (
+                    <Text style={styles.postViewerNoComments}>
+                      No comments yet. Be the first batchmate to chime in!
+                    </Text>
+                  ) : (
+                    postComments.map((c) => (
+                      <View key={c.id} style={styles.postViewerCommentRow}>
+                        <View
+                          style={[
+                            styles.postViewerCommentAvatar,
+                            { backgroundColor: avatarColor(c.author_name || 'U') },
+                          ]}
+                        >
+                          <Text style={styles.postViewerCommentAvatarText}>
+                            {initial(c.author_name || 'U')}
+                          </Text>
+                        </View>
+                        <View style={styles.postViewerCommentBubble}>
+                          <Text style={styles.postViewerCommentAuthor}>{c.author_name}</Text>
+                          <Text style={styles.postViewerCommentText}>{c.text}</Text>
+                        </View>
+                      </View>
+                    ))
+                  )}
+                </ScrollView>
+              ) : null}
+
+              {/* Comment Input Bar */}
+              {viewingPost && viewingPost.id > 0 && (
+                <View style={styles.postViewerInputBar}>
+                  <TextInput
+                    style={styles.postViewerCommentInput}
+                    placeholder="Chime in with a comment..."
+                    placeholderTextColor={colors.textMuted}
+                    value={newCommentText}
+                    onChangeText={setNewCommentText}
+                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.postViewerCommentSendBtn,
+                      (!newCommentText.trim() || postingComment) && { opacity: 0.5 },
+                    ]}
+                    onPress={handleAddPostComment}
+                    disabled={!newCommentText.trim() || postingComment}
+                  >
+                    {postingComment ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.postViewerCommentSendText}>Post</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+            </SafeAreaView>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     );
   }
@@ -539,12 +978,139 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         ) : null}
       </View>
 
-      {/* ── Conversation List ───────────────────────────────────────────── */}
+      {/* ── Conversation List / Unified Search ────────────────────────────── */}
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+      ) : inboxSearch.trim() ? (
+        <ScrollView
+          style={styles.unifiedSearchScroll}
+          contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Section 1: Active Conversations matching query */}
+          {filteredConversations.length > 0 && (
+            <View style={styles.searchSectionBlock}>
+              <Text style={styles.searchSectionTitle}>
+                💬 ACTIVE CHATS ({filteredConversations.length})
+              </Text>
+              {filteredConversations.map((item) => {
+                const unread = (item.unread_count ?? 0) > 0;
+                const lastTime = formatCardTime(item.last_message?.created_at ?? item.updated_at);
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.chatCard}
+                    onPress={() => setActiveConv(item)}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>
+                        {item.is_ephemeral ? '🔥' : item.is_group ? '👥' : '💬'}
+                      </Text>
+                    </View>
+                    <View style={styles.chatInfo}>
+                      <View style={styles.chatHeaderRow}>
+                        <Text
+                          style={[styles.chatTitle, unread && styles.chatTitleUnread]}
+                          numberOfLines={1}
+                        >
+                          {getConvTitle(item)}
+                        </Text>
+                        <View style={styles.chatMeta}>
+                          {lastTime ? <Text style={styles.chatTime}>{lastTime}</Text> : null}
+                          {item.is_ephemeral && (
+                            <View style={styles.ephemeralBadge}>
+                              <Text style={styles.ephemeralBadgeText}>
+                                ⏳ {item.duration?.replace('_', ' ') || 'TEMP'}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                      <View style={styles.chatBottomRow}>
+                        <Text
+                          style={[styles.lastMsg, unread && styles.lastMsgUnread]}
+                          numberOfLines={1}
+                        >
+                          {item.last_message?.text || 'Tap to open chat...'}
+                        </Text>
+                        {unread && (
+                          <View style={styles.unreadBadge}>
+                            <Text style={styles.unreadBadgeText}>
+                              {(item.unread_count ?? 0) > 99 ? '99+' : item.unread_count}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Section 2: Global Campus Directory / Batchmates */}
+          <View style={styles.searchSectionBlock}>
+            <View style={styles.searchSectionHeaderRow}>
+              <Text style={styles.searchSectionTitle}>
+                🎓 CAMPUS DIRECTORY ({directoryUsers.length})
+              </Text>
+              {searchingDirectory && (
+                <ActivityIndicator size="small" color={colors.primary} />
+              )}
+            </View>
+
+            {directoryUsers.map((user) => {
+              const userInitial = initial(user.full_name || user.email);
+              const avatarBg = avatarColor(user.full_name || user.email);
+              return (
+                <TouchableOpacity
+                  key={user.id}
+                  style={styles.directoryUserCard}
+                  onPress={() => handleStartChatWithUser(user)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.directoryAvatar, { backgroundColor: avatarBg }]}>
+                    <Text style={styles.directoryAvatarText}>{userInitial}</Text>
+                  </View>
+                  <View style={styles.directoryInfo}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Text style={styles.directoryName} numberOfLines={1}>
+                        {user.full_name}
+                      </Text>
+                      {user.verified && (
+                        <Text style={{ fontSize: 13 }}>✅</Text>
+                      )}
+                    </View>
+                    <Text style={styles.directorySub} numberOfLines={1}>
+                      @{user.username || user.email?.split('@')[0]}
+                      {user.branch_name ? ` • ${user.branch_name}` : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.directoryActionPill}>
+                    <Text style={styles.directoryActionText}>Chat 💬</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Empty state if both empty and not searching */}
+          {filteredConversations.length === 0 && directoryUsers.length === 0 && !searchingDirectory && (
+            <View style={styles.emptyInbox}>
+              <Text style={styles.emptyInboxIcon}>🔍</Text>
+              <Text style={styles.emptyInboxTitle}>
+                No students or chats found for "{inboxSearch}"
+              </Text>
+              <Text style={styles.emptyInboxSubtitle}>
+                Try searching by full name, admission number, branch, or email.
+              </Text>
+            </View>
+          )}
+        </ScrollView>
       ) : (
         <FlatList
-          data={filteredConversations}
+          data={conversations}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           renderItem={({ item }) => {
@@ -1463,5 +2029,410 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 13,
     fontWeight: 'bold',
+  },
+
+  // ── Unified Search in Inbox ─────────────────────────────────────────────
+  unifiedSearchScroll: {
+    flex: 1,
+  },
+  searchSectionBlock: {
+    marginBottom: 20,
+  },
+  searchSectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  searchSectionTitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  directoryUserCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  directoryAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  directoryAvatarText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  directoryInfo: {
+    flex: 1,
+  },
+  directoryName: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  directorySub: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  directoryActionPill: {
+    backgroundColor: colors.primary,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    marginLeft: 8,
+  },
+  directoryActionText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  // ── Interactive Shared Post Card Bubble ──────────────────────────────────
+  sharedPostCard: {
+    borderRadius: 16,
+    padding: 12,
+    width: 270,
+    borderWidth: 1,
+  },
+  sharedPostCardRight: {
+    backgroundColor: '#1e293b',
+    borderColor: '#3b82f6',
+    borderBottomRightRadius: 4,
+  },
+  sharedPostCardLeft: {
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
+    borderBottomLeftRadius: 4,
+  },
+  sharedPostCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  sharedPostTagBadge: {
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+  },
+  sharedPostTagText: {
+    color: '#38bdf8',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  sharedPostAuthor: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '700',
+    flex: 1,
+  },
+  sharedPostMediaContainer: {
+    width: '100%',
+    height: 140,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#0f172a',
+    marginBottom: 8,
+    position: 'relative',
+  },
+  sharedPostImage: {
+    width: '100%',
+    height: '100%',
+  },
+  sharedPostVideoPill: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  sharedPostVideoPillText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  sharedPostContentText: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  sharedPostFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  sharedPostStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  sharedPostStatsText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  sharedPostCtaBtn: {
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.4)',
+  },
+  sharedPostCtaText: {
+    color: '#38bdf8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // ── Post Viewer Modal ────────────────────────────────────────────────────
+  postViewerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+  },
+  postViewerModal: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  postViewerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? 40 : 16,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.cardBorder,
+    backgroundColor: colors.surface,
+  },
+  postViewerBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  postViewerBackArrow: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  postViewerHeaderTitle: {
+    color: colors.textPrimary,
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  postViewerLoadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  postViewerLoadingText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  postViewerAuthorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  postViewerAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  postViewerAvatarText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  postViewerAuthorName: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  postViewerSub: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  postViewerContentText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 14,
+  },
+  postViewerMediaWrapper: {
+    width: '100%',
+    height: 280,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#070a13',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  postViewerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  postViewerEngageBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.cardBorder,
+    marginBottom: 16,
+  },
+  postViewerLikeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  postViewerLikeBtnActive: {
+    borderColor: '#ef4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+  },
+  postViewerLikeIcon: {
+    fontSize: 16,
+  },
+  postViewerLikeCount: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  postViewerLikeCountActive: {
+    color: '#ef4444',
+  },
+  postViewerCommentsCountCol: {
+    paddingHorizontal: 8,
+  },
+  postViewerCommentsCountText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  postViewerCommentsHeader: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  postViewerNoComments: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontStyle: 'italic',
+    marginVertical: 10,
+  },
+  postViewerCommentRow: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    gap: 10,
+  },
+  postViewerCommentAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  postViewerCommentAvatarText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  postViewerCommentBubble: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  postViewerCommentAuthor: {
+    color: '#38bdf8',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  postViewerCommentText: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  postViewerInputBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.cardBorder,
+  },
+  postViewerCommentInput: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    color: colors.textPrimary,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  postViewerCommentSendBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    marginLeft: 8,
+  },
+  postViewerCommentSendText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
   },
 });

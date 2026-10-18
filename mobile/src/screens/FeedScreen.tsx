@@ -252,9 +252,23 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger, current
     if (!sharePost || selectedRecipientIds.length === 0 || sendingShare) return;
     setSendingShare(true);
     try {
+      const postCardPayload = {
+        type: 'POST_CARD',
+        postId: sharePost.id,
+        authorName: sharePost.author_name,
+        authorUsername: sharePost.author_username || '',
+        authorAvatar: sharePost.author_avatar || '',
+        content: sharePost.content || '',
+        mediaType: sharePost.media_type || 'TEXT',
+        mediaUrl: sharePost.media_url || '',
+        likesCount: sharePost.likes_count || 0,
+        commentsCount: sharePost.comments_count || 0,
+        communityName: sharePost.community_name || 'Campus Connect',
+      };
+      const encoded = encodeURIComponent(JSON.stringify(postCardPayload));
       const postSnippet = sharePost.content ? `"${sharePost.content.slice(0, 100)}..."` : 'Campus Story';
       const mediaNotice = sharePost.media_type === 'IMAGE' ? '📷 [Photo Attached]' : sharePost.media_type === 'VIDEO' ? '📹 [Video Reel]' : '';
-      const shareMessage = `Check out this campus post by ${sharePost.author_name}:\n\n${postSnippet}\n${mediaNotice}\n\nShared via Campus Connect 🎓`;
+      const shareMessage = `[CAMPUS_POST_CARD:${encoded}]\nCheck out this campus post by ${sharePost.author_name}:\n\n${postSnippet}\n${mediaNotice}\n\nTap card to view post ↗`;
 
       for (const userId of selectedRecipientIds) {
         const recipient = shareUsersList.find((u) => u.id === userId);

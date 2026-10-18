@@ -42,6 +42,12 @@ export const postService = {
     return res.data.results || res.data;
   },
 
+  // Get single post by ID
+  async getPost(postId: number): Promise<Post> {
+    const res = await api.get(`/posts/${postId}/`);
+    return res.data;
+  },
+
   // Create post (Public or Zero-Leak Anonymous, with optional image/video media)
   async createPost(data: {
     community: number;
