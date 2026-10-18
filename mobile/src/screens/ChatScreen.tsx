@@ -151,19 +151,16 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   useEffect(() => {
     if (userSearchDebounceRef.current) clearTimeout(userSearchDebounceRef.current);
 
-    if (!userQuery.trim()) {
-      setUserResults([]);
-      return;
+    if (directModalVisible) {
+      userSearchDebounceRef.current = setTimeout(() => {
+        searchUsers(userQuery.trim());
+      }, 250);
     }
-
-    userSearchDebounceRef.current = setTimeout(() => {
-      searchUsers(userQuery.trim());
-    }, 300);
 
     return () => {
       if (userSearchDebounceRef.current) clearTimeout(userSearchDebounceRef.current);
     };
-  }, [userQuery]);
+  }, [userQuery, directModalVisible]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Inbox
@@ -178,13 +175,20 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   };
 
-  /** Client-side fuzzy filter of conversations by name/email. */
+  /** Client-side fuzzy filter of conversations by name, username, email, or message. */
   const filteredConversations = inboxSearch.trim()
     ? conversations.filter((c) => {
         const query = inboxSearch.toLowerCase();
         const title = getConvTitle(c).toLowerCase();
         const email = c.recipient?.email?.toLowerCase() ?? '';
-        return title.includes(query) || email.includes(query);
+        const username = c.recipient?.username?.toLowerCase() ?? '';
+        const lastMsg = c.last_message?.text?.toLowerCase() ?? '';
+        return (
+          title.includes(query) ||
+          email.includes(query) ||
+          username.includes(query) ||
+          lastMsg.includes(query)
+        );
       })
     : conversations;
 
@@ -238,17 +242,43 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       }
     } catch (e) {
       console.log('User search error', e);
-      setUserResults([]);
+      // Fallback: If network fails, match locally from existing conversations
+      const localMatches: SearchUser[] = [];
+      const queryLower = q.toLowerCase();
+      conversations.forEach((c) => {
+        if (c.recipient) {
+          const name = c.recipient.full_name || '';
+          const mail = c.recipient.email || '';
+          const uname = c.recipient.username || '';
+          if (
+            !queryLower ||
+            name.toLowerCase().includes(queryLower) ||
+            mail.toLowerCase().includes(queryLower) ||
+            uname.toLowerCase().includes(queryLower)
+          ) {
+            if (!localMatches.some((m) => m.id === c.recipient!.id)) {
+              localMatches.push({
+                id: c.recipient.id,
+                full_name: name || uname || mail.split('@')[0],
+                email: mail,
+                username: uname,
+              });
+            }
+          }
+        }
+      });
+      setUserResults(localMatches);
     } finally {
       setSearchingUsers(false);
     }
   };
 
-  /** Start a 1-to-1 chat with a search result user (by email as identifier). */
+  /** Start a 1-to-1 chat with a search result user (by email or id). */
   const handleSelectSearchUser = async (user: SearchUser) => {
     setStartingChat(true);
     try {
-      const conv = await chatService.startDirectChat(user.email);
+      const identifier = user.email || String(user.id);
+      const conv = await chatService.startDirectChat(identifier);
       setDirectModalVisible(false);
       setUserQuery('');
       setUserResults([]);
@@ -495,13 +525,18 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         <Text style={styles.searchIcon}>🔍</Text>
         <TextInput
           style={styles.searchBar}
-          placeholder="Search chats..."
+          placeholder="Search chats by name, batchmate, or message..."
           placeholderTextColor={colors.textMuted}
           value={inboxSearch}
           onChangeText={setInboxSearch}
           clearButtonMode="while-editing"
           autoCorrect={false}
         />
+        {inboxSearch ? (
+          <TouchableOpacity onPress={() => setInboxSearch('')} style={styles.clearSearchBtn}>
+            <Text style={styles.clearSearchText}>✕</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {/* ── Conversation List ───────────────────────────────────────────── */}
@@ -613,17 +648,29 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               <Text style={styles.userSearchIcon}>🔍</Text>
               <TextInput
                 style={styles.userSearchInput}
-                placeholder="Search by name or email..."
+                placeholder="Search by name, roll no, or email..."
                 placeholderTextColor={colors.textMuted}
                 value={userQuery}
                 onChangeText={setUserQuery}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
+              {userQuery ? (
+                <TouchableOpacity onPress={() => setUserQuery('')} style={styles.clearSearchBtn}>
+                  <Text style={styles.clearSearchText}>✕</Text>
+                </TouchableOpacity>
+              ) : null}
               {searchingUsers && (
                 <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 8 }} />
               )}
             </View>
+
+            {/* Suggested / Results Header */}
+            {userResults.length > 0 && (
+              <Text style={styles.suggestedHeader}>
+                {userQuery.trim() ? `Search Results (${userResults.length})` : 'Suggested Campus Students 🎓'}
+              </Text>
+            )}
 
             {/* User search results list */}
             {userResults.length > 0 && (
@@ -1398,5 +1445,23 @@ const styles = StyleSheet.create({
   // Keep for legacy compat
   surfaceLight: {
     backgroundColor: colors.surfaceLight,
+  },
+  suggestedHeader: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  clearSearchBtn: {
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearSearchText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: 'bold',
   },
 });

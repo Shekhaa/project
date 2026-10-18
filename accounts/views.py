@@ -992,29 +992,37 @@ class SearchUsersView(APIView):
 
     def get(self, request):
         query = request.GET.get("q", "").strip()
-        users_qs = User.objects.filter(is_active=True).exclude(id=request.user.id)
+        users_qs = User.objects.filter(is_active=True)
+        if request.user.is_authenticated:
+            users_qs = users_qs.exclude(id=request.user.id)
 
         if query:
             users_qs = users_qs.filter(
                 Q(full_name__icontains=query) |
-                Q(username__icontains=query) |
                 Q(email__icontains=query) |
-                Q(admission_number__icontains=query)
+                Q(profile__username__icontains=query) |
+                Q(profile__admission_number__icontains=query)
             )
 
-        users = users_qs.order_by("full_name")[:25]
+        users = users_qs.select_related("profile", "profile__college", "profile__branch").order_by("full_name")[:30]
         results = []
         for u in users:
             prof = getattr(u, "profile", None)
+            username = (prof.username if prof and prof.username else "") or (u.email.split("@")[0] if u.email else "")
+            display_name = u.full_name or username or "Campus Student"
+            college_name = prof.college.name if (prof and prof.college) else ""
+            branch_name = prof.branch.name if (prof and prof.branch) else ""
+            admission_no = prof.admission_number if (prof and prof.admission_number) else ""
+
             results.append({
                 "id": u.id,
                 "email": u.email,
-                "full_name": u.full_name or (getattr(prof, "username", "") if prof else "") or u.email.split("@")[0],
-                "username": (getattr(prof, "username", "") if prof else "") or u.username or u.email.split("@")[0],
-                "admission_number": u.admission_number or "",
-                "college_name": getattr(prof, "college_name", "") if prof else "",
-                "branch_name": getattr(prof, "branch_name", "") if prof else "",
-                "verified": getattr(u, "verified", True),
+                "full_name": display_name,
+                "username": username,
+                "admission_number": admission_no,
+                "college_name": college_name,
+                "branch_name": branch_name,
+                "verified": getattr(u, "is_verified_student", False),
                 "verification_tier": getattr(u, "verification_tier", "SEMI_VERIFIED"),
             })
         return Response({"results": results})

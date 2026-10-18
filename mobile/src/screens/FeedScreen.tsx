@@ -45,6 +45,18 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [feedSearch, setFeedSearch] = useState('');
+
+  const filteredPosts = feedSearch.trim()
+    ? posts.filter((p) => {
+        const q = feedSearch.toLowerCase();
+        const contentMatch = p.content?.toLowerCase().includes(q);
+        const authorMatch = p.author_name?.toLowerCase().includes(q);
+        const aliasMatch = p.anonymous_alias?.toLowerCase().includes(q);
+        const communityMatch = p.community_name?.toLowerCase().includes(q);
+        return contentMatch || authorMatch || aliasMatch || communityMatch;
+      })
+    : posts;
 
   // Composer Modal State
   const [composerVisible, setComposerVisible] = useState(false);
@@ -563,9 +575,28 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
         </View>
       </View>
 
+      {/* Instagram/X-style Search Bar */}
+      <View style={styles.feedSearchWrapper}>
+        <Text style={styles.feedSearchIcon}>🔍</Text>
+        <TextInput
+          style={styles.feedSearchInput}
+          placeholder="Search campus feed, authors, tags..."
+          placeholderTextColor={colors.textMuted}
+          value={feedSearch}
+          onChangeText={setFeedSearch}
+          clearButtonMode="while-editing"
+          autoCorrect={false}
+        />
+        {feedSearch ? (
+          <TouchableOpacity onPress={() => setFeedSearch('')} style={styles.feedSearchClearBtn}>
+            <Text style={styles.feedSearchClearText}>✕</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
       {/* Feed List */}
       <FlatList
-        data={posts}
+        data={filteredPosts}
         renderItem={renderPost}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.feedContent}
@@ -578,10 +609,14 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>📸</Text>
-            <Text style={styles.emptyTitle}>Campus feed is empty!</Text>
+            <Text style={styles.emptyIcon}>{feedSearch ? '🔎' : '📸'}</Text>
+            <Text style={styles.emptyTitle}>
+              {feedSearch ? 'No posts found' : 'Campus feed is empty!'}
+            </Text>
             <Text style={styles.emptySubtitle}>
-              Tap the "+ Post" button to share the first campus photo, reel, or story.
+              {feedSearch
+                ? `No stories or posts match "${feedSearch}"`
+                : 'Tap the "+ Post" button to share the first campus photo, reel, or story.'}
             </Text>
           </View>
         }
@@ -2357,5 +2392,37 @@ const styles = StyleSheet.create({
   cropFitChoiceTextActive: {
     color: '#34d399',
     fontWeight: '800',
+  },
+  feedSearchWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  feedSearchIcon: {
+    fontSize: 14,
+    marginRight: 8,
+  },
+  feedSearchInput: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 14,
+    paddingVertical: 10,
+  },
+  feedSearchClearBtn: {
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  feedSearchClearText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: 'bold',
   },
 });

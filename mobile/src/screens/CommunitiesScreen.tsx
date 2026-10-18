@@ -126,11 +126,24 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ currentUse
     }
   };
 
-  const coreCommunities = communities.filter((c) =>
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredCommunities = searchQuery.trim()
+    ? communities.filter((c) => {
+        const q = searchQuery.toLowerCase();
+        return (
+          c.name.toLowerCase().includes(q) ||
+          (c.description && c.description.toLowerCase().includes(q)) ||
+          c.community_type.toLowerCase().includes(q)
+        );
+      })
+    : communities;
+
+  const coreCommunities = filteredCommunities.filter((c) =>
     ['COLLEGE', 'COURSE', 'SECTION'].includes(c.community_type)
   );
 
-  const customCommunities = communities.filter(
+  const customCommunities = filteredCommunities.filter(
     (c) => c.community_type === 'CUSTOM'
   );
 
@@ -317,18 +330,50 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ currentUse
         </TouchableOpacity>
       </View>
 
+      {/* Campus Hubs / Circles Live Search Bar */}
+      <View style={styles.searchWrapper}>
+        <Text style={styles.searchIcon}>🔍</Text>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search clubs, circles, official channels..."
+          placeholderTextColor={colors.textMuted}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          clearButtonMode="while-editing"
+          autoCorrect={false}
+        />
+        {searchQuery ? (
+          <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.searchClearBtn}>
+            <Text style={styles.searchClearText}>✕</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
       ) : (
         <FlatList
-          data={[
-            { type: 'HEADER_CORE', title: '🏛️ YOUR 3 MANDATORY CORE HUBS' },
-            ...coreCommunities,
-            { type: 'HEADER_CUSTOM', title: '🎮 STUDENT CLUBS & CUSTOM COMMUNITIES' },
-            ...customCommunities,
-          ]}
+          data={
+            searchQuery.trim()
+              ? filteredCommunities
+              : [
+                  { type: 'HEADER_CORE', title: '🏛️ YOUR 3 MANDATORY CORE HUBS' },
+                  ...coreCommunities,
+                  { type: 'HEADER_CUSTOM', title: '🎮 STUDENT CLUBS & CUSTOM COMMUNITIES' },
+                  ...customCommunities,
+                ]
+          }
           keyExtractor={(item: any, idx) => item.id?.toString() || idx.toString()}
           contentContainerStyle={styles.listContent}
+          ListEmptyComponent={
+            <View style={styles.emptySearchContainer}>
+              <Text style={styles.emptySearchIcon}>🔍</Text>
+              <Text style={styles.emptySearchTitle}>No channels found</Text>
+              <Text style={styles.emptySearchSubtitle}>
+                No campus channels or clubs match "{searchQuery}"
+              </Text>
+            </View>
+          }
           renderItem={({ item }: any) => {
             if (item.type === 'HEADER_CORE' || item.type === 'HEADER_CUSTOM') {
               return <Text style={styles.sectionHeader}>{item.title}</Text>;
@@ -794,5 +839,58 @@ const styles = StyleSheet.create({
   confirmBtnText: {
     color: '#fff',
     fontWeight: '700',
+  },
+  searchWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    marginHorizontal: 16,
+    marginVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  searchIcon: {
+    fontSize: 14,
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 14,
+    paddingVertical: 10,
+  },
+  searchClearBtn: {
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchClearText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  emptySearchContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  emptySearchIcon: {
+    fontSize: 36,
+    marginBottom: 12,
+  },
+  emptySearchTitle: {
+    color: colors.textPrimary,
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  emptySearchSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

@@ -47,9 +47,7 @@ class StartDirectChatView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, identifier):
-        filters = Q(email__iexact=identifier) | Q(username__iexact=identifier)
-        if hasattr(User, 'profile'):
-            filters |= Q(profile__username__iexact=identifier)
+        filters = Q(email__iexact=identifier) | Q(profile__username__iexact=identifier) | Q(full_name__iexact=identifier)
         if str(identifier).isdigit():
             filters |= Q(id=int(identifier))
         target_user = User.objects.filter(filters).first()
