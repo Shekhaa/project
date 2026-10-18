@@ -162,3 +162,45 @@ class PostCommentsView(APIView):
 
         serializer = CommentSerializer(comment)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class DeletePostView(APIView):
+    """
+    DELETE /api/posts/<post_id>/delete/
+    Soft-deletes a post so it no longer appears in feed or communities.
+    Only the post author or staff can delete the post.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, post_id):
+        post = get_object_or_404(Post, id=post_id, is_deleted=False)
+        if post.author != request.user and not request.user.is_staff:
+            return Response(
+                {"error": "You do not have permission to delete this post."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        post.is_deleted = True
+        post.save(update_fields=["is_deleted"])
+        return Response({"message": "Post deleted successfully.", "id": post_id})
+
+
+class ArchivePostView(APIView):
+    """
+    POST /api/posts/<post_id>/archive/
+    Archives a post (removes from public feed).
+    Only the post author or staff can archive the post.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, post_id):
+        post = get_object_or_404(Post, id=post_id, is_deleted=False)
+        if post.author != request.user and not request.user.is_staff:
+            return Response(
+                {"error": "You do not have permission to archive this post."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        post.is_deleted = True
+        post.save(update_fields=["is_deleted"])
+        return Response({"message": "Post archived successfully.", "id": post_id, "archived": True})

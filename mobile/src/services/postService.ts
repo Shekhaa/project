@@ -80,4 +80,16 @@ export const postService = {
     });
     return res.data;
   },
+
+  // Delete a post (Author or Admin)
+  async deletePost(postId: number): Promise<{ message: string; id: number }> {
+    const res = await api.delete(`/posts/${postId}/delete/`);
+    return res.data;
+  },
+
+  // Archive a post (Author or Admin)
+  async archivePost(postId: number): Promise<{ message: string; id: number }> {
+    const res = await api.post(`/posts/${postId}/archive/`);
+    return res.data;
+  },
 };

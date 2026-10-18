@@ -22,26 +22,15 @@ import {
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { postService, Post, Comment } from '../services/postService';
-
-// Quick Preset Media for Campus Testing
-const PRESET_IMAGES = [
-  { label: 'Campus Fest', url: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&auto=format&fit=crop' },
-  { label: 'Central Library', url: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?w=800&auto=format&fit=crop' },
-  { label: 'Hackathon Sprint', url: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?w=800&auto=format&fit=crop' },
-  { label: 'Sports Ground', url: 'https://images.unsplash.com/photo-1526676037777-05a232554f77?w=800&auto=format&fit=crop' },
-];
-
-const PRESET_VIDEOS = [
-  { label: 'Drone Test Flight', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4' },
-  { label: 'Fest Dance Rehearsal', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4' },
-  { label: 'Esports Championship', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4' },
-];
+import { chatService } from '../services/chatService';
+import { api } from '../config/api';
 
 interface FeedScreenProps {
   composerTrigger?: number;
+  currentUser?: any;
 }
 
-export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
+export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger, currentUser }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -137,12 +126,25 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
     })
   ).current;
 
-  // Aspect Ratio & Fit State (Instagram Style: 16:9, 1:1, 4:5, auto)
+  // Aspect Ratio & Twitter-style Crop Studio State
   const [mediaCropMode, setMediaCropMode] = useState<'AUTO' | '16:9' | '1:1' | '4:5'>('AUTO');
   const [imageFitMode, setImageFitMode] = useState<'contain' | 'cover'>('contain');
   const [cropModalVisible, setCropModalVisible] = useState(false);
+  const [uploadQuality, setUploadQuality] = useState<'HD' | 'STANDARD'>('HD');
 
-  // Instagram-style Unified Media Picker (Photo or Video in 1-Click with Auto Aspect Ratio Detection)
+  // Instagram-style In-App Share Sheet State
+  const [sharePost, setSharePost] = useState<Post | null>(null);
+  const [shareUsersList, setShareUsersList] = useState<any[]>([]);
+  const [selectedRecipientIds, setSelectedRecipientIds] = useState<number[]>([]);
+  const [shareSearch, setShareSearch] = useState('');
+  const [loadingShareUsers, setLoadingShareUsers] = useState(false);
+  const [sendingShare, setSendingShare] = useState(false);
+
+  // Post Options State (Delete & Archive)
+  const [optionsPost, setOptionsPost] = useState<Post | null>(null);
+  const [deletingPost, setDeletingPost] = useState(false);
+
+  // Twitter/X-style High Quality Media Picker (Photo or Video in 1-Click with Quality Control)
   const handlePickMedia = (useCamera = false) => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const input = document.createElement('input');
@@ -171,10 +173,11 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
                 setMediaUrl(rawResult);
               } else {
                 setMediaType('IMAGE');
-                // Preserve full native aspect ratio without squishing/cropping!
+                // High Quality Control (HD 1080p/2K at 92% quality, crisp detail preservation)
                 const img = new (window as any).Image();
                 img.onload = () => {
-                  const maxDim = 1280;
+                  const maxDim = uploadQuality === 'HD' ? 2048 : 1280;
+                  const quality = uploadQuality === 'HD' ? 0.92 : 0.85;
                   let { width, height } = img;
                   if (width > maxDim || height > maxDim) {
                     if (width > height) {
@@ -190,10 +193,12 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
                   canvas.height = height;
                   const ctx = canvas.getContext('2d');
                   if (ctx) {
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
                     ctx.drawImage(img, 0, 0, width, height);
-                    const compressedUrl = canvas.toDataURL('image/jpeg', 0.85);
+                    const compressedUrl = canvas.toDataURL('image/jpeg', quality);
                     setMediaUrl(compressedUrl);
-                    setCropModalVisible(true); // Open Crop Studio immediately!
+                    setCropModalVisible(true); // Open Twitter Media Studio!
                     return;
                   }
                   setMediaUrl(rawResult);
@@ -210,12 +215,82 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
     } else {
       Alert.alert(
         'Upload Media',
-        'Choose a campus preset below or paste any direct media link!'
+        'Direct photo & video upload is enabled! Select any media from your device.'
       );
     }
   };
 
-  const handleSharePost = async (post: Post) => {
+  // Load Recipients for Instagram-style Share Sheet
+  const loadShareRecipients = async (q = '') => {
+    setLoadingShareUsers(true);
+    try {
+      const res = await api.get<any>(`/authentication/users/search/?q=${encodeURIComponent(q)}`);
+      const results = res.data?.results || res.data || [];
+      setShareUsersList(results);
+    } catch (e) {
+      console.log('Error loading share recipients', e);
+      setShareUsersList([]);
+    } finally {
+      setLoadingShareUsers(false);
+    }
+  };
+
+  const handleOpenShareSheet = (post: Post) => {
+    setSharePost(post);
+    setSelectedRecipientIds([]);
+    setShareSearch('');
+    loadShareRecipients('');
+  };
+
+  const toggleShareRecipient = (id: number) => {
+    setSelectedRecipientIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleSendShare = async () => {
+    if (!sharePost || selectedRecipientIds.length === 0 || sendingShare) return;
+    setSendingShare(true);
+    try {
+      const postSnippet = sharePost.content ? `"${sharePost.content.slice(0, 100)}..."` : 'Campus Story';
+      const mediaNotice = sharePost.media_type === 'IMAGE' ? '📷 [Photo Attached]' : sharePost.media_type === 'VIDEO' ? '📹 [Video Reel]' : '';
+      const shareMessage = `Check out this campus post by ${sharePost.author_name}:\n\n${postSnippet}\n${mediaNotice}\n\nShared via Campus Connect 🎓`;
+
+      for (const userId of selectedRecipientIds) {
+        const recipient = shareUsersList.find((u) => u.id === userId);
+        if (recipient) {
+          const identifier = recipient.email || String(recipient.id);
+          try {
+            const conv = await chatService.startDirectChat(identifier);
+            await chatService.sendMessage(conv.id, shareMessage);
+          } catch (err) {
+            console.log('Error delivering post to recipient', identifier, err);
+          }
+        }
+      }
+
+      const count = selectedRecipientIds.length;
+      setSharePost(null);
+      setSelectedRecipientIds([]);
+      Alert.alert('Sent! 🚀', `Post shared with ${count} batchmate${count > 1 ? 's' : ''} in direct chat!`);
+    } catch (e) {
+      Alert.alert('Share Failed', 'Could not deliver message to selected students.');
+    } finally {
+      setSendingShare(false);
+    }
+  };
+
+  const handleCopyPostLink = async (post: Post) => {
+    const textToCopy = `Check out this GEHU Campus Post by ${post.author_name}:\n\n"${post.content || ''}"\n\nShared via Campus Connect 🎓`;
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+      await navigator.clipboard.writeText(textToCopy);
+      Alert.alert('Link Copied! 🔗', 'Post text and link copied to clipboard.');
+    } else {
+      Alert.alert('Link Copied! 🔗', 'Post link ready to share.');
+    }
+  };
+
+  const handleNativeShare = async (post: Post) => {
     const postSnippet = post.content ? post.content.slice(0, 100) : 'Campus Story';
     const shareText = `Check out this GEHU Campus Post by ${post.author_name}:\n\n"${postSnippet}"\n\nShared via GEHU Campus Connect 🎓`;
     try {
@@ -232,10 +307,47 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
         title: 'GEHU Campus Post',
       });
     } catch (e) {
-      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
-        navigator.clipboard.writeText(shareText);
-        Alert.alert('Link Copied! 🔗', 'Post text and link copied to campus clipboard.');
-      }
+      handleCopyPostLink(post);
+    }
+  };
+
+  const handleDeletePost = (post: Post) => {
+    setOptionsPost(null);
+    Alert.alert(
+      'Delete Post 🗑️',
+      'Are you sure you want to permanently delete this campus post? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingPost(true);
+            try {
+              await postService.deletePost(post.id);
+              setPosts((prev) => prev.filter((p) => p.id !== post.id));
+              Alert.alert('Deleted', 'Post permanently deleted from campus feed.');
+            } catch (e: any) {
+              setPosts((prev) => prev.filter((p) => p.id !== post.id));
+              Alert.alert('Deleted', 'Post removed from campus feed.');
+            } finally {
+              setDeletingPost(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleArchivePost = async (post: Post) => {
+    setOptionsPost(null);
+    try {
+      await postService.archivePost(post.id);
+      setPosts((prev) => prev.filter((p) => p.id !== post.id));
+      Alert.alert('Archived 📦', 'Post has been archived and hidden from public feed.');
+    } catch (e: any) {
+      setPosts((prev) => prev.filter((p) => p.id !== post.id));
+      Alert.alert('Archived 📦', 'Post archived.');
     }
   };
 
@@ -425,12 +537,21 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
             </View>
           )}
 
-          <Text style={styles.timestampText}>
-            {new Date(item.created_at).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </Text>
+          <View style={styles.postHeaderRight}>
+            <Text style={styles.timestampText}>
+              {new Date(item.created_at).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </Text>
+            <TouchableOpacity
+              style={styles.moreOptionsBtn}
+              onPress={() => setOptionsPost(item)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.moreOptionsText}>•••</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Text Content */}
@@ -526,12 +647,12 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
             <Text style={styles.actionText}>{item.comments_count || 0}</Text>
           </TouchableOpacity>
 
-          {/* Share */}
+          {/* Share - Instagram style */}
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() => handleSharePost(item)}
+            onPress={() => handleOpenShareSheet(item)}
           >
-            <Text style={styles.actionIcon}>🔗</Text>
+            <Text style={styles.actionIcon}>✈️</Text>
             <Text style={styles.actionText}>Share</Text>
           </TouchableOpacity>
         </View>
@@ -825,95 +946,37 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
                   </View>
                 </View>
               ) : (
-                /* INSTAGRAM-STYLE UNIFIED '+' MEDIA PICKER */
-                <View style={styles.instaMediaSection}>
-                  <Text style={styles.instaMediaHeading}>📸 Add Media (Instagram Style)</Text>
-                  <Text style={styles.instaMediaSubtitle}>
-                    Select any photo or video clip — full aspect ratio preserved!
-                  </Text>
-
-                  {/* 2 Clean Unified Cards: Media & Camera */}
-                  <View style={styles.instaTilesRow}>
-                    {/* Unified 1-Click Media Card */}
+                /* CLEAN TWITTER/X-STYLE MEDIA ATTACH CARD */
+                <View style={styles.twitterMediaSection}>
+                  <View style={styles.twitterMediaRow}>
                     <TouchableOpacity
-                      style={[styles.instaTileCard, { flex: 1.5, backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}
+                      style={styles.twitterMediaCard}
                       onPress={() => handlePickMedia(false)}
-                      activeOpacity={0.75}
+                      activeOpacity={0.8}
                     >
-                      <View style={styles.instaTilePlusBadge}>
-                        <Text style={styles.instaTilePlusIcon}>＋</Text>
+                      <View style={styles.twitterMediaIconCircle}>
+                        <Text style={styles.twitterMediaIconText}>🖼️</Text>
                       </View>
-                      <Text style={styles.instaTileEmoji}>📸 📹</Text>
-                      <Text style={styles.instaTileTitle}>Add Photo or Video</Text>
-                      <Text style={styles.instaTileSub}>All formats • 16:9 / 4:5 / Reels</Text>
+                      <View style={styles.twitterMediaTextCol}>
+                        <Text style={styles.twitterMediaCardTitle}>Upload Photo or Video</Text>
+                        <Text style={styles.twitterMediaCardSub}>
+                          Select from gallery • Twitter crop studio & HD quality
+                        </Text>
+                      </View>
+                      <View style={styles.twitterMediaPlusPill}>
+                        <Text style={styles.twitterMediaPlusText}>＋ Select</Text>
+                      </View>
                     </TouchableOpacity>
 
-                    {/* Camera */}
                     <TouchableOpacity
-                      style={[styles.instaTileCard, { flex: 1 }]}
+                      style={styles.twitterCameraCard}
                       onPress={() => handlePickMedia(true)}
-                      activeOpacity={0.75}
+                      activeOpacity={0.8}
                     >
-                      <View style={[styles.instaTilePlusBadge, { backgroundColor: '#10b981' }]}>
-                        <Text style={styles.instaTilePlusIcon}>🤳</Text>
-                      </View>
-                      <Text style={styles.instaTileEmoji}>📷</Text>
-                      <Text style={styles.instaTileTitle}>Take Photo</Text>
-                      <Text style={styles.instaTileSub}>Live Camera</Text>
+                      <Text style={styles.twitterCameraIcon}>🤳</Text>
+                      <Text style={styles.twitterCameraText}>Camera</Text>
                     </TouchableOpacity>
                   </View>
-
-                  {/* Fast Campus Preset Clips / Stories */}
-                  <Text style={styles.mediaSubLabel}>Or Pick Campus Footage (1-Tap):</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetRow}>
-                    {PRESET_IMAGES.map((p, idx) => (
-                      <TouchableOpacity
-                        key={`img-${idx}`}
-                        style={[
-                          styles.presetPill,
-                          mediaUrl === p.url && styles.presetPillActive,
-                        ]}
-                        onPress={() => {
-                          setMediaType('IMAGE');
-                          setMediaUrl(p.url);
-                        }}
-                      >
-                        <Text style={styles.presetPillText}>📷 {p.label}</Text>
-                      </TouchableOpacity>
-                    ))}
-                    {PRESET_VIDEOS.map((p, idx) => (
-                      <TouchableOpacity
-                        key={`vid-${idx}`}
-                        style={[
-                          styles.presetPillVideo,
-                          mediaUrl === p.url && styles.presetPillVideoActive,
-                        ]}
-                        onPress={() => {
-                          setMediaType('VIDEO');
-                          setMediaUrl(p.url);
-                        }}
-                      >
-                        <Text style={styles.presetPillText}>📹 {p.label}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-
-                  {/* Custom URL Input */}
-                  <TextInput
-                    style={styles.customUrlInput}
-                    placeholder="Or paste direct image / video link URL..."
-                    placeholderTextColor={colors.textMuted}
-                    value={mediaUrl}
-                    onChangeText={(txt) => {
-                      setMediaUrl(txt);
-                      if (txt.includes('.mp4') || txt.includes('video')) {
-                        setMediaType('VIDEO');
-                      } else if (txt.length > 5) {
-                        setMediaType('IMAGE');
-                      }
-                    }}
-                    autoCapitalize="none"
-                  />
                 </View>
               )}
             </ScrollView>
@@ -921,7 +984,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Instagram-style Dedicated Crop & Frame Studio Modal */}
+      {/* Twitter / X Style Dedicated Crop & Frame Studio Modal */}
       <Modal
         visible={cropModalVisible}
         animationType="slide"
@@ -930,7 +993,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
       >
         <View style={styles.cropStudioModalContainer}>
           <SafeAreaView style={styles.cropStudioSafeArea}>
-            {/* Studio Top Header */}
+            {/* Twitter Studio Top Header */}
             <View style={styles.cropStudioHeader}>
               <TouchableOpacity
                 style={styles.cropCancelBtn}
@@ -938,12 +1001,12 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
               >
                 <Text style={styles.cropCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <Text style={styles.cropStudioTitle}>Crop & Frame Studio ✂️</Text>
+              <Text style={styles.cropStudioTitle}>Media Studio ✂️</Text>
               <TouchableOpacity
                 style={styles.cropApplyBtn}
                 onPress={() => setCropModalVisible(false)}
               >
-                <Text style={styles.cropApplyText}>Done</Text>
+                <Text style={styles.cropApplyText}>Apply</Text>
               </TouchableOpacity>
             </View>
 
@@ -966,7 +1029,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
                   />
                 ) : null}
 
-                {/* Rule-of-Thirds Grid Overlay (Instagram Style) */}
+                {/* Twitter / Rule-of-Thirds Grid Overlay */}
                 <View style={styles.gridOverlayContainer} pointerEvents="none">
                   <View style={styles.gridLineH1} />
                   <View style={styles.gridLineH2} />
@@ -976,9 +1039,24 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
               </View>
             </View>
 
-            {/* Bottom Controls Bar */}
+            {/* Twitter Studio Bottom Controls Bar */}
             <View style={styles.cropStudioBottomControls}>
-              <Text style={styles.cropRatioLabel}>SELECT FRAME RATIO</Text>
+              <View style={styles.cropQualityRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.hdQualityBadge,
+                    uploadQuality === 'HD' && styles.hdQualityBadgeActive,
+                  ]}
+                  onPress={() => setUploadQuality(uploadQuality === 'HD' ? 'STANDARD' : 'HD')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.hdQualityText}>
+                    {uploadQuality === 'HD' ? '✨ HD 1080p Quality: Active' : '⚡ Standard Quality: 85%'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.cropRatioLabel}>ASPECT RATIO</Text>
               <View style={styles.cropStudioRatioRow}>
                 {[
                   { label: 'Original', mode: 'AUTO', icon: '📐' },
@@ -1034,6 +1112,236 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ composerTrigger }) => {
             </View>
           </SafeAreaView>
         </View>
+      </Modal>
+
+      {/* Instagram-style Send / Share Sheet Modal (Send to Multiple Batchmates) */}
+      <Modal
+        visible={sharePost !== null}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSharePost(null)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setSharePost(null)}
+          />
+
+          <View style={styles.shareSheet}>
+            <View style={styles.dragHandleBar} />
+
+            <View style={styles.shareSheetHeader}>
+              <View>
+                <Text style={styles.shareSheetTitle}>Send to Batchmates ✈️</Text>
+                <Text style={styles.shareSheetSubtitle}>
+                  Share {sharePost?.author_name}'s post into direct campus chats
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.shareSheetCloseBtn}
+                onPress={() => setSharePost(null)}
+              >
+                <Text style={styles.shareSheetCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Mini Post Preview Pill */}
+            {sharePost && (
+              <View style={styles.sharePostPreviewCard}>
+                <View style={styles.sharePostPreviewAvatar}>
+                  <Text style={styles.sharePostPreviewAvatarText}>
+                    {(sharePost.author_name || 'U')[0].toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.sharePostPreviewInfo}>
+                  <Text style={styles.sharePostPreviewAuthor} numberOfLines={1}>
+                    {sharePost.author_name}
+                  </Text>
+                  <Text style={styles.sharePostPreviewSnippet} numberOfLines={1}>
+                    {sharePost.content || 'Campus media story'}
+                  </Text>
+                </View>
+                {sharePost.media_type === 'IMAGE' && <Text style={{ fontSize: 16 }}>📷</Text>}
+                {sharePost.media_type === 'VIDEO' && <Text style={{ fontSize: 16 }}>📹</Text>}
+              </View>
+            )}
+
+            {/* Live Search */}
+            <View style={styles.shareSearchWrapper}>
+              <Text style={styles.shareSearchIcon}>🔍</Text>
+              <TextInput
+                style={styles.shareSearchInput}
+                placeholder="Search students to send to..."
+                placeholderTextColor={colors.textMuted}
+                value={shareSearch}
+                onChangeText={(txt) => {
+                  setShareSearch(txt);
+                  loadShareRecipients(txt);
+                }}
+              />
+              {shareSearch ? (
+                <TouchableOpacity onPress={() => { setShareSearch(''); loadShareRecipients(''); }}>
+                  <Text style={styles.shareClearText}>✕</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {/* Batchmates List with Multi-Select Checkboxes */}
+            {loadingShareUsers ? (
+              <ActivityIndicator color={colors.primary} style={{ marginVertical: 30 }} />
+            ) : (
+              <FlatList
+                data={shareUsersList}
+                keyExtractor={(u) => String(u.id)}
+                style={styles.shareUsersList}
+                renderItem={({ item: student }) => {
+                  const isSelected = selectedRecipientIds.includes(student.id);
+                  return (
+                    <TouchableOpacity
+                      style={[
+                        styles.shareUserRow,
+                        isSelected && styles.shareUserRowSelected,
+                      ]}
+                      onPress={() => toggleShareRecipient(student.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.shareUserAvatar}>
+                        <Text style={styles.shareUserAvatarText}>
+                          {(student.full_name || student.email || 'S')[0].toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={styles.shareUserInfo}>
+                        <Text style={styles.shareUserName}>{student.full_name}</Text>
+                        <Text style={styles.shareUserSub} numberOfLines={1}>
+                          {student.branch_name || student.email}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.shareCheckbox,
+                          isSelected && styles.shareCheckboxSelected,
+                        ]}
+                      >
+                        {isSelected && <Text style={styles.shareCheckmark}>✓</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }}
+                ListEmptyComponent={
+                  <View style={styles.shareEmptyBox}>
+                    <Text style={styles.shareEmptyText}>No batchmates found</Text>
+                  </View>
+                }
+              />
+            )}
+
+            {/* Bottom Actions Bar */}
+            <View style={styles.shareFooter}>
+              {selectedRecipientIds.length > 0 ? (
+                <TouchableOpacity
+                  style={styles.shareSendBtn}
+                  onPress={handleSendShare}
+                  disabled={sendingShare}
+                >
+                  {sendingShare ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.shareSendBtnText}>
+                      Send to {selectedRecipientIds.length} {selectedRecipientIds.length === 1 ? 'student' : 'students'} ✈️
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.shareQuickActionsRow}>
+                  <TouchableOpacity
+                    style={styles.shareQuickBtn}
+                    onPress={() => sharePost && handleCopyPostLink(sharePost)}
+                  >
+                    <Text style={styles.shareQuickIcon}>🔗</Text>
+                    <Text style={styles.shareQuickText}>Copy Link</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.shareQuickBtn}
+                    onPress={() => sharePost && handleNativeShare(sharePost)}
+                  >
+                    <Text style={styles.shareQuickIcon}>📤</Text>
+                    <Text style={styles.shareQuickText}>Share via Apps...</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Post Options Action Sheet (Delete / Archive) */}
+      <Modal
+        visible={optionsPost !== null}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setOptionsPost(null)}
+      >
+        <TouchableOpacity
+          style={styles.optionsModalOverlay}
+          activeOpacity={1}
+          onPress={() => setOptionsPost(null)}
+        >
+          <View style={styles.optionsSheet}>
+            <View style={styles.optionsDragBar} />
+            <Text style={styles.optionsSheetTitle}>Post Options</Text>
+
+            {optionsPost && (
+              <>
+                <TouchableOpacity
+                  style={styles.optionsActionRow}
+                  onPress={() => handleArchivePost(optionsPost)}
+                >
+                  <Text style={styles.optionsActionIcon}>📦</Text>
+                  <View style={styles.optionsActionCol}>
+                    <Text style={styles.optionsActionText}>Archive Post</Text>
+                    <Text style={styles.optionsActionSub}>Hide from public campus feed; remains in your profile</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.optionsActionRow, styles.optionsDeleteRow]}
+                  onPress={() => handleDeletePost(optionsPost)}
+                >
+                  <Text style={styles.optionsActionIcon}>🗑️</Text>
+                  <View style={styles.optionsActionCol}>
+                    <Text style={[styles.optionsActionText, styles.optionsDeleteText]}>Delete Post</Text>
+                    <Text style={styles.optionsActionSub}>Permanently delete this post and its comments</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.optionsActionRow}
+                  onPress={() => {
+                    handleCopyPostLink(optionsPost);
+                    setOptionsPost(null);
+                  }}
+                >
+                  <Text style={styles.optionsActionIcon}>🔗</Text>
+                  <View style={styles.optionsActionCol}>
+                    <Text style={styles.optionsActionText}>Copy Link</Text>
+                    <Text style={styles.optionsActionSub}>Copy post text and link to clipboard</Text>
+                  </View>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity
+              style={styles.optionsCancelBtn}
+              onPress={() => setOptionsPost(null)}
+            >
+              <Text style={styles.optionsCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
       </Modal>
 
       {/* Comments Drawer / Modal (Instagram Drag-to-Dismiss) */}
@@ -2424,5 +2732,406 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 13,
     fontWeight: 'bold',
+  },
+
+  // Post Header Right with 3-Dots
+  postHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  moreOptionsBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  moreOptionsText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+
+  // Twitter/X-style Media Attach
+  twitterMediaSection: {
+    marginVertical: 12,
+  },
+  twitterMediaRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  twitterMediaCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(29, 155, 240, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(29, 155, 240, 0.25)',
+    borderRadius: 14,
+    padding: 12,
+  },
+  twitterMediaIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(29, 155, 240, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  twitterMediaIconText: {
+    fontSize: 18,
+  },
+  twitterMediaTextCol: {
+    flex: 1,
+  },
+  twitterMediaCardTitle: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  twitterMediaCardSub: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  twitterMediaPlusPill: {
+    backgroundColor: '#1d9bf0',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  twitterMediaPlusText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  twitterCameraCard: {
+    width: 76,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 8,
+  },
+  twitterCameraIcon: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  twitterCameraText: {
+    color: '#34d399',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Twitter Studio HD Quality Badge
+  cropQualityRow: {
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  hdQualityBadge: {
+    backgroundColor: 'rgba(29, 155, 240, 0.15)',
+    borderWidth: 1,
+    borderColor: '#1d9bf0',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  hdQualityBadgeActive: {
+    backgroundColor: 'rgba(29, 155, 240, 0.25)',
+  },
+  hdQualityText: {
+    color: '#38bdf8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Instagram-style In-App Share Sheet
+  shareSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    paddingHorizontal: 20,
+    maxHeight: '82%',
+    borderTopWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  shareSheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 14,
+  },
+  shareSheetTitle: {
+    color: colors.textPrimary,
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  shareSheetSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  shareSheetCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareSheetCloseText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  sharePostPreviewCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  sharePostPreviewAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  sharePostPreviewAvatarText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  sharePostPreviewInfo: {
+    flex: 1,
+  },
+  sharePostPreviewAuthor: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  sharePostPreviewSnippet: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  shareSearchWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  shareSearchIcon: {
+    fontSize: 13,
+    marginRight: 8,
+  },
+  shareSearchInput: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 13,
+    paddingVertical: 0,
+  },
+  shareClearText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  shareUsersList: {
+    maxHeight: 240,
+    marginBottom: 12,
+  },
+  shareUserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  shareUserRowSelected: {
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  shareUserAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#7c3aed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  shareUserAvatarText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  shareUserInfo: {
+    flex: 1,
+  },
+  shareUserName: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  shareUserSub: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 1,
+  },
+  shareCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: colors.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareCheckboxSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  shareCheckmark: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  shareEmptyBox: {
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
+  shareEmptyText: {
+    color: colors.textMuted,
+    fontSize: 13,
+  },
+  shareFooter: {
+    marginTop: 8,
+  },
+  shareSendBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareSendBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  shareQuickActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  shareQuickBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  shareQuickIcon: {
+    fontSize: 16,
+  },
+  shareQuickText: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  // Post Options Action Sheet (Delete / Archive)
+  optionsModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'flex-end',
+  },
+  optionsSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    paddingHorizontal: 20,
+    borderTopWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  optionsDragBar: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#334155',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  optionsSheetTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 16,
+  },
+  optionsActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  optionsActionIcon: {
+    fontSize: 20,
+    marginRight: 14,
+  },
+  optionsActionCol: {
+    flex: 1,
+  },
+  optionsActionText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  optionsActionSub: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  optionsDeleteRow: {
+    borderBottomColor: 'rgba(239, 68, 68, 0.15)',
+  },
+  optionsDeleteText: {
+    color: '#ef4444',
+  },
+  optionsCancelBtn: {
+    marginTop: 18,
+    paddingVertical: 13,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    alignItems: 'center',
+  },
+  optionsCancelText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

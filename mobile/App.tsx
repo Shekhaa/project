@@ -222,7 +222,9 @@ export default function App() {
 
       {/* Screen Content */}
       <View style={styles.mainContent}>
-        {activeTab === 'FEED' && <FeedScreen composerTrigger={composerTrigger} />}
+        {activeTab === 'FEED' && (
+          <FeedScreen composerTrigger={composerTrigger} currentUser={currentUser} />
+        )}
         {activeTab === 'COMMUNITIES' && (
           <CommunitiesScreen currentUser={currentUser} />
         )}
