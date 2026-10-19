@@ -17,7 +17,7 @@ class StudentProfile(models.Model):
 
     # Academic & Student Identity
     college_email = models.EmailField(unique=True, null=True, blank=True)
-    admission_number = models.CharField(max_length=50, blank=True, null=True)
+    admission_number = models.CharField(max_length=50, blank=True, null=True, db_index=True)
 
     # Public Profile
     username = models.CharField(max_length=50, unique=True, db_index=True)
@@ -34,7 +34,7 @@ class StudentProfile(models.Model):
     section = models.ForeignKey(Section, on_delete=models.PROTECT, related_name="profiles", blank=True, null=True)
 
     verified = models.BooleanField(default=False)
-    profile_completed = models.BooleanField(default=False)
+    profile_completed = models.BooleanField(default=False, db_index=True)
 
     # College ID Card OCR & Fraud Prevention
     id_card_image = models.ImageField(upload_to="id_cards/", blank=True, null=True)
@@ -55,11 +55,15 @@ class StudentProfile(models.Model):
     is_flagged_fake = models.BooleanField(default=False, help_text="Flagged by admin or duplicate detection")
     flag_reason = models.CharField(max_length=255, blank=True, default="")
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["username"]
+        indexes = [
+            models.Index(fields=["college", "branch", "academic_year"], name="profile_academic_idx"),
+            models.Index(fields=["admission_number"], name="profile_admission_idx"),
+        ]
 
     def __str__(self):
         return f"@{self.username} ({self.college.short_name} - {self.course.name})"
