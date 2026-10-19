@@ -59,13 +59,16 @@ class ConversationMember(models.Model):
         related_name="chat_memberships"
     )
     is_admin = models.BooleanField(default=False)
-    is_hidden = models.BooleanField(default=False, help_text="True if student deleted this conversation from their inbox")
+    is_hidden = models.BooleanField(default=False, db_index=True, help_text="True if student deleted this conversation from their inbox")
     cleared_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp when user cleared message history")
     joined_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = ("conversation", "user")
         ordering = ["joined_at"]
+        indexes = [
+            models.Index(fields=["user", "is_hidden"], name="member_user_hidden_idx"),
+        ]
 
     def __str__(self):
         return f"{self.user.email} in {self.conversation.id}"
@@ -86,7 +89,7 @@ class Message(models.Model):
     text = models.TextField(blank=True, default="")
     attachment = models.FileField(upload_to="chat_attachments/", blank=True, null=True)
     is_read = models.BooleanField(default=False)
-    is_unsent = models.BooleanField(default=False, help_text="True if sender unsent message for everyone")
+    is_unsent = models.BooleanField(default=False, db_index=True, help_text="True if sender unsent message for everyone")
     unsent_at = models.DateTimeField(null=True, blank=True)
     deleted_for_users = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
@@ -94,10 +97,13 @@ class Message(models.Model):
         related_name="deleted_chat_messages",
         help_text="Students who deleted this message for themselves only"
     )
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
         ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["conversation", "created_at"], name="msg_conv_created_idx"),
+        ]
 
     def __str__(self):
         return f"{self.sender.email}: {self.text[:30]}"

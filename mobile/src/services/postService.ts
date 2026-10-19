@@ -37,12 +37,30 @@ export interface Comment {
   created_at: string;
 }
 
+export interface PaginatedPosts {
+  results: Post[];
+  next: string | null;
+  count: number;
+}
+
 export const postService = {
-  // Feed for enrolled communities
-  async getFeed(communityId?: number): Promise<Post[]> {
-    const params = communityId ? { community: communityId } : {};
+  // Feed for enrolled communities with page pagination
+  async getFeed(communityId?: number, page: number = 1): Promise<PaginatedPosts> {
+    const params: any = { page };
+    if (communityId) params.community = communityId;
     const res = await api.get('/posts/feed/', { params });
-    return res.data.results || res.data;
+    if (res.data && res.data.results) {
+      return {
+        results: res.data.results,
+        next: res.data.next || null,
+        count: res.data.count || res.data.results.length,
+      };
+    }
+    return {
+      results: Array.isArray(res.data) ? res.data : [],
+      next: null,
+      count: Array.isArray(res.data) ? res.data.length : 0,
+    };
   },
 
   // Get single post by ID

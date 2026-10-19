@@ -35,6 +35,11 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Instagram-style Pagination State
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   // Modals state
   const [composerVisible, setComposerVisible] = useState(false);
   const [activeCommentsPost, setActiveCommentsPost] = useState<Post | null>(null);
@@ -50,11 +55,13 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
+      setPage(1);
       const [feedData, commsData] = await Promise.all([
-        postService.getFeed(selectedCommunityId),
+        postService.getFeed(selectedCommunityId, 1),
         communityService.getMyCommunities(),
       ]);
-      setPosts(feedData || []);
+      setPosts(feedData.results || []);
+      setHasMore(Boolean(feedData.next));
       setCommunities(commsData || []);
     } catch (e) {
       console.log('Error loading feed data', e);
@@ -71,6 +78,22 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadData();
+  };
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !hasMore || loading || refreshing) return;
+    try {
+      setLoadingMore(true);
+      const nextPage = page + 1;
+      const feedData = await postService.getFeed(selectedCommunityId, nextPage);
+      setPosts((prev) => [...prev, ...(feedData.results || [])]);
+      setHasMore(Boolean(feedData.next));
+      setPage(nextPage);
+    } catch (e) {
+      console.log('Error loading more posts', e);
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   const handleLikePost = async (postId: number) => {
@@ -223,6 +246,26 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     );
   };
 
+  const renderFooter = () => {
+    if (loadingMore) {
+      return (
+        <View style={styles.footerLoader}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.footerLoaderText}>Loading more campus posts...</Text>
+        </View>
+      );
+    }
+    if (!hasMore && posts.length > 2) {
+      return (
+        <View style={styles.caughtUpBox}>
+          <Text style={styles.caughtUpText}>✨ You're all caught up!</Text>
+          <Text style={styles.caughtUpSub}>Check back later for more campus updates</Text>
+        </View>
+      );
+    }
+    return <View style={{ height: 20 }} />;
+  };
+
   return (
     <View style={styles.container}>
       {renderHeader()}
@@ -248,6 +291,13 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             />
           )}
           ListEmptyComponent={renderEmpty}
+          ListFooterComponent={renderFooter}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.4}
+          initialNumToRender={5}
+          maxToRenderPerBatch={5}
+          windowSize={7}
+          removeClippedSubviews={Platform.OS !== 'web'}
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl
@@ -433,5 +483,31 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 13,
     fontWeight: '700',
+  },
+  footerLoader: {
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  footerLoaderText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  caughtUpBox: {
+    paddingVertical: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  caughtUpText: {
+    color: colors.textPrimary,
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  caughtUpSub: {
+    color: colors.textSecondary,
+    fontSize: 11.5,
   },
 });
