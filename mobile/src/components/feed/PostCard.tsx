@@ -141,18 +141,24 @@ export const PostCard: React.FC<PostCardProps> = ({
 
       {/* Post Text Content */}
       {post.content ? (
-        <Text style={styles.content}>{post.content}</Text>
+        <TouchableOpacity onPress={() => onCommentPress(post)} activeOpacity={0.92}>
+          <Text style={styles.content}>{post.content}</Text>
+        </TouchableOpacity>
       ) : null}
 
       {/* Post Media: IMAGE */}
       {post.media_type === 'IMAGE' && post.media_url ? (
-        <View style={styles.imageContainer}>
+        <TouchableOpacity
+          style={styles.imageContainer}
+          onPress={() => onCommentPress(post)}
+          activeOpacity={0.95}
+        >
           <Image
             source={{ uri: post.media_url }}
             style={styles.postImage}
             resizeMode="cover"
           />
-        </View>
+        </TouchableOpacity>
       ) : null}
 
       {/* Post Media: DOCUMENT / PDF */}

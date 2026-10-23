@@ -27,6 +27,7 @@ urlpatterns = [
     path('api/chat/', include('chat.urls')),
     path('api/calls/', include('calls.urls')),
     path('api/lost-found/', include('lost_found.urls')),
+    path('api/notifications/', include('notifications.urls')),
 ]
 
 if settings.DEBUG:

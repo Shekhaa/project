@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'chat',
     'calls',
     'lost_found',
+    'notifications',
 ]
 
 MIDDLEWARE = [

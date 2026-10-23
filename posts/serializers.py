@@ -19,6 +19,7 @@ class CommentSerializer(serializers.ModelSerializer):
     author_username = serializers.SerializerMethodField()
     author_avatar = serializers.SerializerMethodField()
     replies_count = serializers.SerializerMethodField()
+    replies = serializers.SerializerMethodField()
 
     class Meta:
         model = Comment
@@ -32,10 +33,11 @@ class CommentSerializer(serializers.ModelSerializer):
             "author_username",
             "author_avatar",
             "replies_count",
+            "replies",
             "is_edited",
             "created_at",
         ]
-        read_only_fields = ["id", "author_name", "author_username", "author_avatar", "is_edited", "created_at"]
+        read_only_fields = ["id", "author_name", "author_username", "author_avatar", "replies_count", "replies", "is_edited", "created_at"]
 
     def get_author_name(self, obj):
         if obj.is_anonymous:
@@ -56,6 +58,13 @@ class CommentSerializer(serializers.ModelSerializer):
 
     def get_replies_count(self, obj):
         return obj.replies.count()
+
+    def get_replies(self, obj):
+        if obj.parent is not None:
+            return []
+        replies = obj.replies.select_related("user", "user__profile").all()
+        return CommentSerializer(replies, many=True).data
+
 
 
 class PostSerializer(serializers.ModelSerializer):

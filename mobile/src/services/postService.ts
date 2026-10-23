@@ -34,6 +34,7 @@ export interface Comment {
   author_username?: string;
   author_avatar?: string;
   replies_count: number;
+  replies?: Comment[];
   created_at: string;
 }
 

@@ -18,16 +18,21 @@ import { PostCard } from '../components/feed/PostCard';
 import { PostComposerModal } from '../components/feed/PostComposerModal';
 import { CommentsModal } from '../components/feed/CommentsModal';
 import { ShareModal } from '../components/feed/ShareModal';
+import { NotificationsModal } from '../components/notifications/NotificationsModal';
+import { notificationService, NotificationItem } from '../services/notificationService';
+import { api } from '../config/api';
 import { Plus, Bell, RefreshCw, Sparkles } from 'lucide-react-native';
 
 interface FeedScreenProps {
   currentUser?: any;
   composerTrigger?: number;
+  onNavigateToChat?: (conversationId?: string | number) => void;
 }
 
 export const FeedScreen: React.FC<FeedScreenProps> = ({
   currentUser,
   composerTrigger,
+  onNavigateToChat,
 }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -44,6 +49,61 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const [composerVisible, setComposerVisible] = useState(false);
   const [activeCommentsPost, setActiveCommentsPost] = useState<Post | null>(null);
   const [activeSharePost, setActiveSharePost] = useState<Post | null>(null);
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+
+  const handleSelectNotification = useCallback(
+    async (notif: NotificationItem) => {
+      if (notif.data?.post_id) {
+        const postId = Number(notif.data.post_id);
+        const found = posts.find((p) => p.id === postId);
+        if (found) {
+          setActiveCommentsPost(found);
+        } else {
+          try {
+            const res = await api.get(`/posts/${postId}/`);
+            if (res.data) {
+              setActiveCommentsPost(res.data);
+            }
+          } catch {
+            Alert.alert('Post', 'This post might have been removed or is unavailable.');
+          }
+        }
+      } else if (notif.data?.conversation_id) {
+        if (onNavigateToChat) {
+          onNavigateToChat(notif.data.conversation_id);
+        }
+      }
+    },
+    [posts, onNavigateToChat]
+  );
+
+  const syncNotifications = useCallback(async () => {
+    try {
+      const res = await notificationService.getNotifications();
+      const newUnread = res.unread_count || 0;
+      if (newUnread > unreadNotifCount && res.results && res.results.length > 0) {
+        const latest = res.results[0];
+        if (!latest.is_read) {
+          notificationService.showExternalNotification(
+            latest.title,
+            latest.message,
+            latest,
+            (notifData) => handleSelectNotification(notifData)
+          );
+        }
+      }
+      setUnreadNotifCount(newUnread);
+    } catch {
+      // background sync fail silently
+    }
+  }, [unreadNotifCount, handleSelectNotification]);
+
+  useEffect(() => {
+    syncNotifications();
+    const interval = setInterval(syncNotifications, 20000);
+    return () => clearInterval(interval);
+  }, [syncNotifications]);
 
   // Trigger from navigation/header
   useEffect(() => {
@@ -163,9 +223,17 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         <View style={styles.navActions}>
           <TouchableOpacity
             style={styles.iconBtn}
-            onPress={() => Alert.alert('Campus Notifications', 'You have no unread notifications.')}
+            onPress={() => setNotificationsVisible(true)}
+            activeOpacity={0.7}
           >
             <Bell size={20} color={colors.textPrimary} />
+            {unreadNotifCount > 0 && (
+              <View style={styles.bellBadge}>
+                <Text style={styles.bellBadgeText}>
+                  {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -332,8 +400,17 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         post={activeSharePost}
         onClose={() => setActiveSharePost(null)}
       />
+
+      {/* Notifications Modal */}
+      <NotificationsModal
+        visible={notificationsVisible}
+        onClose={() => setNotificationsVisible(false)}
+        onSelectNotification={handleSelectNotification}
+        onUnreadCountChange={(c) => setUnreadNotifCount(c)}
+      />
     </View>
   );
+
 };
 
 const styles = StyleSheet.create({
@@ -394,7 +471,28 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
+  bellBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    backgroundColor: '#ef4444',
+    minWidth: 17,
+    height: 17,
+    borderRadius: 8.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: colors.surface,
+  },
+  bellBadgeText: {
+    color: '#fff',
+    fontSize: 9.5,
+    fontWeight: '800',
+  },
+
   createPostBtn: {
     flexDirection: 'row',
     alignItems: 'center',

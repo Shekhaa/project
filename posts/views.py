@@ -1,14 +1,19 @@
 import random
+import re
 from rest_framework.views import APIView
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
-from django.db.models import Count
+from django.db.models import Count, Q
+from django.contrib.auth import get_user_model
 from communities.models import Community, CommunityMember
+from notifications.views import create_notification
 from .models import Post, PostImage, PostLike, Comment
 from .serializers import PostSerializer, CommentSerializer, ANONYMOUS_MASCOTS
 from .pagination import FeedPagination
+
+User = get_user_model()
 
 class FeedView(generics.ListAPIView):
     """
@@ -128,6 +133,16 @@ class ToggleLikeView(APIView):
         else:
             PostLike.objects.create(post=post, user=request.user)
             count = post.likes.count()
+            # Send notification to post author if not liking own post
+            sender_name = request.user.full_name or request.user.email.split("@")[0]
+            create_notification(
+                recipient=post.author,
+                sender=request.user,
+                notification_type='LIKE',
+                title='New Like ❤️',
+                message=f"{sender_name} liked your campus post.",
+                data={'post_id': post.id}
+            )
             return Response({
                 "liked": True,
                 "has_liked": True,
@@ -171,8 +186,52 @@ class PostCommentsView(APIView):
             anonymous_alias=alias
         )
 
+        # Dispatch notifications for reply / comment / @mentions
+        sender_name = "Anonymous Student" if is_anonymous else (request.user.full_name or request.user.email.split("@")[0])
+        notified_user_ids = {request.user.id}
+
+        if parent and parent.user and parent.user.id not in notified_user_ids:
+            notified_user_ids.add(parent.user.id)
+            create_notification(
+                recipient=parent.user,
+                sender=request.user if not is_anonymous else None,
+                notification_type='REPLY',
+                title='New Reply 💬',
+                message=f"{sender_name} replied to your comment on a campus post.",
+                data={'post_id': post.id, 'comment_id': comment.id}
+            )
+        elif not parent and post.author and post.author.id not in notified_user_ids:
+            notified_user_ids.add(post.author.id)
+            create_notification(
+                recipient=post.author,
+                sender=request.user if not is_anonymous else None,
+                notification_type='COMMENT',
+                title='New Comment 💬',
+                message=f"{sender_name} commented on your campus post.",
+                data={'post_id': post.id, 'comment_id': comment.id}
+            )
+
+        # Parse @mentions for tagging notifications
+        mention_tags = set(re.findall(r'@([a-zA-Z0-9_\.]+)', text))
+        for tag in mention_tags:
+            matching_users = User.objects.filter(
+                Q(email__istartswith=tag) | Q(full_name__icontains=tag)
+            ).exclude(id__in=notified_user_ids)[:3]
+
+            for tagged_user in matching_users:
+                notified_user_ids.add(tagged_user.id)
+                create_notification(
+                    recipient=tagged_user,
+                    sender=request.user if not is_anonymous else None,
+                    notification_type='TAG',
+                    title='You were tagged 🏷️',
+                    message=f"{sender_name} mentioned you in a comment.",
+                    data={'post_id': post.id, 'comment_id': comment.id}
+                )
+
         serializer = CommentSerializer(comment)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 
 
 class DeletePostView(APIView):

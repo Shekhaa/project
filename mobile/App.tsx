@@ -162,7 +162,16 @@ export default function App() {
       {/* Screen Content */}
       <View style={styles.mainContent}>
         {activeTab === 'FEED' && (
-          <FeedScreen composerTrigger={composerTrigger} currentUser={currentUser} />
+          <FeedScreen
+            composerTrigger={composerTrigger}
+            currentUser={currentUser}
+            onNavigateToChat={(convId) => {
+              if (convId) {
+                setSelectedCommunityConv({ id: String(convId) });
+              }
+              navigateToTab('CHAT');
+            }}
+          />
         )}
         {activeTab === 'COMMUNITIES' && (
           <CommunitiesScreen currentUser={currentUser} />
