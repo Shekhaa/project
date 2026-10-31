@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { authService } from '../services/authService';
+import * as ImagePicker from 'expo-image-picker';
 
 interface AuthScreenProps {
   onLoginSuccess: (user: any) => void;
@@ -420,7 +421,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const handlePickCustomIDCard = () => {
+  const handlePickCustomIDCard = async () => {
     if (Platform.OS === 'web') {
       const input = document.createElement('input');
       input.type = 'file';
@@ -438,7 +439,65 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       };
       input.click();
     } else {
-      handleScanAndLogin('data:image/jpeg;base64,' + btoa(SAMPLE_ID_PRESETS[0].rawText));
+      Alert.alert(
+        'Upload Physical ID Card',
+        'Choose how to scan your College ID Card:',
+        [
+          {
+            text: '📸 Take Photo with Camera',
+            onPress: async () => {
+              try {
+                const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                if (status !== 'granted') {
+                  Alert.alert('Permission Needed', 'Camera permission is required to photograph your ID card.');
+                  return;
+                }
+                const result = await ImagePicker.launchCameraAsync({
+                  quality: 0.9,
+                  base64: true,
+                });
+                if (!result.canceled && result.assets && result.assets.length > 0) {
+                  const asset = result.assets[0];
+                  if (asset.base64) {
+                    handleScanAndLogin(`data:image/jpeg;base64,${asset.base64}`);
+                  }
+                }
+              } catch (err: any) {
+                Alert.alert('Error', err.message || 'Could not access camera.');
+              }
+            },
+          },
+          {
+            text: '🖼️ Choose from Gallery',
+            onPress: async () => {
+              try {
+                const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                if (status !== 'granted') {
+                  Alert.alert('Permission Needed', 'Photo gallery permission is required.');
+                  return;
+                }
+                const result = await ImagePicker.launchImageLibraryAsync({
+                  mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                  quality: 0.9,
+                  base64: true,
+                });
+                if (!result.canceled && result.assets && result.assets.length > 0) {
+                  const asset = result.assets[0];
+                  if (asset.base64) {
+                    handleScanAndLogin(`data:image/jpeg;base64,${asset.base64}`);
+                  }
+                }
+              } catch (err: any) {
+                Alert.alert('Error', err.message || 'Could not pick image from gallery.');
+              }
+            },
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+        ]
+      );
     }
   };
 

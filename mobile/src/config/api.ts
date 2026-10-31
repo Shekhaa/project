@@ -28,6 +28,13 @@ export const api = axios.create({
   },
 });
 
+type AuthExpiredListener = () => void;
+let authExpiredListener: AuthExpiredListener | null = null;
+
+export const setAuthExpiredListener = (listener: AuthExpiredListener | null) => {
+  authExpiredListener = listener;
+};
+
 // Interceptor to attach JWT token
 api.interceptors.request.use(async (config) => {
   try {
@@ -41,14 +48,87 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-// Interceptor to catch 401s
+// Interceptor to catch 401s and attempt automatic token refresh
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (value?: any) => void;
+  reject: (reason?: any) => void;
+}> = [];
+
+const processQueue = (error: any, token: string | null = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response && error.response.status === 401) {
-      // Token expired or invalid
-      await AsyncStorage.multiRemove(['access_token', 'refresh_token', 'user_info']);
+    const originalRequest = error.config;
+
+    // Check if error is 401 and request hasn't been retried yet
+    if (error.response?.status === 401 && !originalRequest?._retry) {
+      // Don't retry auth endpoints themselves
+      if (
+        originalRequest?.url?.includes('/authentication/login/') ||
+        originalRequest?.url?.includes('/authentication/token/refresh/')
+      ) {
+        return Promise.reject(error);
+      }
+
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then((token) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            return api(originalRequest);
+          })
+          .catch((err) => Promise.reject(err));
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const refreshToken = await AsyncStorage.getItem('refresh_token');
+        if (!refreshToken) {
+          throw new Error('No refresh token available');
+        }
+
+        // Call refresh endpoint with raw axios instance to prevent interceptor loops
+        const refreshResponse = await axios.post(`${API_BASE_URL}/authentication/token/refresh/`, {
+          refresh: refreshToken,
+        });
+
+        const newAccessToken = refreshResponse.data.access;
+        await AsyncStorage.setItem('access_token', newAccessToken);
+        if (refreshResponse.data.refresh) {
+          await AsyncStorage.setItem('refresh_token', refreshResponse.data.refresh);
+        }
+
+        api.defaults.headers.common.Authorization = `Bearer ${newAccessToken}`;
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+
+        processQueue(null, newAccessToken);
+        return api(originalRequest);
+      } catch (refreshErr) {
+        processQueue(refreshErr, null);
+        await AsyncStorage.multiRemove(['access_token', 'refresh_token', 'user_info']);
+        if (authExpiredListener) {
+          authExpiredListener();
+        }
+        return Promise.reject(refreshErr);
+      } finally {
+        isRefreshing = false;
+      }
     }
+
     return Promise.reject(error);
   }
 );

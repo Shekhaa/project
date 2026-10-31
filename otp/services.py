@@ -138,7 +138,8 @@ class OTPService:
         )
 
         # 1-Click Magic Link
-        magic_link = f"http://localhost:8000/api/authentication/email/magic-login/?token={otp_record.magic_token}"
+        backend_url = getattr(settings, 'BACKEND_URL', 'http://localhost:8000').rstrip('/')
+        magic_link = f"{backend_url}/api/authentication/email/magic-login/?token={otp_record.magic_token}"
         deep_link = f"campusconnect://verify?token={otp_record.magic_token}"
 
         # Dispatch Email

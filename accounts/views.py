@@ -45,16 +45,22 @@ class SendEmailOTPView(APIView):
             "short_name": domain_match.college.short_name,
         } if domain_match else None
 
-        magic_link = f"http://localhost:8000/api/authentication/email/magic-login/?token={otp_record.magic_token}"
+        base_url = getattr(settings, 'BACKEND_URL', None)
+        if not base_url:
+            base_url = request.build_absolute_uri('/')[:-1]
+        magic_link = f"{base_url}/api/authentication/email/magic-login/?token={otp_record.magic_token}"
 
-        return Response({
+        response_data = {
             "message": msg,
             "email": email,
             "detected_college": college_info,
-            "magic_token": str(otp_record.magic_token),
-            "magic_link": magic_link,
-            "dev_otp": otp_record.otp,
-        }, status=status.HTTP_200_OK)
+        }
+        if settings.DEBUG:
+            response_data["magic_token"] = str(otp_record.magic_token)
+            response_data["magic_link"] = magic_link
+            response_data["dev_otp"] = otp_record.otp
+
+        return Response(response_data, status=status.HTTP_200_OK)
 
 
 class VerifyEmailOTPView(APIView):

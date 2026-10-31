@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.core.files.base import ContentFile
+from django.conf import settings
 from colleges.models import College, CollegeDomain, Course, Branch, AcademicYear, Section
 from communities.services import CommunityEnrollmentService
 from .models import StudentProfile
@@ -210,14 +211,21 @@ class ScanIDCardView(APIView):
 class AdminIDCardAuditListView(APIView):
     """
     GET /api/profile/admin/id-cards/
-    Enables campus organizers / founders to inspect all 100 blind testing students:
+    Enables campus organizers / founders to inspect registered students:
     - View student name, phone, email, roll number
     - View uploaded ID card photo & OCR match
     - Detect duplicate cards and flag fake accounts
+    Protected: Only accessible to authenticated staff/admins (or in local DEBUG mode).
     """
-    permission_classes = [AllowAny] # In production protect with staff/admin check
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        if not (request.user.is_staff or request.user.is_superuser or settings.DEBUG):
+            return Response(
+                {"error": "Unauthorized. Admin privileges required."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         profiles = StudentProfile.objects.all().select_related("user", "college", "course", "branch").order_by("-created_at")
         audit_list = []
         for p in profiles:
@@ -250,10 +258,17 @@ class AdminAuditActionView(APIView):
     """
     POST /api/profile/admin/audit-user/
     Action: 'APPROVE' or 'FLAG_FAKE'
+    Protected: Only accessible to authenticated staff/admins (or in local DEBUG mode).
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        if not (request.user.is_staff or request.user.is_superuser or settings.DEBUG):
+            return Response(
+                {"error": "Unauthorized. Admin privileges required."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         user_id = request.data.get("user_id")
         action = request.data.get("action")  # "APPROVE" or "FLAG_FAKE"
         reason = request.data.get("reason", "")

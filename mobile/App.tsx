@@ -13,8 +13,9 @@ import {
   BackHandler,
 } from 'react-native';
 import { colors } from './src/theme/colors';
-import { Home, Building2, MessageSquare, User as UserIcon } from 'lucide-react-native';
+import { Home, Building2, MessageSquare, User as UserIcon, Search } from 'lucide-react-native';
 import { authService, User } from './src/services/authService';
+import { setAuthExpiredListener } from './src/config/api';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { ProfileSetupScreen } from './src/screens/ProfileSetupScreen';
 import { FeedScreen } from './src/screens/FeedScreen';
@@ -75,7 +76,13 @@ export default function App() {
   };
 
   useEffect(() => {
+    setAuthExpiredListener(() => {
+      setCurrentUser(null);
+    });
     checkInitialSession();
+    return () => {
+      setAuthExpiredListener(null);
+    };
   }, []);
 
   const checkInitialSession = async () => {
@@ -237,6 +244,21 @@ export default function App() {
           />
           <Text style={[styles.tabLabel, activeTab === 'CHAT' && styles.tabActiveText]}>
             Chats
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() => navigateToTab('LOST_FOUND')}
+          activeOpacity={0.7}
+        >
+          <Search
+            size={22}
+            color={activeTab === 'LOST_FOUND' ? colors.primary : colors.textSecondary}
+            strokeWidth={activeTab === 'LOST_FOUND' ? 2.5 : 1.8}
+          />
+          <Text style={[styles.tabLabel, activeTab === 'LOST_FOUND' && styles.tabActiveText]}>
+            Lost/Found
           </Text>
         </TouchableOpacity>
 

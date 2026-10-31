@@ -15,6 +15,8 @@ import {
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { postService } from '../../services/postService';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import {
   X,
   Image as ImageIcon,
@@ -129,13 +131,33 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     reader.readAsDataURL(file);
   };
 
-  const handlePickImage = () => {
+  const handlePickImage = async () => {
     if (Platform.OS === 'web') {
       if (imageInputRef.current) {
         imageInputRef.current.click();
       }
     } else {
-      Alert.alert('Mobile Upload', 'Photo picker ready.');
+      try {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Needed', 'Please allow camera roll access to upload photos.');
+          return;
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          quality: 0.9,
+          base64: true,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          const asset = result.assets[0];
+          const uri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+          setMediaUrl(uri);
+          setMediaType('IMAGE');
+        }
+      } catch (err: any) {
+        Alert.alert('Upload Error', err.message || 'Could not pick image.');
+      }
     }
   };
 
@@ -146,13 +168,29 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     }
   };
 
-  const handlePickDocument = () => {
+  const handlePickDocument = async () => {
     if (Platform.OS === 'web') {
       if (documentInputRef.current) {
         documentInputRef.current.click();
       }
     } else {
-      Alert.alert('Mobile Upload', 'PDF picker ready.');
+      try {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: ['application/pdf'],
+          copyToCacheDirectory: true,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          const asset = result.assets[0];
+          setDocumentName(asset.name);
+          const sizeKb = (asset.size || 0) / 1024;
+          const sizeStr = sizeKb < 1024 ? `${sizeKb.toFixed(1)} KB` : `${(sizeKb / 1024).toFixed(1)} MB`;
+          setDocumentSize(sizeStr);
+          setMediaUrl(asset.uri);
+          setMediaType('DOCUMENT');
+        }
+      } catch (err: any) {
+        Alert.alert('Upload Error', err.message || 'Could not pick PDF document.');
+      }
     }
   };
 
