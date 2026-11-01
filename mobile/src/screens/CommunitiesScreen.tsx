@@ -15,6 +15,10 @@ import {
 import { colors } from '../theme/colors';
 import { communityService, Community } from '../services/communityService';
 import { chatService, Message } from '../services/chatService';
+import { Paperclip } from 'lucide-react-native';
+import { MediaGrid } from '../components/media/MediaGrid';
+import { DocumentCard } from '../components/media/DocumentCard';
+import { AttachmentPickerModal, StagedAttachment } from '../components/media/AttachmentPickerModal';
 
 interface CommunitiesScreenProps {
   currentUser?: any;
@@ -36,6 +40,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ currentUse
   const [messageText, setMessageText] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
+  const [attachmentPickerVisible, setAttachmentPickerVisible] = useState(false);
 
   // Custom community creation form
   const [newTitle, setNewTitle] = useState('');
@@ -98,6 +103,25 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ currentUse
       Alert.alert('Send Failed', e.response?.data?.error || 'Message could not be delivered.');
     } finally {
       setSendingMessage(false);
+    }
+  };
+
+  const handleSendHubAttachments = async (staged: StagedAttachment[], caption: string) => {
+    if (!activeCommunityChat) return;
+    try {
+      const filesToSend = staged.map((item) => {
+        if (item.file) return { file: item.file };
+        return {
+          uri: item.uri,
+          name: item.name,
+          type: item.type === 'IMAGE' ? 'image/jpeg' : 'application/octet-stream',
+        };
+      });
+      const sent = await chatService.sendMessageWithAttachments(activeCommunityChat.conv.id, caption, filesToSend);
+      setMessages((prev) => [...prev, sent]);
+    } catch (err: any) {
+      Alert.alert('Upload Failed', err.response?.data?.error || err.message || 'Could not send attachments.');
+      throw err;
     }
   };
 
@@ -260,9 +284,29 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ currentUse
                       !isMe && { marginLeft: 28 },
                     ]}
                   >
-                    <Text style={[styles.messageText, isMe && styles.messageTextRight]}>
-                      {item.text}
-                    </Text>
+                    {/* Media Images Grid */}
+                    {item.attachments && item.attachments.filter((a) => a.file_type === 'IMAGE').length > 0 && (
+                      <View style={{ marginBottom: item.text ? 6 : 2 }}>
+                        <MediaGrid images={item.attachments.filter((a) => a.file_type === 'IMAGE')} />
+                      </View>
+                    )}
+
+                    {/* Academic Documents */}
+                    {item.attachments && item.attachments.filter((a) => a.file_type === 'DOCUMENT').length > 0 && (
+                      <View style={{ marginBottom: item.text ? 6 : 2, gap: 4 }}>
+                        {item.attachments
+                          .filter((a) => a.file_type === 'DOCUMENT')
+                          .map((doc, idx) => (
+                            <DocumentCard key={doc.id || idx} attachment={doc} />
+                          ))}
+                      </View>
+                    )}
+
+                    {item.text ? (
+                      <Text style={[styles.messageText, isMe && styles.messageTextRight]}>
+                        {item.text}
+                      </Text>
+                    ) : null}
                     <Text style={[styles.messageTime, isMe && styles.messageTimeRight]}>
                       {new Date(item.created_at).toLocaleTimeString([], {
                         hour: '2-digit',
@@ -289,6 +333,15 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ currentUse
 
         {/* Hub Chat Input Bar */}
         <View style={styles.chatInputBar}>
+          <TouchableOpacity
+            style={styles.chatAttachBtn}
+            onPress={() => setAttachmentPickerVisible(true)}
+            activeOpacity={0.7}
+            accessibilityLabel="Share media or document"
+          >
+            <Paperclip size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+
           <TextInput
             style={styles.chatInput}
             placeholder={`Message ${activeCommunityChat.community.name}...`}
@@ -309,6 +362,13 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({ currentUse
             )}
           </TouchableOpacity>
         </View>
+
+        {/* WhatsApp-Style Media & Document Attachment Drawer */}
+        <AttachmentPickerModal
+          visible={attachmentPickerVisible}
+          onClose={() => setAttachmentPickerVisible(false)}
+          onSend={handleSendHubAttachments}
+        />
       </KeyboardAvoidingView>
     );
   }
@@ -738,6 +798,12 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.cardBorder,
     backgroundColor: colors.surface,
+  },
+  chatAttachBtn: {
+    padding: 8,
+    marginRight: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   chatInput: {
     flex: 1,
