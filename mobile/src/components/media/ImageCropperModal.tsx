@@ -18,8 +18,6 @@ import {
   RotateCw,
   RefreshCw,
   Zap,
-  ZoomIn,
-  ZoomOut,
 } from 'lucide-react-native';
 
 export type AspectRatioOption = 'AUTO' | 'ORIGINAL' | '1:1' | '4:5' | '16:9' | 'FREE' | 'DOC';
@@ -30,6 +28,15 @@ interface ImageCropperModalProps {
   onClose: () => void;
   onCropComplete: (croppedUri: string) => void;
   autoDetectOnOpen?: boolean;
+}
+
+type HandleType = 'tl' | 'tr' | 'bl' | 'br' | 't' | 'b' | 'l' | 'r' | 'move';
+
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 /**
@@ -54,7 +61,6 @@ export const smartAutoCropImage = (imageUri: string): Promise<string> => {
           return;
         }
 
-        // Sample down to max 320px for high-speed edge calculation (~15ms)
         const sampleW = 320;
         const sampleH = Math.max(10, Math.round((origH / origW) * sampleW));
         const sampleCanvas = document.createElement('canvas');
@@ -70,7 +76,7 @@ export const smartAutoCropImage = (imageUri: string): Promise<string> => {
         const imgData = sCtx.getImageData(0, 0, sampleW, sampleH);
         const data = imgData.data;
 
-        // Sample 4 corners to estimate background color
+        // Sample 4 corners for background estimation
         const cornerIdxs = [
           0,
           (sampleW - 1) * 4,
@@ -105,7 +111,6 @@ export const smartAutoCropImage = (imageUri: string): Promise<string> => {
         let cropX = 0, cropY = 0, cropW = origW, cropH = origH;
         const totalSampled = (sampleW * sampleH) / 4;
 
-        // If a clear document / object boundary is detected (5% to 92% of frame)
         if (contentCount > totalSampled * 0.05 && contentCount < totalSampled * 0.92 && maxX > minX + 20 && maxY > minY + 20) {
           const padX = sampleW * 0.02;
           const padY = sampleH * 0.02;
@@ -119,7 +124,6 @@ export const smartAutoCropImage = (imageUri: string): Promise<string> => {
           cropW = Math.round((normRight - normLeft) * origW);
           cropH = Math.round((normBottom - normTop) * origH);
         } else {
-          // Standard smart focal crop (focal 4:5 or 16:9, trimming outer 8% margin)
           const targetRatio = origW > origH ? 16 / 9 : 4 / 5;
           cropW = Math.round(origW * 0.88);
           cropH = Math.round(cropW / targetRatio);
@@ -155,7 +159,7 @@ export const smartAutoCropImage = (imageUri: string): Promise<string> => {
 };
 
 const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
-const STAGE_SIZE = Math.min(WINDOW_WIDTH - 32, WINDOW_HEIGHT - 280, 500);
+const STAGE_SIZE = Math.min(WINDOW_WIDTH - 32, WINDOW_HEIGHT - 280, 520);
 
 export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
   visible,
@@ -165,19 +169,53 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
   autoDetectOnOpen = false,
 }) => {
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number }>({ width: 800, height: 600 });
-  const [rotation, setRotation] = useState<number>(0); // 0, 90, 180, 270
+  const [rotation, setRotation] = useState<number>(0);
   const [aspectRatio, setAspectRatio] = useState<AspectRatioOption>('FREE');
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
 
-  // Crop Box state inside the STAGE (in pixels)
-  const [cropBox, setCropBox] = useState<{ x: number; y: number; w: number; h: number }>({
+  const [cropBox, setCropBox] = useState<Box>({
     x: 20,
     y: 20,
     w: STAGE_SIZE - 40,
     h: STAGE_SIZE - 40,
   });
 
-  const dragStartRef = useRef<{ box: { x: number; y: number; w: number; h: number }; touchX: number; touchY: number } | null>(null);
+  // Mutable refs to prevent stale closure during drag operations
+  const cropBoxRef = useRef<Box>(cropBox);
+  cropBoxRef.current = cropBox;
+
+  const dragStartRef = useRef<{ box: Box; touchX: number; touchY: number } | null>(null);
+
+  // Compute fitted dimensions in the stage
+  const isRotatedSideways = rotation === 90 || rotation === 270;
+  const currentImgW = isRotatedSideways ? naturalSize.height : naturalSize.width;
+  const currentImgH = isRotatedSideways ? naturalSize.width : naturalSize.height;
+
+  const scale = Math.min(STAGE_SIZE / currentImgW, STAGE_SIZE / currentImgH);
+  const renderedW = currentImgW * scale;
+  const renderedH = currentImgH * scale;
+  const imgOffsetX = (STAGE_SIZE - renderedW) / 2;
+  const imgOffsetY = (STAGE_SIZE - renderedH) / 2;
+
+  const boundsRef = useRef({
+    renderedW,
+    renderedH,
+    imgOffsetX,
+    imgOffsetY,
+    currentImgW,
+    currentImgH,
+    aspectRatio,
+  });
+
+  boundsRef.current = {
+    renderedW,
+    renderedH,
+    imgOffsetX,
+    imgOffsetY,
+    currentImgW,
+    currentImgH,
+    aspectRatio,
+  };
 
   // Load natural dimensions of image
   useEffect(() => {
@@ -200,32 +238,199 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
     setAspectRatio('FREE');
   }, [visible, imageUri]);
 
-  // Compute fitted image bounds in the stage
-  const isRotatedSideways = rotation === 90 || rotation === 270;
-  const currentImgW = isRotatedSideways ? naturalSize.height : naturalSize.width;
-  const currentImgH = isRotatedSideways ? naturalSize.width : naturalSize.height;
-
-  const scale = Math.min(STAGE_SIZE / currentImgW, STAGE_SIZE / currentImgH);
-  const renderedW = currentImgW * scale;
-  const renderedH = currentImgH * scale;
-  const imgOffsetX = (STAGE_SIZE - renderedW) / 2;
-  const imgOffsetY = (STAGE_SIZE - renderedH) / 2;
-
-  // Initialize crop box to image bounds whenever dimensions or rotation change
+  // Sync crop box to initial image bounds whenever image loads or rotates
   useEffect(() => {
-    const initialW = renderedW;
-    const initialH = renderedH;
-    setCropBox({
+    const nextBox: Box = {
       x: imgOffsetX,
       y: imgOffsetY,
-      w: initialW,
-      h: initialH,
-    });
+      w: renderedW,
+      h: renderedH,
+    };
+    setCropBox(nextBox);
+    cropBoxRef.current = nextBox;
 
     if (autoDetectOnOpen) {
       setTimeout(() => handleTriggerAutoCrop(), 120);
     }
   }, [renderedW, renderedH, imgOffsetX, imgOffsetY, rotation]);
+
+  const showNotice = (msg: string) => {
+    setFeedbackNotice(msg);
+    setTimeout(() => setFeedbackNotice(null), 2500);
+  };
+
+  // Delta Drag Calculator — calculates new box coordinates smoothly
+  const applyDeltaToCropBox = (handle: HandleType, initialBox: Box, dx: number, dy: number) => {
+    const {
+      renderedW: rW,
+      renderedH: rH,
+      imgOffsetX: offX,
+      imgOffsetY: offY,
+      currentImgW: cW,
+      currentImgH: cH,
+      aspectRatio: aMode,
+    } = boundsRef.current;
+
+    const minW = 40;
+    const minH = 40;
+    const maxRight = offX + rW;
+    const maxBottom = offY + rH;
+
+    let targetRatio: number | null = null;
+    if (aMode === '1:1') targetRatio = 1;
+    else if (aMode === '4:5') targetRatio = 4 / 5;
+    else if (aMode === '16:9') targetRatio = 16 / 9;
+    else if (aMode === 'ORIGINAL') targetRatio = cW / cH;
+    else if (aMode === 'DOC') targetRatio = 1 / 1.414;
+
+    let next = { ...initialBox };
+
+    if (handle === 'move') {
+      const newX = Math.max(offX, Math.min(initialBox.x + dx, maxRight - initialBox.w));
+      const newY = Math.max(offY, Math.min(initialBox.y + dy, maxBottom - initialBox.h));
+      next = { ...initialBox, x: newX, y: newY };
+    } else if (handle === 'tl') {
+      let newX = Math.max(offX, Math.min(initialBox.x + dx, initialBox.x + initialBox.w - minW));
+      let newW = initialBox.w - (newX - initialBox.x);
+      let newH = targetRatio ? newW / targetRatio : initialBox.h - (Math.max(offY, Math.min(initialBox.y + dy, initialBox.y + initialBox.h - minH)) - initialBox.y);
+      if (targetRatio && initialBox.y + initialBox.h - newH < offY) {
+        newH = initialBox.y + initialBox.h - offY;
+        newW = newH * targetRatio;
+        newX = initialBox.x + initialBox.w - newW;
+      }
+      let newY = initialBox.y + initialBox.h - newH;
+      next = { x: newX, y: newY, w: newW, h: newH };
+    } else if (handle === 'tr') {
+      let newW = Math.max(minW, Math.min(initialBox.w + dx, maxRight - initialBox.x));
+      let newH = targetRatio ? newW / targetRatio : initialBox.h - (Math.max(offY, Math.min(initialBox.y + dy, initialBox.y + initialBox.h - minH)) - initialBox.y);
+      if (targetRatio && initialBox.y + initialBox.h - newH < offY) {
+        newH = initialBox.y + initialBox.h - offY;
+        newW = newH * targetRatio;
+      }
+      let newY = initialBox.y + initialBox.h - newH;
+      next = { x: initialBox.x, y: newY, w: newW, h: newH };
+    } else if (handle === 'bl') {
+      let newX = Math.max(offX, Math.min(initialBox.x + dx, initialBox.x + initialBox.w - minW));
+      let newW = initialBox.w - (newX - initialBox.x);
+      let newH = targetRatio ? newW / targetRatio : Math.max(minH, Math.min(initialBox.h + dy, maxBottom - initialBox.y));
+      if (targetRatio && initialBox.y + newH > maxBottom) {
+        newH = maxBottom - initialBox.y;
+        newW = newH * targetRatio;
+        newX = initialBox.x + initialBox.w - newW;
+      }
+      next = { x: newX, y: initialBox.y, w: newW, h: newH };
+    } else if (handle === 'br') {
+      let newW = Math.max(minW, Math.min(initialBox.w + dx, maxRight - initialBox.x));
+      let newH = targetRatio ? newW / targetRatio : Math.max(minH, Math.min(initialBox.h + dy, maxBottom - initialBox.y));
+      if (targetRatio && initialBox.y + newH > maxBottom) {
+        newH = maxBottom - initialBox.y;
+        newW = newH * targetRatio;
+      }
+      next = { x: initialBox.x, y: initialBox.y, w: newW, h: newH };
+    } else if (handle === 't') {
+      const newY = Math.max(offY, Math.min(initialBox.y + dy, initialBox.y + initialBox.h - minH));
+      const newH = initialBox.h - (newY - initialBox.y);
+      next = { ...initialBox, y: newY, h: newH };
+    } else if (handle === 'b') {
+      const newH = Math.max(minH, Math.min(initialBox.h + dy, maxBottom - initialBox.y));
+      next = { ...initialBox, h: newH };
+    } else if (handle === 'l') {
+      const newX = Math.max(offX, Math.min(initialBox.x + dx, initialBox.x + initialBox.w - minW));
+      const newW = initialBox.w - (newX - initialBox.x);
+      next = { ...initialBox, x: newX, w: newW };
+    } else if (handle === 'r') {
+      const newW = Math.max(minW, Math.min(initialBox.w + dx, maxRight - initialBox.x));
+      next = { ...initialBox, w: newW };
+    }
+
+    cropBoxRef.current = next;
+    setCropBox(next);
+  };
+
+  // Direct Web Pointer/Mouse Drag Handlers (100% butter-smooth on browsers)
+  const handleWebPointerDown = (e: any, handle: HandleType) => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    e.preventDefault?.();
+    e.stopPropagation?.();
+    const startX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+    const startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+    const initialBox = { ...cropBoxRef.current };
+
+    const onPointerMove = (moveEvt: any) => {
+      moveEvt.preventDefault?.();
+      const curX = moveEvt.clientX ?? moveEvt.touches?.[0]?.clientX ?? startX;
+      const curY = moveEvt.clientY ?? moveEvt.touches?.[0]?.clientY ?? startY;
+      const dx = curX - startX;
+      const dy = curY - startY;
+      applyDeltaToCropBox(handle, initialBox, dx, dy);
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener('mousemove', onPointerMove);
+      window.removeEventListener('mouseup', onPointerUp);
+      window.removeEventListener('touchmove', onPointerMove);
+      window.removeEventListener('touchend', onPointerUp);
+    };
+
+    window.addEventListener('mousemove', onPointerMove);
+    window.addEventListener('mouseup', onPointerUp);
+    window.addEventListener('touchmove', onPointerMove, { passive: false });
+    window.addEventListener('touchend', onPointerUp);
+  };
+
+  // React Native PanResponder for native mobile platforms
+  const createPanResponder = (handle: HandleType) =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt: GestureResponderEvent) => {
+        const { pageX, pageY } = evt.nativeEvent;
+        dragStartRef.current = {
+          box: { ...cropBoxRef.current },
+          touchX: pageX,
+          touchY: pageY,
+        };
+      },
+      onPanResponderMove: (evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
+        if (!dragStartRef.current) return;
+        applyDeltaToCropBox(handle, dragStartRef.current.box, gestureState.dx, gestureState.dy);
+      },
+      onPanResponderRelease: () => {
+        dragStartRef.current = null;
+      },
+    });
+
+  const moveResponder = useRef(createPanResponder('move')).current;
+  const tlResponder = useRef(createPanResponder('tl')).current;
+  const trResponder = useRef(createPanResponder('tr')).current;
+  const blResponder = useRef(createPanResponder('bl')).current;
+  const brResponder = useRef(createPanResponder('br')).current;
+  const tResponder = useRef(createPanResponder('t')).current;
+  const bResponder = useRef(createPanResponder('b')).current;
+  const lResponder = useRef(createPanResponder('l')).current;
+  const rResponder = useRef(createPanResponder('r')).current;
+
+  // Unified prop binder for web or native
+  const getHandleProps = (handle: HandleType) => {
+    if (Platform.OS === 'web') {
+      return {
+        onMouseDown: (e: any) => handleWebPointerDown(e, handle),
+        onTouchStart: (e: any) => handleWebPointerDown(e, handle),
+      };
+    }
+    const map = {
+      move: moveResponder,
+      tl: tlResponder,
+      tr: trResponder,
+      bl: blResponder,
+      br: brResponder,
+      t: tResponder,
+      b: bResponder,
+      l: lResponder,
+      r: rResponder,
+    };
+    return map[handle].panHandlers;
+  };
 
   // Trigger Intelligent Auto Crop
   const handleTriggerAutoCrop = () => {
@@ -235,7 +440,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         try {
-          const sampleW = 200;
+          const sampleW = 220;
           const sampleH = Math.max(10, Math.round((currentImgH / currentImgW) * sampleW));
           const canvas = document.createElement('canvas');
           canvas.width = sampleW;
@@ -257,7 +462,6 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
           const imgData = ctx.getImageData(0, 0, sampleW, sampleH);
           const data = imgData.data;
 
-          // Corner background estimation
           const cIdxs = [
             0,
             (sampleW - 1) * 4,
@@ -303,13 +507,15 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
             const newW = (normR - normL) * renderedW;
             const newH = (normB - normT) * renderedH;
 
-            setCropBox({
+            const nextBox: Box = {
               x: Math.max(imgOffsetX, newX),
               y: Math.max(imgOffsetY, newY),
               w: Math.min(newW, renderedW),
               h: Math.min(newH, renderedH),
-            });
-            showNotice('⚡ Auto-detected document & edges');
+            };
+            setCropBox(nextBox);
+            cropBoxRef.current = nextBox;
+            showNotice('⚡ Auto-crop applied');
             return;
           }
         } catch (e) {
@@ -331,18 +537,15 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
       newH = renderedH * 0.88;
       newW = newH * targetRatio;
     }
-    setCropBox({
+    const nextBox: Box = {
       x: imgOffsetX + (renderedW - newW) / 2,
       y: imgOffsetY + (renderedH - newH) / 2,
       w: newW,
       h: newH,
-    });
-    showNotice('⚡ Auto focal crop applied');
-  };
-
-  const showNotice = (msg: string) => {
-    setFeedbackNotice(msg);
-    setTimeout(() => setFeedbackNotice(null), 2500);
+    };
+    setCropBox(nextBox);
+    cropBoxRef.current = nextBox;
+    showNotice('⚡ Focal crop applied');
   };
 
   // Handle Aspect Ratio switch
@@ -352,29 +555,34 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
       handleTriggerAutoCrop();
       return;
     }
-    if (mode === 'FREE') return; // Freeform: keep current box, unlock aspect
+    if (mode === 'FREE') {
+      showNotice('Freeform crop unlocked');
+      return;
+    }
 
     let targetRatio: number | null = null;
     if (mode === 'ORIGINAL') targetRatio = currentImgW / currentImgH;
     if (mode === '1:1') targetRatio = 1;
     if (mode === '4:5') targetRatio = 4 / 5;
     if (mode === '16:9') targetRatio = 16 / 9;
-    if (mode === 'DOC') targetRatio = 1 / 1.414; // A4 standard
+    if (mode === 'DOC') targetRatio = 1 / 1.414;
 
     if (!targetRatio) return;
 
-    let newW = renderedW;
+    let newW = renderedW * 0.92;
     let newH = newW / targetRatio;
-    if (newH > renderedH) {
-      newH = renderedH;
+    if (newH > renderedH * 0.92) {
+      newH = renderedH * 0.92;
       newW = newH * targetRatio;
     }
-    setCropBox({
+    const nextBox: Box = {
       x: imgOffsetX + (renderedW - newW) / 2,
       y: imgOffsetY + (renderedH - newH) / 2,
       w: newW,
       h: newH,
-    });
+    };
+    setCropBox(nextBox);
+    cropBoxRef.current = nextBox;
   };
 
   const handleRotate = () => {
@@ -384,152 +592,28 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
   const handleReset = () => {
     setRotation(0);
     setAspectRatio('FREE');
-    setCropBox({
+    const resetBox: Box = {
       x: imgOffsetX,
       y: imgOffsetY,
       w: renderedW,
       h: renderedH,
-    });
+    };
+    setCropBox(resetBox);
+    cropBoxRef.current = resetBox;
     showNotice('Full image restored');
   };
-
-  // Generalized PanResponder for moving, 4 corners, and 4 edges
-  const createHandleResponder = (
-    handle: 'tl' | 'tr' | 'bl' | 'br' | 't' | 'b' | 'l' | 'r' | 'move'
-  ) =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt: GestureResponderEvent) => {
-        const { pageX, pageY } = evt.nativeEvent;
-        dragStartRef.current = {
-          box: { ...cropBox },
-          touchX: pageX,
-          touchY: pageY,
-        };
-      },
-      onPanResponderMove: (evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
-        if (!dragStartRef.current) return;
-        const { box } = dragStartRef.current;
-        const dx = gestureState.dx;
-        const dy = gestureState.dy;
-
-        const minW = 45;
-        const minH = 45;
-        const maxRight = imgOffsetX + renderedW;
-        const maxBottom = imgOffsetY + renderedH;
-
-        let targetRatio: number | null = null;
-        if (aspectRatio === '1:1') targetRatio = 1;
-        else if (aspectRatio === '4:5') targetRatio = 4 / 5;
-        else if (aspectRatio === '16:9') targetRatio = 16 / 9;
-        else if (aspectRatio === 'ORIGINAL') targetRatio = currentImgW / currentImgH;
-        else if (aspectRatio === 'DOC') targetRatio = 1 / 1.414;
-
-        if (handle === 'move') {
-          // Move whole box smoothly within bounds
-          const newX = Math.max(imgOffsetX, Math.min(box.x + dx, maxRight - box.w));
-          const newY = Math.max(imgOffsetY, Math.min(box.y + dy, maxBottom - box.h));
-          setCropBox({ ...box, x: newX, y: newY });
-          return;
-        }
-
-        // Top edge drag
-        if (handle === 't') {
-          const newY = Math.max(imgOffsetY, Math.min(box.y + dy, box.y + box.h - minH));
-          const newH = box.h - (newY - box.y);
-          setCropBox({ ...box, y: newY, h: newH });
-          return;
-        }
-
-        // Bottom edge drag
-        if (handle === 'b') {
-          const newH = Math.max(minH, Math.min(box.h + dy, maxBottom - box.y));
-          setCropBox({ ...box, h: newH });
-          return;
-        }
-
-        // Left edge drag
-        if (handle === 'l') {
-          const newX = Math.max(imgOffsetX, Math.min(box.x + dx, box.x + box.w - minW));
-          const newW = box.w - (newX - box.x);
-          setCropBox({ ...box, x: newX, w: newW });
-          return;
-        }
-
-        // Right edge drag
-        if (handle === 'r') {
-          const newW = Math.max(minW, Math.min(box.w + dx, maxRight - box.x));
-          setCropBox({ ...box, w: newW });
-          return;
-        }
-
-        // 4 Corners Drag
-        if (handle === 'tl') {
-          let newX = Math.max(imgOffsetX, Math.min(box.x + dx, box.x + box.w - minW));
-          let newW = box.w - (newX - box.x);
-          let newH = targetRatio ? newW / targetRatio : box.h - (Math.max(imgOffsetY, Math.min(box.y + dy, box.y + box.h - minH)) - box.y);
-          if (targetRatio && box.y + box.h - newH < imgOffsetY) {
-            newH = box.y + box.h - imgOffsetY;
-            newW = newH * targetRatio;
-            newX = box.x + box.w - newW;
-          }
-          let newY = box.y + box.h - newH;
-          setCropBox({ x: newX, y: newY, w: newW, h: newH });
-        } else if (handle === 'tr') {
-          let newW = Math.max(minW, Math.min(box.w + dx, maxRight - box.x));
-          let newH = targetRatio ? newW / targetRatio : box.h - (Math.max(imgOffsetY, Math.min(box.y + dy, box.y + box.h - minH)) - box.y);
-          if (targetRatio && box.y + box.h - newH < imgOffsetY) {
-            newH = box.y + box.h - imgOffsetY;
-            newW = newH * targetRatio;
-          }
-          let newY = box.y + box.h - newH;
-          setCropBox({ x: box.x, y: newY, w: newW, h: newH });
-        } else if (handle === 'bl') {
-          let newX = Math.max(imgOffsetX, Math.min(box.x + dx, box.x + box.w - minW));
-          let newW = box.w - (newX - box.x);
-          let newH = targetRatio ? newW / targetRatio : Math.max(minH, Math.min(box.h + dy, maxBottom - box.y));
-          if (targetRatio && box.y + newH > maxBottom) {
-            newH = maxBottom - box.y;
-            newW = newH * targetRatio;
-            newX = box.x + box.w - newW;
-          }
-          setCropBox({ x: newX, y: box.y, w: newW, h: newH });
-        } else if (handle === 'br') {
-          let newW = Math.max(minW, Math.min(box.w + dx, maxRight - box.x));
-          let newH = targetRatio ? newW / targetRatio : Math.max(minH, Math.min(box.h + dy, maxBottom - box.y));
-          if (targetRatio && box.y + newH > maxBottom) {
-            newH = maxBottom - box.y;
-            newW = newH * targetRatio;
-          }
-          setCropBox({ x: box.x, y: box.y, w: newW, h: newH });
-        }
-      },
-      onPanResponderRelease: () => {
-        dragStartRef.current = null;
-      },
-    });
-
-  const moveResponder = useRef(createHandleResponder('move')).current;
-  const tlResponder = useRef(createHandleResponder('tl')).current;
-  const trResponder = useRef(createHandleResponder('tr')).current;
-  const blResponder = useRef(createHandleResponder('bl')).current;
-  const brResponder = useRef(createHandleResponder('br')).current;
-  const tResponder = useRef(createHandleResponder('t')).current;
-  const bResponder = useRef(createHandleResponder('b')).current;
-  const lResponder = useRef(createHandleResponder('l')).current;
-  const rResponder = useRef(createHandleResponder('r')).current;
 
   // Execute Final Pixel-Perfect Crop
   const handleApplyCrop = () => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       const img = new (window as any).Image();
+      img.crossOrigin = 'anonymous';
       img.onload = () => {
-        // Calculate relative coordinates in rendered image
-        const relX = Math.max(0, (cropBox.x - imgOffsetX) / scale);
-        const relY = Math.max(0, (cropBox.y - imgOffsetY) / scale);
-        const relW = Math.max(1, Math.min(cropBox.w / scale, currentImgW - relX));
-        const relH = Math.max(1, Math.min(cropBox.h / scale, currentImgH - relY));
+        const currentBox = cropBoxRef.current;
+        const relX = Math.max(0, (currentBox.x - imgOffsetX) / scale);
+        const relY = Math.max(0, (currentBox.y - imgOffsetY) / scale);
+        const relW = Math.max(1, Math.min(currentBox.w / scale, currentImgW - relX));
+        const relH = Math.max(1, Math.min(currentBox.h / scale, currentImgH - relY));
 
         const canvas = document.createElement('canvas');
         canvas.width = Math.round(relW);
@@ -543,7 +627,6 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
-        // Draw rotated & cropped area
         if (rotation === 0) {
           ctx.drawImage(img, relX, relY, relW, relH, 0, 0, canvas.width, canvas.height);
         } else {
@@ -564,6 +647,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
         const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
         onCropComplete(croppedDataUrl);
       };
+      img.onerror = () => onCropComplete(imageUri);
       img.src = imageUri;
     } else {
       onCropComplete(imageUri);
@@ -609,7 +693,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
 
         {/* Aspect Ratio Toolbar */}
         <View style={styles.aspectBar}>
-          {(['ORIGINAL', '1:1', '4:5', '16:9', 'FREE', 'AUTO'] as AspectRatioOption[]).map((mode) => (
+          {(['AUTO', 'FREE', 'ORIGINAL', '1:1', '4:5', '16:9', 'DOC'] as AspectRatioOption[]).map((mode) => (
             <TouchableOpacity
               key={mode}
               style={[styles.aspectPill, aspectRatio === mode && styles.aspectPillActive]}
@@ -617,7 +701,15 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
             >
               {mode === 'AUTO' && <Zap size={12} color={aspectRatio === 'AUTO' ? '#ffffff' : '#fbbf24'} style={{ marginRight: 3 }} />}
               <Text style={[styles.aspectPillText, aspectRatio === mode && styles.aspectPillTextActive]}>
-                {mode === 'AUTO' ? 'Auto ⚡' : mode === 'ORIGINAL' ? 'Original' : mode === 'FREE' ? 'Freeform' : mode}
+                {mode === 'AUTO'
+                  ? 'Auto ⚡'
+                  : mode === 'FREE'
+                  ? 'Freeform'
+                  : mode === 'ORIGINAL'
+                  ? 'Original'
+                  : mode === 'DOC'
+                  ? 'A4 Doc'
+                  : mode}
               </Text>
             </TouchableOpacity>
           ))}
@@ -690,7 +782,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
 
             {/* Interactive Crop Box Window */}
             <View
-              {...moveResponder.panHandlers}
+              {...getHandleProps('move')}
               style={[
                 styles.cropWindow,
                 {
@@ -698,6 +790,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
                   top: cropBox.y,
                   width: cropBox.w,
                   height: cropBox.h,
+                  cursor: 'move' as any,
                 },
               ]}
             >
@@ -708,30 +801,30 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
               <View style={styles.gridCol2} />
 
               {/* 4 Edge Resize Drag Bars */}
-              <View {...tResponder.panHandlers} style={[styles.edgeTouchH, styles.edgeT]}>
+              <View {...getHandleProps('t')} style={[styles.edgeTouchH, styles.edgeT]}>
                 <View style={styles.edgeBarH} />
               </View>
-              <View {...bResponder.panHandlers} style={[styles.edgeTouchH, styles.edgeB]}>
+              <View {...getHandleProps('b')} style={[styles.edgeTouchH, styles.edgeB]}>
                 <View style={styles.edgeBarH} />
               </View>
-              <View {...lResponder.panHandlers} style={[styles.edgeTouchV, styles.edgeL]}>
+              <View {...getHandleProps('l')} style={[styles.edgeTouchV, styles.edgeL]}>
                 <View style={styles.edgeBarV} />
               </View>
-              <View {...rResponder.panHandlers} style={[styles.edgeTouchV, styles.edgeR]}>
+              <View {...getHandleProps('r')} style={[styles.edgeTouchV, styles.edgeR]}>
                 <View style={styles.edgeBarV} />
               </View>
 
               {/* 4 Corner Resize Handles */}
-              <View {...tlResponder.panHandlers} style={[styles.handleTouch, styles.handleTL]}>
+              <View {...getHandleProps('tl')} style={[styles.handleTouch, styles.handleTL]}>
                 <View style={styles.handleCorner} />
               </View>
-              <View {...trResponder.panHandlers} style={[styles.handleTouch, styles.handleTR]}>
+              <View {...getHandleProps('tr')} style={[styles.handleTouch, styles.handleTR]}>
                 <View style={styles.handleCorner} />
               </View>
-              <View {...blResponder.panHandlers} style={[styles.handleTouch, styles.handleBL]}>
+              <View {...getHandleProps('bl')} style={[styles.handleTouch, styles.handleBL]}>
                 <View style={styles.handleCorner} />
               </View>
-              <View {...brResponder.panHandlers} style={[styles.handleTouch, styles.handleBR]}>
+              <View {...getHandleProps('br')} style={[styles.handleTouch, styles.handleBR]}>
                 <View style={styles.handleCorner} />
               </View>
             </View>
@@ -868,7 +961,6 @@ const styles = StyleSheet.create({
     borderColor: '#ffffff',
     backgroundColor: 'transparent',
   },
-  // WhatsApp 3x3 Grid
   gridRow1: {
     position: 'absolute',
     top: '33.33%',
@@ -901,30 +993,33 @@ const styles = StyleSheet.create({
     width: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.28)',
   },
-  // Corner touch zones
   handleTouch: {
     position: 'absolute',
-    width: 32,
-    height: 32,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
   },
   handleTL: {
-    top: -8,
-    left: -8,
+    top: -10,
+    left: -10,
+    cursor: 'nwse-resize' as any,
   },
   handleTR: {
-    top: -8,
-    right: -8,
+    top: -10,
+    right: -10,
+    cursor: 'nesw-resize' as any,
   },
   handleBL: {
-    bottom: -8,
-    left: -8,
+    bottom: -10,
+    left: -10,
+    cursor: 'nesw-resize' as any,
   },
   handleBR: {
-    bottom: -8,
-    right: -8,
+    bottom: -10,
+    right: -10,
+    cursor: 'nwse-resize' as any,
   },
   handleCorner: {
     width: 14,
@@ -934,21 +1029,21 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#0284c7',
   },
-  // Edge touch zones & bars
   edgeTouchH: {
     position: 'absolute',
     left: 20,
     right: 20,
-    height: 24,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 8,
+    cursor: 'ns-resize' as any,
   },
   edgeT: {
-    top: -12,
+    top: -14,
   },
   edgeB: {
-    bottom: -12,
+    bottom: -14,
   },
   edgeBarH: {
     width: 36,
@@ -960,16 +1055,17 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 20,
     bottom: 20,
-    width: 24,
+    width: 28,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 8,
+    cursor: 'ew-resize' as any,
   },
   edgeL: {
-    left: -12,
+    left: -14,
   },
   edgeR: {
-    right: -12,
+    right: -14,
   },
   edgeBarV: {
     width: 4,
@@ -978,9 +1074,11 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   footer: {
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
     backgroundColor: '#0f172a',
+    borderTopWidth: 1,
+    borderTopColor: '#1e293b',
   },
   hintText: {
     color: '#94a3b8',

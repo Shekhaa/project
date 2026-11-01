@@ -123,8 +123,12 @@ export const PostCard: React.FC<PostCardProps> = ({
             </View>
 
             <View style={styles.metaLine}>
-              {post.community_name ? (
-                <Text style={styles.communityTag}>🎓 {post.community_name} • </Text>
+              {post.visibility === 'GLOBAL' ? (
+                <Text style={styles.communityTag}>🌐 Global • </Text>
+              ) : post.visibility === 'COLLEGE' ? (
+                <Text style={styles.communityTag}>🏛️ {post.author_college_name || post.community_name || 'College'} • </Text>
+              ) : post.community_name ? (
+                <Text style={styles.communityTag}>👥 {post.community_name} • </Text>
               ) : null}
               <Text style={styles.timestamp}>{formatTimestamp(post.created_at)}</Text>
             </View>

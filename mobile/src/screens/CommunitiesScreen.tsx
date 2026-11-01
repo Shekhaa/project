@@ -75,7 +75,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   const [communities, setCommunities] = useState<Community[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<'ALL' | 'COLLEGE' | 'COURSE' | 'CLUB' | 'CUSTOM'>('ALL');
+  const [selectedCategory, setSelectedCategory] = useState<'ALL' | 'COLLEGE' | 'COURSE' | 'CUSTOM'>('ALL');
   const [createCommunityModalVisible, setCreateCommunityModalVisible] = useState(false);
 
   // Active Community State
@@ -471,9 +471,8 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
     const matchesCat =
       selectedCategory === 'ALL' ||
       (selectedCategory === 'COLLEGE' && c.community_type === 'COLLEGE') ||
-      (selectedCategory === 'COURSE' && ['COURSE', 'BRANCH', 'YEAR', 'SECTION'].includes(c.community_type)) ||
-      (selectedCategory === 'CLUB' && c.community_type === 'CLUB') ||
-      (selectedCategory === 'CUSTOM' && c.community_type === 'CUSTOM');
+      (selectedCategory === 'COURSE' && c.community_type === 'COURSE') ||
+      (selectedCategory === 'CUSTOM' && (c.community_type === 'CUSTOM' || c.community_type === 'CLUB'));
 
     return matchesSearch && matchesCat;
   });
@@ -1210,27 +1209,10 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   <Text style={styles.cardDesc} numberOfLines={2}>{item.description}</Text>
                 ) : null}
 
-                {/* Latest Discussion Preview */}
-                {latestDisc && (
-                  <View style={styles.latestDiscCard}>
-                    <View style={styles.latestDiscHeader}>
-                      <View style={[styles.discussTypeBadge, { backgroundColor: '#10b98122', borderColor: '#10b981' }]}>
-                        <Text style={[styles.discussTypeBadgeText, { color: '#10b981' }]}>
-                          {latestDisc.type || 'QUESTION'}
-                        </Text>
-                      </View>
-                      <Text style={styles.latestDiscTime}>Active Discussion</Text>
-                    </View>
-                    <Text style={styles.latestDiscTitle} numberOfLines={1}>
-                      {latestDisc.title}
-                    </Text>
-                  </View>
-                )}
-
                 {/* Card Action Row */}
                 <View style={styles.cardActionRow}>
                   <View style={styles.openCommunityBtn}>
-                    <Text style={styles.openCommunityBtnText}>Open Community →</Text>
+                    <Text style={styles.openCommunityBtnText}>Open Hub Chat & Discussions →</Text>
                   </View>
                 </View>
               </TouchableOpacity>

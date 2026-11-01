@@ -27,12 +27,18 @@ import {
   Trash2,
   Plus,
   Zap,
+  Globe,
+  Building2,
+  Users,
+  Search,
 } from 'lucide-react-native';
 
 interface CommunityOption {
   id: number;
   name: string;
 }
+
+export type PostScope = 'GLOBAL' | 'COLLEGE' | 'COMMUNITY';
 
 interface PostComposerModalProps {
   visible: boolean;
@@ -52,9 +58,11 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   defaultCommunityId,
 }) => {
   const [content, setContent] = useState('');
+  const [postScope, setPostScope] = useState<PostScope>(defaultCommunityId ? 'COMMUNITY' : 'COLLEGE');
   const [selectedCommunity, setSelectedCommunity] = useState<number>(
     defaultCommunityId || (communities[0]?.id || 1)
   );
+  const [communitySearchQuery, setCommunitySearchQuery] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(false);
   
   // Multi-attachment staging state
@@ -303,7 +311,13 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
       else if (hasDocs) determinedMediaType = 'DOCUMENT';
 
       const formData = new FormData();
-      formData.append('community', String(targetCommunity));
+      formData.append('visibility', postScope);
+      if (postScope === 'COMMUNITY') {
+        const targetCommunity = selectedCommunity || communities[0]?.id || 1;
+        formData.append('community', String(targetCommunity));
+      } else if (selectedCommunity) {
+        formData.append('community', String(selectedCommunity));
+      }
       formData.append('content', content.trim());
       formData.append('is_anonymous', String(isAnonymous));
       formData.append('media_type', determinedMediaType);
@@ -402,25 +416,88 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
         </View>
 
         <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
-          {/* Community Selector Pill */}
-          <View style={styles.communitySelectorRow}>
-            <Text style={styles.selectorLabel}>Post to:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.communityScroll}>
-              {communities.map((c) => {
-                const isSelected = selectedCommunity === c.id;
-                return (
-                  <TouchableOpacity
-                    key={c.id}
-                    style={[styles.commPill, isSelected && styles.commPillSelected]}
-                    onPress={() => setSelectedCommunity(c.id)}
-                  >
-                    <Text style={[styles.commPillText, isSelected && styles.commPillTextSelected]}>
-                      🎓 {c.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+          {/* Post Audience & Scope Selector (Global vs College vs Community) */}
+          <View style={styles.scopeContainer}>
+            <Text style={styles.scopeHeaderLabel}>Who can see this post?</Text>
+            <View style={styles.scopePillRow}>
+              <TouchableOpacity
+                style={[styles.scopePill, postScope === 'GLOBAL' && styles.scopePillActive]}
+                onPress={() => setPostScope('GLOBAL')}
+                activeOpacity={0.8}
+              >
+                <Globe size={14} color={postScope === 'GLOBAL' ? '#38bdf8' : '#94a3b8'} />
+                <Text style={[styles.scopePillText, postScope === 'GLOBAL' && styles.scopePillTextActive]}>
+                  Global (All Campuses)
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.scopePill, postScope === 'COLLEGE' && styles.scopePillActive]}
+                onPress={() => setPostScope('COLLEGE')}
+                activeOpacity={0.8}
+              >
+                <Building2 size={14} color={postScope === 'COLLEGE' ? '#38bdf8' : '#94a3b8'} />
+                <Text style={[styles.scopePillText, postScope === 'COLLEGE' && styles.scopePillTextActive]}>
+                  My College Only
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.scopePill, postScope === 'COMMUNITY' && styles.scopePillActive]}
+                onPress={() => setPostScope('COMMUNITY')}
+                activeOpacity={0.8}
+              >
+                <Users size={14} color={postScope === 'COMMUNITY' ? '#38bdf8' : '#94a3b8'} />
+                <Text style={[styles.scopePillText, postScope === 'COMMUNITY' && styles.scopePillTextActive]}>
+                  Specific Community / Hub
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* When Specific Community is chosen: search and select community */}
+            {postScope === 'COMMUNITY' && (
+              <View style={styles.commSearchContainer}>
+                <View style={styles.commSearchBar}>
+                  <Search size={14} color="#64748b" style={{ marginRight: 6 }} />
+                  <TextInput
+                    style={styles.commSearchInput}
+                    placeholder="Search community or club to post in..."
+                    placeholderTextColor="#64748b"
+                    value={communitySearchQuery}
+                    onChangeText={setCommunitySearchQuery}
+                  />
+                  {communitySearchQuery ? (
+                    <TouchableOpacity onPress={() => setCommunitySearchQuery('')}>
+                      <X size={14} color="#64748b" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.communityScroll}>
+                  {communities
+                    .filter((c) =>
+                      !communitySearchQuery.trim() ||
+                      c.name.toLowerCase().includes(communitySearchQuery.toLowerCase())
+                    )
+                    .map((c) => {
+                      const isSelected = selectedCommunity === c.id;
+                      return (
+                        <TouchableOpacity
+                          key={c.id}
+                          style={[styles.commPill, isSelected && styles.commPillSelected]}
+                          onPress={() => setSelectedCommunity(c.id)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.commPillText, isSelected && styles.commPillTextSelected]}>
+                            {isSelected ? '✓ ' : '🎓 '}
+                            {c.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                </ScrollView>
+              </View>
+            )}
           </View>
 
           {/* Main Content Input */}
@@ -641,25 +718,82 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  communitySelectorRow: {
-    marginBottom: 14,
+  scopeContainer: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 16,
   },
-  selectorLabel: {
+  scopeHeaderLabel: {
+    color: '#38bdf8',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  scopePillRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  scopePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 18,
+    gap: 6,
+  },
+  scopePillActive: {
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    borderColor: '#38bdf8',
+  },
+  scopePillText: {
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '600',
+  },
+  scopePillTextActive: {
+    color: '#38bdf8',
+    fontWeight: '700',
+  },
+  commSearchContainer: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  commSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0b0f19',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     marginBottom: 8,
+  },
+  commSearchInput: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 12.5,
   },
   communityScroll: {
     flexDirection: 'row',
+    paddingVertical: 2,
   },
   commPill: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
     marginRight: 8,
   },
   commPillSelected: {

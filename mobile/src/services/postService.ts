@@ -3,6 +3,11 @@ import { AttachmentItem } from './chatService';
 
 export interface Post {
   id: number;
+  visibility?: 'GLOBAL' | 'COLLEGE' | 'COMMUNITY';
+  community?: number | null;
+  community_name?: string;
+  community_slug?: string;
+  author_college_name?: string;
   content: string;
   media_type?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
   media_url?: string;
@@ -17,8 +22,6 @@ export interface Post {
   author_verification_tier?: 'FULLY_VERIFIED' | 'SEMI_VERIFIED' | 'UNVERIFIED';
   author_badge_label?: string;
   anonymous_alias?: string;
-  community_name: string;
-  community_slug?: string;
   likes_count: number;
   comments_count: number;
   has_liked: boolean;
@@ -47,10 +50,18 @@ export interface PaginatedPosts {
 }
 
 export const postService = {
-  // Feed for enrolled communities with page pagination
-  async getFeed(communityId?: number, page: number = 1): Promise<PaginatedPosts> {
+  // Feed for enrolled communities with page pagination and scope support
+  async getFeed(
+    options?: { communityId?: number; scope?: 'GLOBAL' | 'COLLEGE' | 'COMMUNITY' } | number,
+    page: number = 1
+  ): Promise<PaginatedPosts> {
     const params: any = { page };
-    if (communityId) params.community = communityId;
+    if (typeof options === 'number') {
+      params.community = options;
+    } else if (options) {
+      if (options.communityId) params.community = options.communityId;
+      if (options.scope) params.scope = options.scope;
+    }
     const res = await api.get('/posts/feed/', { params });
     if (res.data && res.data.results) {
       return {

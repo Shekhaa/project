@@ -3,10 +3,25 @@ from django.conf import settings
 from communities.models import Community
 
 class Post(models.Model):
+    VISIBILITY_CHOICES = [
+        ("GLOBAL", "Global (All Campuses)"),
+        ("COLLEGE", "My College Only"),
+        ("COMMUNITY", "Specific Community"),
+    ]
+
+    visibility = models.CharField(
+        max_length=20,
+        choices=VISIBILITY_CHOICES,
+        default="COLLEGE",
+        db_index=True,
+        help_text="Post audience: GLOBAL across all colleges, COLLEGE for user's college only, or COMMUNITY for a hub"
+    )
     community = models.ForeignKey(
         Community,
         on_delete=models.CASCADE,
-        related_name="posts"
+        related_name="posts",
+        null=True,
+        blank=True
     )
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -39,13 +54,15 @@ class Post(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["community", "-created_at"], name="post_community_created_idx"),
+            models.Index(fields=["visibility", "-created_at"], name="post_visibility_created_idx"),
             models.Index(fields=["is_deleted", "-created_at"], name="post_deleted_created_idx"),
             models.Index(fields=["author", "-created_at"], name="post_author_created_idx"),
         ]
 
     def __str__(self):
         display_author = self.anonymous_alias if self.is_anonymous else self.author.email
-        return f"{display_author} - {self.community.name} ({self.created_at:%Y-%m-%d %H:%M})"
+        comm_name = self.community.name if self.community else self.visibility
+        return f"{display_author} - {comm_name} ({self.created_at:%Y-%m-%d %H:%M})"
 
 
 class PostImage(models.Model):

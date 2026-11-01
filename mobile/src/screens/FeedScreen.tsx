@@ -37,6 +37,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const [posts, setPosts] = useState<Post[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [selectedCommunityId, setSelectedCommunityId] = useState<number | undefined>(undefined);
+  const [selectedScope, setSelectedScope] = useState<'ALL' | 'GLOBAL' | 'COLLEGE' | undefined>('ALL');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -118,8 +119,14 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     try {
       setLoading(true);
       setPage(1);
+      const feedQuery = selectedCommunityId
+        ? { communityId: selectedCommunityId }
+        : selectedScope && selectedScope !== 'ALL'
+        ? { scope: selectedScope }
+        : undefined;
+
       const [feedData, commsData] = await Promise.all([
-        postService.getFeed(selectedCommunityId, 1),
+        postService.getFeed(feedQuery, 1),
         communityService.getMyCommunities(),
       ]);
       setPosts(feedData.results || []);
@@ -131,7 +138,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedCommunityId]);
+  }, [selectedCommunityId, selectedScope]);
 
   useEffect(() => {
     loadData();
@@ -147,7 +154,13 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     try {
       setLoadingMore(true);
       const nextPage = page + 1;
-      const feedData = await postService.getFeed(selectedCommunityId, nextPage);
+      const feedQuery = selectedCommunityId
+        ? { communityId: selectedCommunityId }
+        : selectedScope && selectedScope !== 'ALL'
+        ? { scope: selectedScope }
+        : undefined;
+
+      const feedData = await postService.getFeed(feedQuery, nextPage);
       setPosts((prev) => [...prev, ...(feedData.results || [])]);
       setHasMore(Boolean(feedData.next));
       setPage(nextPage);
@@ -249,37 +262,87 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         </View>
       </View>
 
-      {/* Community Filters */}
+      {/* Scope & Community Filters */}
       <View style={styles.filterSection}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterScroll}
         >
+          {/* All Combined Feed */}
           <TouchableOpacity
             style={[
               styles.filterPill,
-              selectedCommunityId === undefined && styles.filterPillActive,
+              selectedScope === 'ALL' && selectedCommunityId === undefined && styles.filterPillActive,
             ]}
-            onPress={() => setSelectedCommunityId(undefined)}
+            onPress={() => {
+              setSelectedScope('ALL');
+              setSelectedCommunityId(undefined);
+            }}
           >
             <Text
               style={[
                 styles.filterPillText,
-                selectedCommunityId === undefined && styles.filterPillTextActive,
+                selectedScope === 'ALL' && selectedCommunityId === undefined && styles.filterPillTextActive,
               ]}
             >
-              🌟 All Campus
+              🌟 All Feed
             </Text>
           </TouchableOpacity>
 
+          {/* Global All Campuses */}
+          <TouchableOpacity
+            style={[
+              styles.filterPill,
+              selectedScope === 'GLOBAL' && styles.filterPillActive,
+            ]}
+            onPress={() => {
+              setSelectedScope('GLOBAL');
+              setSelectedCommunityId(undefined);
+            }}
+          >
+            <Text
+              style={[
+                styles.filterPillText,
+                selectedScope === 'GLOBAL' && styles.filterPillTextActive,
+              ]}
+            >
+              🌐 Global
+            </Text>
+          </TouchableOpacity>
+
+          {/* My College Only */}
+          <TouchableOpacity
+            style={[
+              styles.filterPill,
+              selectedScope === 'COLLEGE' && styles.filterPillActive,
+            ]}
+            onPress={() => {
+              setSelectedScope('COLLEGE');
+              setSelectedCommunityId(undefined);
+            }}
+          >
+            <Text
+              style={[
+                styles.filterPillText,
+                selectedScope === 'COLLEGE' && styles.filterPillTextActive,
+              ]}
+            >
+              🏛️ My College
+            </Text>
+          </TouchableOpacity>
+
+          {/* Individual Enrolled Communities */}
           {communities.map((c) => {
             const isSelected = selectedCommunityId === c.id;
             return (
               <TouchableOpacity
                 key={c.id}
                 style={[styles.filterPill, isSelected && styles.filterPillActive]}
-                onPress={() => setSelectedCommunityId(c.id)}
+                onPress={() => {
+                  setSelectedCommunityId(c.id);
+                  setSelectedScope(undefined);
+                }}
               >
                 <Text
                   style={[
@@ -287,7 +350,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
                     isSelected && styles.filterPillTextActive,
                   ]}
                 >
-                  🎓 {c.name}
+                  {c.community_type === 'COLLEGE' ? '🎓 ' : c.community_type === 'COURSE' ? '📚 ' : '👥 '}
+                  {c.name}
                 </Text>
               </TouchableOpacity>
             );

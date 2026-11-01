@@ -84,14 +84,17 @@ class PostSerializer(serializers.ModelSerializer):
     likes_count = serializers.SerializerMethodField()
     comments_count = serializers.SerializerMethodField()
     has_liked = serializers.SerializerMethodField()
+    author_college_name = serializers.CharField(source="author.profile.college.name", read_only=True)
 
     class Meta:
         model = Post
         fields = [
             "id",
+            "visibility",
             "community",
             "community_name",
             "community_slug",
+            "author_college_name",
             "content",
             "media_type",
             "media_url",
@@ -120,6 +123,7 @@ class PostSerializer(serializers.ModelSerializer):
             "id",
             "community_name",
             "community_slug",
+            "author_college_name",
             "author_name",
             "author_username",
             "author_avatar",
@@ -132,12 +136,18 @@ class PostSerializer(serializers.ModelSerializer):
             "is_edited",
             "created_at",
         ]
+        extra_kwargs = {
+            "community": {"required": False, "allow_null": True},
+            "visibility": {"required": False},
+        }
 
     def validate_community(self, community):
         request = self.context.get("request")
-        if request and request.user.is_authenticated:
-            if not CommunityMember.objects.filter(user=request.user, community=community).exists():
-                raise serializers.ValidationError("You must be an enrolled member of this community to post.")
+        visibility = self.initial_data.get("visibility", "COLLEGE")
+        if visibility == "COMMUNITY" and community:
+            if request and request.user.is_authenticated:
+                if not CommunityMember.objects.filter(user=request.user, community=community).exists():
+                    raise serializers.ValidationError("You must be an enrolled member of this community to post.")
         return community
 
     def get_author_name(self, obj):

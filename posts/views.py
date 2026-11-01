@@ -19,24 +19,48 @@ User = get_user_model()
 class FeedView(generics.ListAPIView):
     """
     GET /api/posts/feed/
-    Fetches the customized student timeline consisting of posts from all
-    mandatory & joined communities the student belongs to.
+    Fetches the customized student timeline supporting GLOBAL, COLLEGE, and COMMUNITY scopes.
     """
     permission_classes = [IsAuthenticated]
     serializer_class = PostSerializer
     pagination_class = FeedPagination
 
     def get_queryset(self):
-        user_community_ids = CommunityMember.objects.filter(
-            user=self.request.user
-        ).values_list("community_id", flat=True)
+        user = self.request.user
+        user_community_ids = list(CommunityMember.objects.filter(
+            user=user
+        ).values_list("community_id", flat=True))
+
+        user_college = getattr(getattr(user, "profile", None), "college", None)
+
+        scope_param = self.request.query_params.get("scope", "").upper()
+        community_param = self.request.query_params.get("community")
+
+        if community_param:
+            qs_filter = Q(community_id=community_param)
+        elif scope_param == "GLOBAL":
+            qs_filter = Q(visibility="GLOBAL")
+        elif scope_param == "COLLEGE":
+            if user_college:
+                qs_filter = Q(visibility="COLLEGE", author__profile__college=user_college)
+            else:
+                qs_filter = Q(visibility="COLLEGE")
+        elif scope_param == "COMMUNITY":
+            qs_filter = Q(visibility="COMMUNITY", community_id__in=user_community_ids)
+        else:
+            college_q = Q(visibility="COLLEGE", author__profile__college=user_college) if user_college else Q(visibility="COLLEGE")
+            qs_filter = (
+                Q(visibility="GLOBAL") |
+                college_q |
+                Q(community_id__in=user_community_ids)
+            )
 
         qs = (
             Post.objects.filter(
-                community_id__in=user_community_ids,
+                qs_filter,
                 is_deleted=False
             )
-            .select_related("author", "author__profile", "community")
+            .select_related("author", "author__profile", "author__profile__college", "community")
             .prefetch_related("images", "attachments", "comments")
             .annotate(
                 likes_count=Count("likes", distinct=True),
@@ -44,9 +68,9 @@ class FeedView(generics.ListAPIView):
             )
             .order_by("-created_at")
         )
-        if self.request.user.is_authenticated:
+        if user.is_authenticated:
             qs = qs.annotate(
-                user_has_liked=Exists(PostLike.objects.filter(post=OuterRef("pk"), user=self.request.user))
+                user_has_liked=Exists(PostLike.objects.filter(post=OuterRef("pk"), user=user))
             )
         return qs
 
@@ -66,7 +90,7 @@ class CommunityFeedView(generics.ListAPIView):
 
         qs = (
             Post.objects.filter(community=community, is_deleted=False)
-            .select_related("author", "author__profile", "community")
+            .select_related("author", "author__profile", "author__profile__college", "community")
             .prefetch_related("images", "attachments", "comments")
             .annotate(
                 likes_count=Count("likes", distinct=True),
@@ -84,12 +108,37 @@ class CommunityFeedView(generics.ListAPIView):
 class CreatePostView(APIView):
     """
     POST /api/posts/create/
-    Creates a new post with text, optional anonymity, and multiple image/doc attachments.
+    Creates a new post with GLOBAL, COLLEGE, or COMMUNITY visibility.
     """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        serializer = PostSerializer(data=request.data, context={"request": request})
+        user = request.user
+        visibility = request.data.get("visibility", "COLLEGE")
+        if isinstance(visibility, list):
+            visibility = visibility[0]
+        visibility = str(visibility).upper()
+        if visibility not in ["GLOBAL", "COLLEGE", "COMMUNITY"]:
+            visibility = "COLLEGE"
+
+        community_id = request.data.get("community")
+        if isinstance(community_id, list):
+            community_id = community_id[0]
+
+        # Auto-resolve community if not specified
+        if not community_id:
+            user_college = getattr(getattr(user, "profile", None), "college", None)
+            if user_college:
+                college_comm = Community.objects.filter(name=user_college.name, community_type="COLLEGE").first()
+                if college_comm:
+                    community_id = college_comm.id
+
+        post_data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
+        post_data["visibility"] = visibility
+        if community_id:
+            post_data["community"] = community_id
+
+        serializer = PostSerializer(data=post_data, context={"request": request})
         serializer.is_valid(raise_exception=True)
 
         post = serializer.save(author=request.user)
