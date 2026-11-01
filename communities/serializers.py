@@ -28,7 +28,7 @@ class CommunityMemberUserSerializer(serializers.Serializer):
         return " • ".join(parts)
 
 
-class CommunityMemberSerializer(serializers.ModelSerializer):
+class CommunityMemberListSerializer(serializers.ModelSerializer):
     user = CommunityMemberUserSerializer(read_only=True)
 
     class Meta:
@@ -253,6 +253,15 @@ class CommunitySerializer(serializers.ModelSerializer):
                     "time": msg.created_at.isoformat(),
                 }
         return None
+
+
+class CommunityMemberSerializer(serializers.ModelSerializer):
+    community = CommunitySerializer(read_only=True)
+
+    class Meta:
+        model = CommunityMember
+        fields = ["id", "community", "role", "joined_at"]
+        read_only_fields = ["id", "joined_at"]
 
 
 class CreateCustomCommunitySerializer(serializers.ModelSerializer):

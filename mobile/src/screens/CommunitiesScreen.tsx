@@ -130,12 +130,24 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   // FlatList Ref for Auto-Scroll
   const chatFlatListRef = useRef<FlatList>(null);
 
-  // Load My Enrolled Communities
+  // Load Campus Communities (Enrolled & Discoverable)
   const loadCommunities = async () => {
     setLoading(true);
     try {
-      const data = await communityService.getMyCommunities();
-      setCommunities(data);
+      const [allData, myData] = await Promise.all([
+        communityService.getAllCommunities().catch(() => []),
+        communityService.getMyCommunities().catch(() => []),
+      ]);
+      const myMap = new Map((myData || []).map((m: any) => [m.id, m]));
+      const merged = (allData && allData.length > 0 ? allData : myData || []).map((c: any) => {
+        const myItem = myMap.get(c.id);
+        return {
+          ...c,
+          is_joined: !!myItem || c.is_joined,
+          user_role: myItem?.user_role || c.user_role,
+        };
+      });
+      setCommunities(merged.length > 0 ? merged : myData);
     } catch (e) {
       console.log('Error loading communities', e);
     } finally {
@@ -570,6 +582,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
   // Filtered Community List
   const filteredCommunities = communities.filter((c) => {
+    if (!c || !c.name) return false;
     const matchesSearch =
       !searchQuery.trim() ||
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1609,7 +1622,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   <View style={{ flex: 1, marginRight: 8 }}>
                     <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
                     <Text style={styles.cardMeta}>
-                      👥 {item.total_members} members • Campus Community
+                      👥 {item.total_members || 0} members • Campus Community
                     </Text>
                   </View>
                   <View style={[styles.typeBadge, { backgroundColor: badgeColor }]}>
@@ -1621,7 +1634,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   <Text style={styles.cardDesc} numberOfLines={2}>{item.description}</Text>
                 ) : null}
 
-                {/* Latest Discussion Preview (Matches User Mockup!) */}
+                {/* Latest Discussion Preview */}
                 {latestDisc && (
                   <View style={styles.latestDiscCard}>
                     <View style={styles.latestDiscHeader}>
@@ -1640,9 +1653,6 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
                 {/* Card Action Row */}
                 <View style={styles.cardActionRow}>
-                  <View style={styles.twoTabsHint}>
-                    <Text style={styles.twoTabsHintText}>[ CHAT ]  [ DISCUSS ]</Text>
-                  </View>
                   <View style={styles.openCommunityBtn}>
                     <Text style={styles.openCommunityBtnText}>Open Community →</Text>
                   </View>
@@ -1849,23 +1859,11 @@ const styles = StyleSheet.create({
   cardActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     borderTopWidth: 1,
     borderTopColor: '#1e293b',
     paddingTop: 10,
     marginTop: 4,
-  },
-  twoTabsHint: {
-    backgroundColor: 'rgba(56, 189, 248, 0.08)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  twoTabsHintText: {
-    color: '#38bdf8',
-    fontSize: 10.5,
-    fontWeight: '700',
-    letterSpacing: 0.5,
   },
   openCommunityBtn: {
     flexDirection: 'row',

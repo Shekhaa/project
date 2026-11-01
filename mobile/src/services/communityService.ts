@@ -98,7 +98,15 @@ export const communityService = {
   async getMyCommunities(): Promise<Community[]> {
     const res = await api.get('/communities/me/');
     const results = res.data.results || res.data;
-    return results.map((item: any) => item.community || item);
+    return results.map((item: any) => {
+      if (item && item.community) {
+        return {
+          ...item.community,
+          user_role: item.role || item.community.user_role,
+        };
+      }
+      return item;
+    });
   },
 
   // Discover all campus communities

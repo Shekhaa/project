@@ -9,6 +9,7 @@ from .models import Community, CommunityMember, Discussion, DiscussionReply, Dis
 from .serializers import (
     CommunitySerializer,
     CommunityMemberSerializer,
+    CommunityMemberListSerializer,
     CreateCustomCommunitySerializer,
     DiscussionSerializer,
     DiscussionDetailSerializer,
@@ -444,7 +445,7 @@ class CommunityMembersView(APIView):
         if role:
             qs = qs.filter(role=role.upper())
 
-        serializer = CommunityMemberSerializer(qs, many=True)
+        serializer = CommunityMemberListSerializer(qs, many=True)
         return Response(serializer.data)
 
     def post(self, request, slug):
@@ -475,7 +476,7 @@ class CommunityMembersView(APIView):
             member.role = target_role
             member.save(update_fields=["role"])
 
-        return Response(CommunityMemberSerializer(member).data, status=status.HTTP_201_CREATED)
+        return Response(CommunityMemberListSerializer(member).data, status=status.HTTP_201_CREATED)
 
 
 class CommunityMemberDetailView(APIView):
@@ -502,7 +503,7 @@ class CommunityMemberDetailView(APIView):
 
         member.role = new_role
         member.save(update_fields=["role"])
-        return Response(CommunityMemberSerializer(member).data)
+        return Response(CommunityMemberListSerializer(member).data)
 
     def delete(self, request, slug, member_id):
         community = get_object_or_404(Community, slug=slug)
