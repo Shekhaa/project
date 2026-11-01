@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campus Connect API | Graphic Era University & GEHU</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: rgba(17, 24, 39, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --primary: #38bdf8;
+      --primary-gradient: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+      --accent: #a855f7;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --success: #10b981;
+      --danger: #ef4444;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow-x: hidden;
+      line-height: 1.5;
+    }
+    /* Ambient Glow Background */
+    .glow-orb-1 {
+      position: absolute;
+      top: -150px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.15) 0%, rgba(129, 140, 248, 0.05) 50%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .glow-orb-2 {
+      position: absolute;
+      bottom: -100px;
+      right: -100px;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(168, 85, 247, 0.12) 0%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      position: relative;
+      z-index: 1;
+      width: 100%;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 40px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--primary-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 20px;
+      color: #0b0f19;
+      box-shadow: 0 8px 24px rgba(56, 189, 248, 0.3);
+    }
+    .brand-title {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: var(--primary-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #34d399;
+      box-shadow: 0 0 10px #34d399;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .hero {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+    .hero-tag {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--primary);
+      background: rgba(56, 189, 248, 0.1);
+      padding: 4px 12px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+    .hero-title {
+      font-size: clamp(32px, 5vw, 48px);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -1px;
+      margin-bottom: 16px;
+    }
+    .hero-desc {
+      font-size: 17px;
+      color: var(--text-muted);
+      max-width: 620px;
+      margin: 0 auto;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(12px);
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .card:hover {
+      border-color: rgba(56, 189, 248, 0.3);
+      transform: translateY(-2px);
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-body {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      text-decoration: none;
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      border: 1px solid var(--card-border);
+      cursor: pointer;
+      transition: all 0.2s;
+      width: 100%;
+    }
+    .btn:hover {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .btn-primary {
+      background: var(--primary-gradient);
+      color: #0b0f19;
+      border: none;
+      font-weight: 700;
+    }
+    .btn-primary:hover {
+      opacity: 0.95;
+      color: #0b0f19;
+      box-shadow: 0 4px 16px rgba(56, 189, 248, 0.4);
+    }
+    .console-box {
+      background: #060911;
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 18px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: #cbd5e1;
+      margin-top: 16px;
+      max-height: 220px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .quick-chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .chip:hover {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    footer {
+      text-align: center;
+      padding: 30px 20px;
+      color: var(--text-muted);
+      font-size: 13px;
+      border-top: 1px solid var(--card-border);
+      margin-top: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="glow-orb-1"></div>
+  <div class="glow-orb-2"></div>
+
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="brand-logo">CC</div>
+        <div>
+          <div class="brand-title">Campus Connect API</div>
+          <div style="font-size: 12px; color: var(--text-muted);">Graphic Era University & GEHU Dehradun</div>
+        </div>
+      </div>
+      <div class="status-badge">
+        <span class="status-dot"></span>
+        <span>Backend Online & Healthy</span>
+      </div>
+    </header>
+
+    <div class="hero">
+      <span class="hero-tag">Verified Campus Intranet</span>
+      <h1 class="hero-title">The Social Intranet for Graphic Era Students</h1>
+      <p class="hero-desc">
+        Proximity-first, fraud-proof student network. Zero fake profiles, geofenced campus groups, peer chats, and student governance.
+      </p>
+    </div>
+
+    <!-- Live Interactive Testing Section -->
+    <div class="grid">
+      <div class="card" style="grid-column: 1 / -1;">
+        <div class="card-title">
+          <span>⚡ Live Student Authentication & API Tester</span>
+        </div>
+        <div class="card-body">
+          Click any button below to execute a real live API call directly on this Render production server:
+        </div>
+        
+        <div class="quick-chips">
+          <button class="chip" onclick="testLogin('aarav.joshi@gehu.ac.in', 'Campus@2026')">🔑 Login as Aarav Joshi (GEHU CSE)</button>
+          <button class="chip" onclick="testLogin('priya.rawat@gehu.ac.in', 'Campus@2026')">🔑 Login as Priya Rawat (GEHU AI/ML)</button>
+          <button class="chip" onclick="fetchDemoUsers()">👥 List 15 Campus Demo Students</button>
+          <button class="chip" onclick="testHealth()">🟢 Backend Health Check</button>
+        </div>
+
+        <div id="console" class="console-box">// Click a button above to test live backend response in real-time...</div>
+      </div>
+
+      <!-- Card: Mobile UI Instructions -->
+      <div class="card">
+        <div class="card-title">
+          <span>📱 Run Full Mobile UI</span>
+        </div>
+        <div class="card-body">
+          To launch the complete Instagram-style mobile frontend on your local machine:
+        </div>
+        <div class="console-box" style="margin-top: 0; margin-bottom: 16px;">cd mobile
+npm run web
+# Opens at http://localhost:8081</div>
+        <a href="http://localhost:8081" target="_blank" class="btn btn-primary">Open Local Web App →</a>
+      </div>
+
+      <!-- Card: API Endpoints -->
+      <div class="card">
+        <div class="card-title">
+          <span>🔗 Quick API Directory</span>
+        </div>
+        <div class="card-body">
+          Direct links to production REST APIs:
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <a href="/api/health/" target="_blank" class="btn">/api/health/ (Status JSON)</a>
+          <a href="/api/authentication/demo-users/" target="_blank" class="btn">/api/authentication/demo-users/</a>
+          <a href="/admin/" target="_blank" class="btn">Django Admin Portal</a>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      © 2026 Campus Connect • Built for Graphic Era (GEU) & Graphic Era Hill University (GEHU)
+    </footer>
+  </div>
+
+  <script>
+    const consoleBox = document.getElementById('console');
+
+    async function testHealth() {
+      consoleBox.innerText = 'Connecting to /api/health/ ...';
+      try {
+        const start = performance.now();
+        const res = await fetch('/api/health/');
+        const data = await res.json();
+        const elapsed = (performance.now() - start).toFixed(0);
+        consoleBox.innerText = `[SUCCESS 200 OK] (Took ${elapsed}ms)\n\n` + JSON.stringify(data, null, 2);
+      } catch (err) {
+        consoleBox.innerText = `[ERROR]: ` + err.message;
+      }
+    }
+
+    async function fetchDemoUsers() {
+      consoleBox.innerText = 'Fetching 15 demo student profiles from /api/authentication/demo-users/ ...';
+      try {
+        const start = performance.now();
+        const res = await fetch('/api/authentication/demo-users/');
+        const data = await res.json();
+        const elapsed = (performance.now() - start).toFixed(0);
+        consoleBox.innerText = `[SUCCESS 200 OK] (Took ${elapsed}ms) - Found ${data.length} Students:\n\n` + JSON.stringify(data, null, 2);
+      } catch (err) {
+        consoleBox.innerText = `[ERROR]: ` + err.message;
+      }
+    }
+
+    async function testLogin(email, password) {
+      consoleBox.innerText = `Authenticating as ${email} ...`;
+      try {
+        const start = performance.now();
+        const res = await fetch('/api/authentication/login/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: email, password: password })
+        });
+        const data = await res.json();
+        const elapsed = (performance.now() - start).toFixed(0);
+        if (res.ok) {
+          consoleBox.innerText = `[LOGIN SUCCESS 200 OK] (Took ${elapsed}ms)\n` +
+            `Student: ${data.user.full_name} (${data.user.email})\n` +
+            `Verified: ${data.user.is_verified_student}\n` +
+            `Access JWT Token: ${data.access.substring(0, 40)}...\n\n` +
+            JSON.stringify(data, null, 2);
+        } else {
+          consoleBox.innerText = `[LOGIN FAILED ${res.status}]:\n` + JSON.stringify(data, null, 2);
+        }
+      } catch (err) {
+        consoleBox.innerText = `[ERROR]: ` + err.message;
+      }
+    }
+  </script>
+</body>
+</html>

@@ -4,6 +4,11 @@ from django.http import JsonResponse
 from django.conf import settings
 from django.conf.urls.static import static
 
+from django.shortcuts import render
+
+def landing_portal(request):
+    return render(request, "landing.html")
+
 def health_check(request):
     return JsonResponse({
         "status": "ok",
@@ -13,6 +18,7 @@ def health_check(request):
     })
 
 urlpatterns = [
+    path('', landing_portal, name='home'),
     path('admin/', admin.site.urls),
     path('api/health/', health_check, name='health-check'),
     
