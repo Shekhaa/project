@@ -1012,14 +1012,23 @@ class SearchUsersView(APIView):
     GET /api/authentication/users/search/?q=<query>
     Instant Instagram/TikTok-style student discovery and search.
     Searches by name, username, email, roll number.
+    Returns live connection and follower relationship statuses.
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        from profiles.models import Connection, Follow, UserBlock
+
         query = request.GET.get("q", "").strip()
         users_qs = User.objects.filter(is_active=True)
         if request.user.is_authenticated:
             users_qs = users_qs.exclude(id=request.user.id)
+            # Exclude blocked users in either direction
+            blocked_ids = set(UserBlock.objects.filter(blocker=request.user).values_list("blocked_id", flat=True))
+            blocked_by_ids = set(UserBlock.objects.filter(blocked=request.user).values_list("blocker_id", flat=True))
+            all_blocked = blocked_ids | blocked_by_ids
+            if all_blocked:
+                users_qs = users_qs.exclude(id__in=all_blocked)
 
         if query:
             users_qs = users_qs.filter(
@@ -1038,17 +1047,26 @@ class SearchUsersView(APIView):
             college_name = prof.college.name if (prof and prof.college) else ""
             branch_name = prof.branch.name if (prof and prof.branch) else ""
             admission_no = prof.admission_number if (prof and prof.admission_number) else ""
+            avatar_url = prof.profile_picture.url if (prof and prof.profile_picture) else None
+
+            conn_status = Connection.get_status(request.user, u) if request.user.is_authenticated else "NOT_CONNECTED"
+            follow_status = Follow.get_status(request.user, u) if request.user.is_authenticated else "NOT_FOLLOWING"
+            is_private = getattr(prof, "is_private_account", False)
 
             results.append({
                 "id": u.id,
                 "email": u.email,
                 "full_name": display_name,
                 "username": username,
+                "avatar": avatar_url,
                 "admission_number": admission_no,
                 "college_name": college_name,
                 "branch_name": branch_name,
                 "verified": getattr(u, "is_verified_student", False),
                 "verification_tier": getattr(u, "verification_tier", "SEMI_VERIFIED"),
+                "is_private_account": is_private,
+                "connection_status": conn_status,
+                "follow_status": follow_status,
             })
         return Response({"results": results})
 

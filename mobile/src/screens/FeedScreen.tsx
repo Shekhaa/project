@@ -37,7 +37,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const [posts, setPosts] = useState<Post[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [selectedCommunityId, setSelectedCommunityId] = useState<number | undefined>(undefined);
-  const [selectedScope, setSelectedScope] = useState<'ALL' | 'GLOBAL' | 'COLLEGE' | undefined>('ALL');
+  const [selectedScope, setSelectedScope] = useState<'ALL' | 'GLOBAL' | 'COLLEGE' | 'FOLLOWERS' | 'CONNECTIONS' | undefined>('ALL');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -329,6 +329,48 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
               ]}
             >
               🏛️ My College
+            </Text>
+          </TouchableOpacity>
+
+          {/* Followers Feed */}
+          <TouchableOpacity
+            style={[
+              styles.filterPill,
+              selectedScope === 'FOLLOWERS' && styles.filterPillActive,
+            ]}
+            onPress={() => {
+              setSelectedScope('FOLLOWERS');
+              setSelectedCommunityId(undefined);
+            }}
+          >
+            <Text
+              style={[
+                styles.filterPillText,
+                selectedScope === 'FOLLOWERS' && styles.filterPillTextActive,
+              ]}
+            >
+              👤 Following
+            </Text>
+          </TouchableOpacity>
+
+          {/* Connections Feed */}
+          <TouchableOpacity
+            style={[
+              styles.filterPill,
+              selectedScope === 'CONNECTIONS' && styles.filterPillActive,
+            ]}
+            onPress={() => {
+              setSelectedScope('CONNECTIONS');
+              setSelectedCommunityId(undefined);
+            }}
+          >
+            <Text
+              style={[
+                styles.filterPillText,
+                selectedScope === 'CONNECTIONS' && styles.filterPillTextActive,
+              ]}
+            >
+              🤝 Connections
             </Text>
           </TouchableOpacity>
 

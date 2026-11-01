@@ -12,6 +12,10 @@ from .views import (
     AddConversationMembersView,
     ConversationInviteLinkView,
     JoinByConversationInviteView,
+    MessageRequestsListView,
+    AcceptMessageRequestView,
+    DeclineMessageRequestView,
+    BlockMessageRequestView,
 )
 
 urlpatterns = [
@@ -19,6 +23,13 @@ urlpatterns = [
     path("start/<str:identifier>/", StartDirectChatView.as_view(), name="chat-start"),
     path("ephemeral-group/create/", CreateEphemeralGroupView.as_view(), name="chat-ephemeral-create"),
     path("invite/<str:invite_code>/", JoinByConversationInviteView.as_view(), name="chat-join-by-invite"),
+
+    # Message Requests (Safe Direct Messaging)
+    path("message-requests/", MessageRequestsListView.as_view(), name="chat-message-requests-list"),
+    path("message-requests/<uuid:request_id>/accept/", AcceptMessageRequestView.as_view(), name="chat-message-request-accept"),
+    path("message-requests/<uuid:request_id>/decline/", DeclineMessageRequestView.as_view(), name="chat-message-request-decline"),
+    path("message-requests/<uuid:request_id>/block/", BlockMessageRequestView.as_view(), name="chat-message-request-block"),
+
     path("<uuid:conversation_id>/messages/", ConversationMessagesView.as_view(), name="chat-messages"),
     path("<uuid:conversation_id>/send/", SendMessageView.as_view(), name="chat-send"),
     path("<uuid:conversation_id>/add-members/", AddConversationMembersView.as_view(), name="chat-add-members"),

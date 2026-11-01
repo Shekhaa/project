@@ -10,6 +10,7 @@ from django.contrib.auth import get_user_model
 from communities.models import Community, CommunityMember
 from notifications.views import create_notification
 from attachments.services import AttachmentService
+from profiles.models import Connection, Follow, UserBlock, StudentProfile
 from .models import Post, PostImage, PostLike, Comment
 from .serializers import PostSerializer, CommentSerializer, ANONYMOUS_MASCOTS
 from .pagination import FeedPagination
@@ -19,7 +20,11 @@ User = get_user_model()
 class FeedView(generics.ListAPIView):
     """
     GET /api/posts/feed/
-    Fetches the customized student timeline supporting GLOBAL, COLLEGE, and COMMUNITY scopes.
+    Fetches the customized student timeline supporting GLOBAL, COLLEGE, FOLLOWERS, CONNECTIONS, and COMMUNITY scopes.
+    Enforces relationship and profile privacy filters:
+    - Excludes posts from blocked users.
+    - Excludes posts from private accounts unless viewer is an approved follower or author.
+    - Scopes: ALL, GLOBAL, COLLEGE, FOLLOWERS, CONNECTIONS, COMMUNITY.
     """
     permission_classes = [IsAuthenticated]
     serializer_class = PostSerializer
@@ -33,6 +38,25 @@ class FeedView(generics.ListAPIView):
 
         user_college = getattr(getattr(user, "profile", None), "college", None)
 
+        # 1. Social graph relationship IDs
+        followed_ids = list(Follow.objects.filter(follower=user, status="ACCEPTED").values_list("following_id", flat=True))
+        conn_u1 = list(Connection.objects.filter(user2=user, status="ACCEPTED").values_list("user1_id", flat=True))
+        conn_u2 = list(Connection.objects.filter(user1=user, status="ACCEPTED").values_list("user2_id", flat=True))
+        connected_ids = list(set(conn_u1) | set(conn_u2))
+
+        # 2. Blocked user IDs (bidirectional)
+        blocked_by_me = list(UserBlock.objects.filter(blocker=user).values_list("blocked_id", flat=True))
+        blocked_me = list(UserBlock.objects.filter(blocked=user).values_list("blocker_id", flat=True))
+        all_blocked_ids = set(blocked_by_me) | set(blocked_me)
+
+        # 3. Private accounts where viewer is NOT an approved follower
+        approved_or_self = set(followed_ids) | {user.id}
+        private_unapproved_authors = list(
+            StudentProfile.objects.filter(is_private_account=True)
+            .exclude(user_id__in=approved_or_self)
+            .values_list("user_id", flat=True)
+        )
+
         scope_param = self.request.query_params.get("scope", "").upper()
         community_param = self.request.query_params.get("community")
 
@@ -45,13 +69,20 @@ class FeedView(generics.ListAPIView):
                 qs_filter = Q(visibility="COLLEGE", author__profile__college=user_college)
             else:
                 qs_filter = Q(visibility="COLLEGE")
+        elif scope_param == "FOLLOWERS":
+            qs_filter = Q(visibility="FOLLOWERS", author_id__in=followed_ids) | Q(visibility="FOLLOWERS", author=user)
+        elif scope_param == "CONNECTIONS":
+            qs_filter = Q(visibility="CONNECTIONS", author_id__in=connected_ids) | Q(visibility="CONNECTIONS", author=user)
         elif scope_param == "COMMUNITY":
             qs_filter = Q(visibility="COMMUNITY", community_id__in=user_community_ids)
         else:
             college_q = Q(visibility="COLLEGE", author__profile__college=user_college) if user_college else Q(visibility="COLLEGE")
             qs_filter = (
+                Q(author=user) |
                 Q(visibility="GLOBAL") |
                 college_q |
+                Q(visibility="FOLLOWERS", author_id__in=followed_ids) |
+                Q(visibility="CONNECTIONS", author_id__in=connected_ids) |
                 Q(community_id__in=user_community_ids)
             )
 
@@ -60,6 +91,8 @@ class FeedView(generics.ListAPIView):
                 qs_filter,
                 is_deleted=False
             )
+            .exclude(author_id__in=all_blocked_ids)
+            .exclude(author_id__in=private_unapproved_authors)
             .select_related("author", "author__profile", "author__profile__college", "community")
             .prefetch_related("images", "attachments", "comments")
             .annotate(
@@ -118,7 +151,7 @@ class CreatePostView(APIView):
         if isinstance(visibility, list):
             visibility = visibility[0]
         visibility = str(visibility).upper()
-        if visibility not in ["GLOBAL", "COLLEGE", "COMMUNITY"]:
+        if visibility not in ["GLOBAL", "COLLEGE", "FOLLOWERS", "CONNECTIONS", "COMMUNITY", "ONLY_ME"]:
             visibility = "COLLEGE"
 
         community_id = request.data.get("community")
@@ -177,10 +210,100 @@ class CreatePostView(APIView):
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class PostDetailView(generics.RetrieveAPIView):
+class PostDetailView(APIView):
+    """
+    GET /api/posts/<pk>/
+    Shareable post permalink endpoint with strict server-side authorization check.
+    - If post does not exist or is deleted: 404
+    - If author is blocked: 403 Forbidden with safe card
+    - If post is private or audience is restricted (FOLLOWERS, CONNECTIONS, PRIVATE ACCOUNT, COMMUNITY, ONLY_ME)
+      and viewer is not authorized:
+      Returns 403 Forbidden with safe locked card placeholder:
+      {
+        "detail": "This post is private or unavailable.",
+        "is_private": true,
+        "post_id": post.id,
+        "visibility": post.visibility,
+        "author": { ... }
+      }
+    - If authorized: returns full PostSerializer representation.
+    """
     permission_classes = [IsAuthenticated]
-    serializer_class = PostSerializer
-    queryset = Post.objects.filter(is_deleted=False)
+
+    def get(self, request, pk):
+        post = get_object_or_404(
+            Post.objects.select_related("author", "author__profile", "author__profile__college", "community")
+            .prefetch_related("images", "attachments", "comments"),
+            id=pk,
+            is_deleted=False
+        )
+        user = request.user
+        is_author = (post.author_id == user.id)
+
+        # 1. Blocking check
+        if not is_author and UserBlock.is_blocked(user, post.author):
+            return Response({
+                "detail": "This post is unavailable.",
+                "is_private": True,
+                "author": None
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # 2. Author profile privacy check
+        author_prof = getattr(post.author, "profile", None)
+        is_author_private = getattr(author_prof, "is_private_account", False)
+        is_following = Follow.is_following(user, post.author)
+        is_connected = Connection.are_connected(user, post.author)
+
+        # Private account check: if private and not author and not approved follower -> block
+        if is_author_private and not is_author and not is_following:
+            return self._safe_unauthorized_response(request, post, "This account is private. Follow to view posts.")
+
+        # 3. Post visibility check
+        vis = post.visibility
+        if vis == "ONLY_ME" and not is_author:
+            return self._safe_unauthorized_response(request, post, "This post is visible to the author only.")
+        elif vis == "FOLLOWERS" and not is_author and not is_following:
+            return self._safe_unauthorized_response(request, post, "This post is visible to followers only. Follow this student to view.")
+        elif vis == "CONNECTIONS" and not is_author and not is_connected:
+            return self._safe_unauthorized_response(request, post, "This post is visible to connections only. Connect with this student to view.")
+        elif vis == "COLLEGE" and not is_author:
+            user_college = getattr(getattr(user, "profile", None), "college_id", None)
+            author_college = getattr(author_prof, "college_id", None)
+            if user_college and author_college and user_college != author_college:
+                return self._safe_unauthorized_response(request, post, "This post is restricted to members of the author's college.")
+        elif vis == "COMMUNITY" and not is_author:
+            if post.community_id:
+                is_comm_member = CommunityMember.objects.filter(community_id=post.community_id, user=user).exists()
+                if not is_comm_member:
+                    return self._safe_unauthorized_response(request, post, "This post belongs to a community you haven't joined yet.")
+
+        # Authorized: return full post serializer!
+        post.likes_count = post.likes.count()
+        post.comments_count = post.comments.count()
+        post.user_has_liked = PostLike.objects.filter(post=post, user=user).exists()
+        serializer = PostSerializer(post, context={"request": request})
+        return Response(serializer.data)
+
+    def _safe_unauthorized_response(self, request, post, reason_message):
+        prof = getattr(post.author, "profile", None)
+        return Response({
+            "detail": reason_message,
+            "is_private": True,
+            "post_id": post.id,
+            "visibility": post.visibility,
+            "author": {
+                "id": post.author.id,
+                "full_name": post.author.full_name or (prof.username if prof else post.author.email.split("@")[0]),
+                "username": prof.username if prof else "",
+                "avatar": prof.profile_picture.url if (prof and prof.profile_picture) else None,
+                "college_name": prof.college.name if (prof and prof.college) else "",
+                "branch_name": prof.branch.name if (prof and prof.branch) else "",
+                "is_verified": getattr(post.author, "is_verified_student", False),
+                "is_private_account": getattr(prof, "is_private_account", False),
+                "connection_status": Connection.get_status(request.user, post.author),
+                "follow_status": Follow.get_status(request.user, post.author),
+            }
+        }, status=status.HTTP_403_FORBIDDEN)
 
 
 class ToggleLikeView(APIView):

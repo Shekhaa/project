@@ -134,3 +134,57 @@ class Message(models.Model):
 
     def __str__(self):
         return f"{self.sender.email}: {self.text[:30]}"
+
+
+class MessageRequest(models.Model):
+    """
+    Instagram / WhatsApp style Message Request for safe direct messaging.
+    When a non-connected student sends an initial direct message to another student,
+    a MessageRequest is created. The receiver can Accept, Decline, or Block.
+    Once accepted, the conversation is moved to the main inbox.
+    """
+    STATUS_CHOICES = [
+        ("PENDING", "Pending"),
+        ("ACCEPTED", "Accepted"),
+        ("DECLINED", "Declined"),
+        ("BLOCKED", "Blocked"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="sent_message_requests"
+    )
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="received_message_requests"
+    )
+    initial_message = models.TextField(blank=True, default="")
+    conversation = models.ForeignKey(
+        Conversation,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="message_requests"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="PENDING",
+        db_index=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["recipient", "status", "-created_at"], name="msgreq_recip_status_idx"),
+            models.Index(fields=["sender", "recipient", "status"], name="msgreq_snd_rec_stat_idx"),
+        ]
+
+    def __str__(self):
+        return f"MessageRequest: {self.sender.email} -> {self.recipient.email} [{self.status}]"
+

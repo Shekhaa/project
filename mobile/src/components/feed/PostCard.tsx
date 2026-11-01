@@ -127,6 +127,12 @@ export const PostCard: React.FC<PostCardProps> = ({
                 <Text style={styles.communityTag}>🌐 Global • </Text>
               ) : post.visibility === 'COLLEGE' ? (
                 <Text style={styles.communityTag}>🏛️ {post.author_college_name || post.community_name || 'College'} • </Text>
+              ) : post.visibility === 'FOLLOWERS' ? (
+                <Text style={styles.communityTag}>👤 Followers • </Text>
+              ) : post.visibility === 'CONNECTIONS' ? (
+                <Text style={styles.communityTag}>🤝 Connections • </Text>
+              ) : post.visibility === 'ONLY_ME' ? (
+                <Text style={styles.communityTag}>🔒 Only Me • </Text>
               ) : post.community_name ? (
                 <Text style={styles.communityTag}>👥 {post.community_name} • </Text>
               ) : null}

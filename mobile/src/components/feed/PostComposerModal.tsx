@@ -31,6 +31,9 @@ import {
   Building2,
   Users,
   Search,
+  UserCheck,
+  HeartHandshake,
+  Lock,
 } from 'lucide-react-native';
 
 interface CommunityOption {
@@ -38,7 +41,7 @@ interface CommunityOption {
   name: string;
 }
 
-export type PostScope = 'GLOBAL' | 'COLLEGE' | 'COMMUNITY';
+export type PostScope = 'GLOBAL' | 'COLLEGE' | 'FOLLOWERS' | 'CONNECTIONS' | 'COMMUNITY' | 'ONLY_ME';
 
 interface PostComposerModalProps {
   visible: boolean;
@@ -443,6 +446,28 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
               </TouchableOpacity>
 
               <TouchableOpacity
+                style={[styles.scopePill, postScope === 'FOLLOWERS' && styles.scopePillActive]}
+                onPress={() => setPostScope('FOLLOWERS')}
+                activeOpacity={0.8}
+              >
+                <UserCheck size={14} color={postScope === 'FOLLOWERS' ? '#38bdf8' : '#94a3b8'} />
+                <Text style={[styles.scopePillText, postScope === 'FOLLOWERS' && styles.scopePillTextActive]}>
+                  Followers Only
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.scopePill, postScope === 'CONNECTIONS' && styles.scopePillActive]}
+                onPress={() => setPostScope('CONNECTIONS')}
+                activeOpacity={0.8}
+              >
+                <HeartHandshake size={14} color={postScope === 'CONNECTIONS' ? '#38bdf8' : '#94a3b8'} />
+                <Text style={[styles.scopePillText, postScope === 'CONNECTIONS' && styles.scopePillTextActive]}>
+                  Connections Only
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={[styles.scopePill, postScope === 'COMMUNITY' && styles.scopePillActive]}
                 onPress={() => setPostScope('COMMUNITY')}
                 activeOpacity={0.8}
@@ -450,6 +475,17 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                 <Users size={14} color={postScope === 'COMMUNITY' ? '#38bdf8' : '#94a3b8'} />
                 <Text style={[styles.scopePillText, postScope === 'COMMUNITY' && styles.scopePillTextActive]}>
                   Specific Community / Hub
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.scopePill, postScope === 'ONLY_ME' && styles.scopePillActive]}
+                onPress={() => setPostScope('ONLY_ME')}
+                activeOpacity={0.8}
+              >
+                <Lock size={14} color={postScope === 'ONLY_ME' ? '#38bdf8' : '#94a3b8'} />
+                <Text style={[styles.scopePillText, postScope === 'ONLY_ME' && styles.scopePillTextActive]}>
+                  Only Me
                 </Text>
               </TouchableOpacity>
             </View>

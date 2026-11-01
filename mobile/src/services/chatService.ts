@@ -56,11 +56,68 @@ export interface Message {
   created_at: string;
 }
 
+export interface MessageRequestItem {
+  id: string;
+  sender: {
+    id: number;
+    full_name: string;
+    username: string;
+    email: string;
+    college_name: string;
+    branch_name: string;
+    avatar?: string;
+    is_verified: boolean;
+    connection_status: string;
+  };
+  initial_message: string;
+  conversation_id?: string;
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'BLOCKED';
+  created_at: string;
+}
+
+export interface InboxResponse {
+  results: Conversation[];
+  pending_requests_count?: number;
+}
+
 export const chatService = {
-  // Get active inbox conversations (auto-excludes expired ephemeral groups)
-  async getInbox(): Promise<Conversation[]> {
+  // Get active inbox conversations (auto-excludes expired ephemeral groups and pending requests)
+  async getInbox(): Promise<InboxResponse> {
     const res = await api.get('/chat/inbox/');
-    return res.data.results || res.data;
+    if (res.data && res.data.results) {
+      return {
+        results: res.data.results,
+        pending_requests_count: res.data.pending_requests_count || 0,
+      };
+    }
+    return {
+      results: Array.isArray(res.data) ? res.data : [],
+      pending_requests_count: res.data?.pending_requests_count || 0,
+    };
+  },
+
+  // Get pending message requests (Instagram style)
+  async getMessageRequests(): Promise<{ count: number; results: MessageRequestItem[] }> {
+    const res = await api.get('/chat/message-requests/');
+    return res.data;
+  },
+
+  // Accept message request
+  async acceptMessageRequest(requestId: string): Promise<{ status: string; message: string; conversation: Conversation }> {
+    const res = await api.post(`/chat/message-requests/${requestId}/accept/`);
+    return res.data;
+  },
+
+  // Decline message request
+  async declineMessageRequest(requestId: string): Promise<{ status: string; message: string }> {
+    const res = await api.post(`/chat/message-requests/${requestId}/decline/`);
+    return res.data;
+  },
+
+  // Block sender and dismiss message request
+  async blockMessageRequest(requestId: string): Promise<{ status: string; message: string }> {
+    const res = await api.post(`/chat/message-requests/${requestId}/block/`);
+    return res.data;
   },
 
   // Start 1-on-1 direct chat with a student (by username or email)

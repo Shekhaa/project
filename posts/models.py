@@ -6,7 +6,10 @@ class Post(models.Model):
     VISIBILITY_CHOICES = [
         ("GLOBAL", "Global (All Campuses)"),
         ("COLLEGE", "My College Only"),
+        ("FOLLOWERS", "Followers Only"),
+        ("CONNECTIONS", "Connections Only"),
         ("COMMUNITY", "Specific Community"),
+        ("ONLY_ME", "Only Me"),
     ]
 
     visibility = models.CharField(
@@ -14,7 +17,7 @@ class Post(models.Model):
         choices=VISIBILITY_CHOICES,
         default="COLLEGE",
         db_index=True,
-        help_text="Post audience: GLOBAL across all colleges, COLLEGE for user's college only, or COMMUNITY for a hub"
+        help_text="Post audience: GLOBAL, COLLEGE, FOLLOWERS, CONNECTIONS, COMMUNITY, or ONLY_ME"
     )
     community = models.ForeignKey(
         Community,

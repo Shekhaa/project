@@ -9,14 +9,22 @@ from django.utils import timezone
 from accounts.models import User
 from attachments.services import AttachmentService
 from notifications.views import create_notification
-from .models import Conversation, ConversationMember, Message
-from .serializers import ConversationSerializer, MessageSerializer, CreateEphemeralGroupSerializer, ConversationMemberSerializer
+from profiles.models import Connection, Follow, UserBlock
+from .models import Conversation, ConversationMember, Message, MessageRequest
+from .serializers import (
+    ConversationSerializer,
+    MessageSerializer,
+    CreateEphemeralGroupSerializer,
+    ConversationMemberSerializer,
+    MessageRequestSerializer,
+)
 
 class InboxView(generics.ListAPIView):
     """
     GET /api/chat/inbox/
     Returns list of active direct and group conversations for the authenticated user.
     - Excludes hidden/deleted conversations.
+    - Excludes conversations pending approval in Message Requests.
     - Automatically excludes expired ephemeral groups so student inboxes stay 100% clean!
     - Excludes empty 1-on-1 chats where no message was ever exchanged (prevents search preview from clogging inbox).
     """
@@ -32,8 +40,15 @@ class InboxView(generics.ListAPIView):
 
         include_communities = self.request.query_params.get("include_communities", "false").lower() == "true"
 
+        # Exclude pending message requests received by this user (they belong in Message Requests tab)
+        pending_received_conv_ids = MessageRequest.objects.filter(
+            recipient=self.request.user,
+            status="PENDING"
+        ).values_list("conversation_id", flat=True)
+
         qs = (
             Conversation.objects.filter(id__in=user_conv_ids)
+            .exclude(id__in=pending_received_conv_ids)
             .exclude(is_ephemeral=True, expires_at__lt=timezone.now())
             .prefetch_related("members", "messages")
         )
@@ -52,13 +67,33 @@ class InboxView(generics.ListAPIView):
             Q(is_group=True) | Q(is_ephemeral=True) | Q(msg_count__gt=0)
         )
 
-        return qs
+        return qs.order_by("-updated_at")
+
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        pending_requests_count = MessageRequest.objects.filter(recipient=request.user, status="PENDING").count()
+        if isinstance(response.data, dict):
+            response.data["pending_requests_count"] = pending_requests_count
+        elif isinstance(response.data, list):
+            return Response({
+                "results": response.data,
+                "pending_requests_count": pending_requests_count
+            })
+        return response
 
 
 class StartDirectChatView(APIView):
     """
     POST /api/chat/start/<identifier>/
     Starts or retrieves a 1-to-1 conversation with another student (by username or email).
+    Supports safe direct messaging:
+    - If blocked -> 403 Forbidden
+    - If mutual connections -> instant direct chat
+    - If non-connected -> checks receiver's messaging_preference:
+      - NOBODY -> 403 Forbidden
+      - CONNECTIONS_ONLY -> 403 Forbidden (requires connection)
+      - FOLLOWING -> requires receiver to follow sender
+      - EVERYONE -> creates/returns Message Request (does not clutter recipient's primary inbox)
     """
     permission_classes = [IsAuthenticated]
 
@@ -74,31 +109,127 @@ class StartDirectChatView(APIView):
         if target_user == request.user:
             return Response({"error": "Cannot start conversation with yourself."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check existing 1-on-1 conversation
+        # 1. Safety Block Check
+        if UserBlock.is_blocked(request.user, target_user):
+            return Response({"error": "Cannot start conversation with this user."}, status=status.HTTP_403_FORBIDDEN)
+
+        # 2. Check existing 1-on-1 conversation
         existing = Conversation.objects.filter(
             is_group=False,
             is_ephemeral=False,
             members__user=request.user
         ).filter(members__user=target_user).first()
 
-        if existing:
-            # If current user had hidden this conversation previously, unhide it
-            ConversationMember.objects.filter(
-                conversation=existing,
-                user=request.user,
-                is_hidden=True
-            ).update(is_hidden=False)
-            return Response(ConversationSerializer(existing, context={"request": request}).data)
+        are_connected = Connection.are_connected(request.user, target_user)
+        target_prof = getattr(target_user, "profile", None)
+        messaging_pref = target_prof.messaging_preference if target_prof else "EVERYONE"
 
-        # Create new conversation
-        conv = Conversation.objects.create(is_group=False)
-        ConversationMember.objects.create(conversation=conv, user=request.user, is_admin=True)
-        ConversationMember.objects.create(conversation=conv, user=target_user)
+        # Check existing message request
+        existing_request = MessageRequest.objects.filter(
+            Q(sender=request.user, recipient=target_user) |
+            Q(sender=target_user, recipient=request.user)
+        ).first()
 
-        return Response(
-            ConversationSerializer(conv, context={"request": request}).data,
-            status=status.HTTP_201_CREATED
+        # If already accepted or connected, return conversation directly
+        if are_connected or (existing_request and existing_request.status == "ACCEPTED"):
+            if existing:
+                ConversationMember.objects.filter(
+                    conversation=existing,
+                    user=request.user,
+                    is_hidden=True
+                ).update(is_hidden=False)
+                return Response(ConversationSerializer(existing, context={"request": request}).data)
+
+            conv = Conversation.objects.create(is_group=False)
+            ConversationMember.objects.create(conversation=conv, user=request.user, is_admin=True)
+            ConversationMember.objects.create(conversation=conv, user=target_user)
+            return Response(ConversationSerializer(conv, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+        # Non-connected user flow: enforce recipient's messaging_preference
+        if messaging_pref == "NOBODY":
+            return Response(
+                {"error": "This student does not accept direct messages or message requests."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        if messaging_pref == "CONNECTIONS_ONLY":
+            return Response(
+                {
+                    "error": "This student only accepts messages from mutual connections. Please send a connection request first.",
+                    "requires_connection": True,
+                    "target_user_id": target_user.id
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+        if messaging_pref == "FOLLOWING":
+            if not Follow.is_following(target_user, request.user):
+                return Response(
+                    {
+                        "error": "This student only accepts messages from people they follow.",
+                        "requires_follow": True,
+                        "target_user_id": target_user.id
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        # If pending message request already exists
+        if existing_request and existing_request.status == "PENDING":
+            if existing_request.sender_id == request.user.id:
+                return Response({
+                    "status": "MESSAGE_REQUEST_PENDING",
+                    "message": "Message request already sent. Waiting for recipient to accept.",
+                    "message_request_id": str(existing_request.id),
+                    "conversation": ConversationSerializer(existing_request.conversation, context={"request": request}).data if existing_request.conversation else None
+                }, status=status.HTTP_200_OK)
+            else:
+                # Target had sent a message request to request.user! Auto-accept it upon initiation!
+                existing_request.status = "ACCEPTED"
+                existing_request.save(update_fields=["status", "updated_at"])
+                if existing_request.conversation:
+                    ConversationMember.objects.filter(
+                        conversation=existing_request.conversation,
+                        user=request.user,
+                        is_hidden=True
+                    ).update(is_hidden=False)
+                    return Response(ConversationSerializer(existing_request.conversation, context={"request": request}).data)
+
+        # Create new Message Request
+        initial_text = request.data.get("message", "Sent you a message request.").strip() or "Sent you a message request."
+        if not existing:
+            existing = Conversation.objects.create(is_group=False)
+            ConversationMember.objects.create(conversation=existing, user=request.user, is_admin=True)
+            ConversationMember.objects.create(conversation=existing, user=target_user)
+
+        msg_req = MessageRequest.objects.create(
+            sender=request.user,
+            recipient=target_user,
+            initial_message=initial_text,
+            conversation=existing,
+            status="PENDING"
         )
+
+        Message.objects.create(
+            conversation=existing,
+            sender=request.user,
+            text=initial_text
+        )
+
+        sender_name = request.user.full_name or (request.user.profile.username if hasattr(request.user, "profile") else request.user.email.split('@')[0])
+        create_notification(
+            recipient=target_user,
+            sender=request.user,
+            notification_type="MESSAGE_REQUEST",
+            title="Message Request ✉️",
+            message=f"{sender_name}: {initial_text[:60]}",
+            data={"conversation_id": str(existing.id), "message_request_id": str(msg_req.id)}
+        )
+
+        return Response({
+            "status": "MESSAGE_REQUEST_SENT",
+            "message": "Message request sent successfully to recipient.",
+            "message_request_id": str(msg_req.id),
+            "conversation": ConversationSerializer(existing, context={"request": request}).data
+        }, status=status.HTTP_201_CREATED)
+
 
 
 class CreateEphemeralGroupView(APIView):
@@ -196,6 +327,25 @@ class SendMessageView(APIView):
 
         if not text and not attachment and not attachments:
             return Response({"error": "Message text or attachment required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check blocking for direct chats
+        if not conv.is_group:
+            other_user = conv.get_other_member(request.user)
+            if other_user and UserBlock.is_blocked(request.user, other_user):
+                return Response({"error": "Cannot send messages to this user."}, status=status.HTTP_403_FORBIDDEN)
+
+            # Check if there is an active pending message request for this conversation
+            pending_req = MessageRequest.objects.filter(conversation=conv, status="PENDING").first()
+            if pending_req:
+                if pending_req.sender_id == request.user.id and conv.messages.filter(sender=request.user).exists():
+                    return Response({
+                        "error": "You must wait for the recipient to accept your message request before sending more messages.",
+                        "status": "MESSAGE_REQUEST_PENDING"
+                    }, status=status.HTTP_403_FORBIDDEN)
+                elif pending_req.recipient_id == request.user.id:
+                    # Recipient replied! Auto-accept the message request!
+                    pending_req.status = "ACCEPTED"
+                    pending_req.save(update_fields=["status", "updated_at"])
 
         # If conversation was hidden by any member, unhide it upon new message
         ConversationMember.objects.filter(
@@ -529,4 +679,113 @@ class JoinByConversationInviteView(APIView):
             "status": "joined" if created else "already_member",
             "conversation": ConversationSerializer(conv, context={"request": request}).data
         }, status=status.HTTP_200_OK)
+
+
+class MessageRequestsListView(APIView):
+    """
+    GET /api/chat/message-requests/
+    Returns list of pending message requests received by the authenticated student.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = MessageRequest.objects.filter(
+            recipient=request.user,
+            status="PENDING"
+        ).select_related("sender", "sender__profile", "conversation").order_by("-created_at")
+
+        serializer = MessageRequestSerializer(qs, many=True, context={"request": request})
+        return Response({
+            "count": qs.count(),
+            "results": serializer.data
+        })
+
+
+class AcceptMessageRequestView(APIView):
+    """
+    POST /api/chat/message-requests/<uuid:request_id>/accept/
+    Accepts a pending message request, moving conversation to the main inbox.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id):
+        msg_req = get_object_or_404(MessageRequest, id=request_id, recipient=request.user, status="PENDING")
+        msg_req.status = "ACCEPTED"
+        msg_req.save(update_fields=["status", "updated_at"])
+
+        if msg_req.conversation:
+            # Unhide for recipient
+            ConversationMember.objects.filter(
+                conversation=msg_req.conversation,
+                user=request.user
+            ).update(is_hidden=False)
+
+        # Dispatch notification to sender
+        recipient_name = request.user.full_name or (request.user.profile.username if hasattr(request.user, "profile") else request.user.email.split('@')[0])
+        create_notification(
+            recipient=msg_req.sender,
+            sender=request.user,
+            notification_type="MESSAGE_REQUEST_ACCEPTED",
+            title="Message Request Accepted 💬",
+            message=f"{recipient_name} accepted your message request.",
+            data={"conversation_id": str(msg_req.conversation.id) if msg_req.conversation else None}
+        )
+
+        conv_data = ConversationSerializer(msg_req.conversation, context={"request": request}).data if msg_req.conversation else None
+        return Response({
+            "status": "ACCEPTED",
+            "message": "Message request accepted. You can now chat directly.",
+            "conversation": conv_data
+        })
+
+
+class DeclineMessageRequestView(APIView):
+    """
+    POST /api/chat/message-requests/<uuid:request_id>/decline/
+    Declines a message request and hides the conversation.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id):
+        msg_req = get_object_or_404(MessageRequest, id=request_id, recipient=request.user, status="PENDING")
+        msg_req.status = "DECLINED"
+        msg_req.save(update_fields=["status", "updated_at"])
+
+        if msg_req.conversation:
+            ConversationMember.objects.filter(
+                conversation=msg_req.conversation,
+                user=request.user
+            ).update(is_hidden=True)
+
+        return Response({
+            "status": "DECLINED",
+            "message": "Message request declined."
+        })
+
+
+class BlockMessageRequestView(APIView):
+    """
+    POST /api/chat/message-requests/<uuid:request_id>/block/
+    Blocks the sender and dismisses the message request.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id):
+        msg_req = get_object_or_404(MessageRequest, id=request_id, recipient=request.user)
+        msg_req.status = "BLOCKED"
+        msg_req.save(update_fields=["status", "updated_at"])
+
+        UserBlock.objects.get_or_create(blocker=request.user, blocked=msg_req.sender)
+
+        if msg_req.conversation:
+            ConversationMember.objects.filter(
+                conversation=msg_req.conversation,
+                user=request.user
+            ).update(is_hidden=True)
+
+        return Response({
+            "status": "BLOCKED",
+            "message": "Sender has been blocked."
+        })
+
 

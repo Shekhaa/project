@@ -23,6 +23,7 @@ import { AttachmentPickerModal, StagedAttachment } from '../components/media/Att
 import { AddMembersModal } from '../components/chat/AddMembersModal';
 import { InviteLinkModal } from '../components/chat/InviteLinkModal';
 import { JoinByInviteModal } from '../components/chat/JoinByInviteModal';
+import { MessageRequestsModal } from '../components/chat/MessageRequestsModal';
 import {
   Search,
   Plus,
@@ -57,6 +58,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [sending, setSending] = useState(false);
+
+  // Message Requests State (Safe Direct Messaging)
+  const [messageRequestsVisible, setMessageRequestsVisible] = useState(false);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
   // Search in Inbox
   const [searchQuery, setSearchQuery] = useState('');
@@ -135,8 +140,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const loadInbox = async () => {
     try {
       setLoadingInbox(true);
-      const data = await chatService.getInbox();
-      setConversations(data);
+      const data: any = await chatService.getInbox();
+      setConversations(data.results || (Array.isArray(data) ? data : []));
+      if (data.pending_requests_count !== undefined) {
+        setPendingRequestsCount(data.pending_requests_count);
+      }
     } catch (e) {
       console.log('Error loading inbox', e);
     } finally {
@@ -490,6 +498,17 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         <Text style={styles.inboxTitle}>Campus Messages</Text>
         <View style={styles.headerBtnGroup}>
           <TouchableOpacity
+            style={pendingRequestsCount > 0 ? styles.requestsPillActive : styles.requestsPill}
+            onPress={() => setMessageRequestsVisible(true)}
+            activeOpacity={0.8}
+          >
+            <MessageSquare size={13} color={pendingRequestsCount > 0 ? '#fff' : '#38bdf8'} />
+            <Text style={pendingRequestsCount > 0 ? styles.requestsPillTextActive : styles.requestsPillText}>
+              Requests{pendingRequestsCount > 0 ? ` (${pendingRequestsCount})` : ''}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={styles.joinLinkPill}
             onPress={() => setJoinViaInviteModalVisible(true)}
             activeOpacity={0.8}
@@ -680,6 +699,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         onClose={() => setJoinViaInviteModalVisible(false)}
         onJoinedChat={handleJoinedChatViaInvite}
       />
+
+      {/* Message Requests Modal (Safe Direct Messaging) */}
+      <MessageRequestsModal
+        visible={messageRequestsVisible}
+        onClose={() => setMessageRequestsVisible(false)}
+        onOpenConversation={(conv) => setActiveConv(conv)}
+        onRequestCountChanged={(count) => setPendingRequestsCount(count)}
+      />
     </View>
   );
 };
@@ -707,6 +734,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  requestsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+  },
+  requestsPillActive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0284c7',
+    borderWidth: 1,
+    borderColor: '#38bdf8',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+  },
+  requestsPillText: {
+    color: '#38bdf8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  requestsPillTextActive: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   joinLinkPill: {
     flexDirection: 'row',

@@ -16,6 +16,8 @@ import {
 import { colors } from '../theme/colors';
 import { authService, User, DemoUser } from '../services/authService';
 import { profileService } from '../services/profileService';
+import { StudentProfileModal } from '../components/profile/StudentProfileModal';
+import { SocialListModal, SocialModalType } from '../components/profile/SocialListModal';
 
 interface ProfileData {
   id: number;
@@ -24,6 +26,12 @@ interface ProfileData {
   profile_picture?: string;
   gender: string;
   anonymous_enabled: boolean;
+  is_private_account?: boolean;
+  messaging_preference?: 'EVERYONE' | 'FOLLOWING' | 'CONNECTIONS_ONLY' | 'NOBODY';
+  followers_count?: number;
+  following_count?: number;
+  connections_count?: number;
+  posts_count?: number;
   admission_number: string;
   college_name: string;
   college_short_name: string;
@@ -59,6 +67,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   // Settings Modal State
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSection>('PROFILE');
+
+  // Social Graph Modals State
+  const [socialModalVisible, setSocialModalVisible] = useState(false);
+  const [socialModalType, setSocialModalType] = useState<SocialModalType>('followers');
+  const [socialModalUserId, setSocialModalUserId] = useState<number>(currentUser.id);
+
+  // Student Profile Modal State
+  const [viewingStudentId, setViewingStudentId] = useState<number | null>(null);
+
+  // Privacy & Audience State
+  const [isPrivateAccount, setIsPrivateAccount] = useState(false);
+  const [messagingPreference, setMessagingPreference] = useState<'EVERYONE' | 'FOLLOWING' | 'CONNECTIONS_ONLY' | 'NOBODY'>('EVERYONE');
+  const [updatingPrivacy, setUpdatingPrivacy] = useState(false);
 
   // Blind-Testing 100-User Audit State
   const [auditStudents, setAuditStudents] = useState<any[]>([]);
@@ -135,12 +156,48 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         setEditUsername(profileData.username || '');
         setEditBio(profileData.bio || '');
         setEditGender(profileData.gender || 'Male');
+        setIsPrivateAccount(!!profileData.is_private_account);
+        setMessagingPreference(profileData.messaging_preference || 'EVERYONE');
       }
       setEditFullName(currentUser.full_name || '');
     } catch (e) {
       console.log('Error loading profile data', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTogglePrivateAccount = async (val: boolean) => {
+    setIsPrivateAccount(val);
+    try {
+      setUpdatingPrivacy(true);
+      await profileService.updatePrivacySettings({ is_private_account: val });
+      setProfile((prev) => (prev ? { ...prev, is_private_account: val } : null));
+      Alert.alert(
+        val ? 'Private Account Enabled 🔒' : 'Public Account Enabled 🌐',
+        val
+          ? 'Only students you approve can follow you and view your posts.'
+          : 'Anyone on campus can now follow you and view your posts.'
+      );
+    } catch (e: any) {
+      setIsPrivateAccount(!val);
+      Alert.alert('Error', e.response?.data?.error || 'Could not update account privacy.');
+    } finally {
+      setUpdatingPrivacy(false);
+    }
+  };
+
+  const handleUpdateMessagingPreference = async (pref: 'EVERYONE' | 'FOLLOWING' | 'CONNECTIONS_ONLY' | 'NOBODY') => {
+    setMessagingPreference(pref);
+    try {
+      setUpdatingPrivacy(true);
+      await profileService.updatePrivacySettings({ messaging_preference: pref });
+      setProfile((prev) => (prev ? { ...prev, messaging_preference: pref } : null));
+      Alert.alert('Preference Saved 💬', `Direct message requests updated to: ${pref.replace('_', ' ')}.`);
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.error || 'Could not update messaging preference.');
+    } finally {
+      setUpdatingPrivacy(false);
     }
   };
 
@@ -370,6 +427,59 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         ) : null}
 
+        {/* Social Stats Row (Instagram/LinkedIn Style) */}
+        <View style={styles.statsRow}>
+          <View style={styles.statBox}>
+            <Text style={styles.statNumber}>{profile?.posts_count ?? 0}</Text>
+            <Text style={styles.statLabel}>Posts</Text>
+          </View>
+
+          <View style={styles.statDivider} />
+
+          <TouchableOpacity
+            style={styles.statBox}
+            onPress={() => {
+              setSocialModalType('followers');
+              setSocialModalUserId(currentUser.id);
+              setSocialModalVisible(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.statNumber}>{profile?.followers_count ?? 0}</Text>
+            <Text style={styles.statLabel}>Followers</Text>
+          </TouchableOpacity>
+
+          <View style={styles.statDivider} />
+
+          <TouchableOpacity
+            style={styles.statBox}
+            onPress={() => {
+              setSocialModalType('following');
+              setSocialModalUserId(currentUser.id);
+              setSocialModalVisible(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.statNumber}>{profile?.following_count ?? 0}</Text>
+            <Text style={styles.statLabel}>Following</Text>
+          </TouchableOpacity>
+
+          <View style={styles.statDivider} />
+
+          <TouchableOpacity
+            style={styles.statBox}
+            onPress={() => {
+              setSocialModalType('connections');
+              setSocialModalUserId(currentUser.id);
+              setSocialModalVisible(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.statNumber}>{profile?.connections_count ?? 0}</Text>
+            <Text style={styles.statLabel}>Connections</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Quick Switch Button in Hero */}
         <TouchableOpacity
           style={styles.switchButton}
@@ -499,27 +609,40 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   </Text>
                 </View>
 
-                {/* Quick Call Action Button for other users */}
-                {!isCurrent && onStartCall && (
+                {/* Quick Call & View Profile Action Buttons for other users */}
+                {!isCurrent && (
                   <View style={styles.demoCallActions}>
                     <TouchableOpacity
                       style={styles.quickCallBtn}
                       onPress={(e) => {
                         e.stopPropagation();
-                        onStartCall(user.id, user.full_name, 'AUDIO');
+                        setViewingStudentId(user.id);
                       }}
                     >
-                      <Text style={styles.quickCallIcon}>📞</Text>
+                      <Text style={styles.quickCallIcon}>👤</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.quickCallBtn}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        onStartCall(user.id, user.full_name, 'VIDEO');
-                      }}
-                    >
-                      <Text style={styles.quickCallIcon}>📹</Text>
-                    </TouchableOpacity>
+                    {onStartCall && (
+                      <>
+                        <TouchableOpacity
+                          style={styles.quickCallBtn}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            onStartCall(user.id, user.full_name, 'AUDIO');
+                          }}
+                        >
+                          <Text style={styles.quickCallIcon}>📞</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.quickCallBtn}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            onStartCall(user.id, user.full_name, 'VIDEO');
+                          }}
+                        >
+                          <Text style={styles.quickCallIcon}>📹</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
                   </View>
                 )}
               </TouchableOpacity>
@@ -821,6 +944,79 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               {/* SECTION 3: SAFETY & PREFERENCES */}
               {activeSettingsSection === 'PREFERENCES' && (
                 <View style={styles.settingsSectionBody}>
+                  {/* Account Privacy Control */}
+                  <Text style={styles.inputGroupTitle}>Account Privacy</Text>
+
+                  <View style={styles.prefRow}>
+                    <View style={styles.prefTextCol}>
+                      <Text style={styles.prefHeading}>Private Account</Text>
+                      <Text style={styles.prefSub}>
+                        When your account is private, only students you approve can follow you and view your posts. Non-followers see a locked profile card.
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.privacyToggleBtn,
+                        isPrivateAccount ? styles.privacyToggleBtnActive : styles.privacyToggleBtnInactive,
+                      ]}
+                      onPress={() => handleTogglePrivateAccount(!isPrivateAccount)}
+                      disabled={updatingPrivacy}
+                    >
+                      <Text style={styles.privacyToggleBtnText}>
+                        {isPrivateAccount ? 'PRIVATE 🔒' : 'PUBLIC 🌐'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.settingsDivider} />
+
+                  {/* Messaging Preference Control */}
+                  <Text style={styles.inputGroupTitle}>Who Can Message You</Text>
+                  <Text style={styles.prefSub}>
+                    Control who can send direct messages or message requests to your primary inbox.
+                  </Text>
+
+                  <View style={styles.prefOptionsList}>
+                    {[
+                      { key: 'EVERYONE', label: 'Everyone on Campus', sub: 'Any student verified at your college' },
+                      { key: 'FOLLOWING', label: 'People You Follow', sub: 'Only accounts you follow can DM' },
+                      { key: 'CONNECTIONS_ONLY', label: 'Connections Only', sub: 'Only mutual LinkedIn-style connections' },
+                      { key: 'NOBODY', label: 'Nobody', sub: 'Turn off incoming direct message requests' },
+                    ].map((opt) => (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[
+                          styles.prefOptionCard,
+                          messagingPreference === opt.key && styles.prefOptionCardActive,
+                        ]}
+                        onPress={() => handleUpdateMessagingPreference(opt.key as any)}
+                        disabled={updatingPrivacy}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={[
+                              styles.prefOptionLabel,
+                              messagingPreference === opt.key && styles.prefOptionLabelActive,
+                            ]}
+                          >
+                            {opt.label}
+                          </Text>
+                          <Text style={styles.prefOptionSub}>{opt.sub}</Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.radioCircle,
+                            messagingPreference === opt.key && styles.radioCircleActive,
+                          ]}
+                        >
+                          {messagingPreference === opt.key && <View style={styles.radioDot} />}
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <View style={styles.settingsDivider} />
+
                   <Text style={styles.inputGroupTitle}>Campus Privacy Shield</Text>
 
                   <View style={styles.prefRow}>
@@ -1042,6 +1238,45 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* Social List Modal (Followers / Following / Connections) */}
+      <SocialListModal
+        visible={socialModalVisible}
+        type={socialModalType}
+        targetUserId={socialModalUserId}
+        isSelf={socialModalUserId === currentUser.id}
+        onClose={() => {
+          setSocialModalVisible(false);
+          // Refresh own profile counts when closing social list
+          profileService.getMyProfile().then((data) => {
+            if (data) setProfile(data);
+          }).catch(() => {});
+        }}
+        onSelectUser={(uid) => {
+          setViewingStudentId(uid);
+        }}
+      />
+
+      {/* Student Profile Modal (Public Profile Inspection) */}
+      <StudentProfileModal
+        visible={viewingStudentId !== null}
+        userId={viewingStudentId}
+        onClose={() => {
+          setViewingStudentId(null);
+          // Refresh own profile counts when closing student profile modal
+          profileService.getMyProfile().then((data) => {
+            if (data) setProfile(data);
+          }).catch(() => {});
+        }}
+        onOpenChat={(conv) => {
+          Alert.alert('Chat Ready 💬', 'Head to the Messages tab to continue this conversation.');
+        }}
+        onOpenSocialList={(type, targetUid) => {
+          setSocialModalType(type);
+          setSocialModalUserId(targetUid);
+          setSocialModalVisible(true);
+        }}
+      />
     </ScrollView>
   );
 };
@@ -1050,6 +1285,109 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    width: '100%',
+    justifyContent: 'space-around',
+    borderWidth: 1,
+    borderColor: '#334155',
+    marginBottom: 14,
+  },
+  statBox: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statNumber: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  statLabel: {
+    color: '#94a3b8',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  statDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: '#334155',
+  },
+  privacyToggleBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  privacyToggleBtnActive: {
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    borderColor: '#38bdf8',
+  },
+  privacyToggleBtnInactive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: '#10b981',
+  },
+  privacyToggleBtnText: {
+    color: '#f8fafc',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  prefOptionsList: {
+    gap: 8,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  prefOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  prefOptionCardActive: {
+    borderColor: '#38bdf8',
+    backgroundColor: 'rgba(56, 189, 248, 0.08)',
+  },
+  prefOptionLabel: {
+    color: '#f8fafc',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  prefOptionLabelActive: {
+    color: '#38bdf8',
+    fontWeight: '700',
+  },
+  prefOptionSub: {
+    color: '#94a3b8',
+    fontSize: 11,
+  },
+  radioCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#64748b',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  radioCircleActive: {
+    borderColor: '#38bdf8',
+  },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#38bdf8',
   },
   scrollContent: {
     padding: 16,

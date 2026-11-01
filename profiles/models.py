@@ -55,6 +55,24 @@ class StudentProfile(models.Model):
     is_flagged_fake = models.BooleanField(default=False, help_text="Flagged by admin or duplicate detection")
     flag_reason = models.CharField(max_length=255, blank=True, default="")
 
+    # Privacy & Safety Preferences
+    is_private_account = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="When True, posts and student details are only visible to approved followers"
+    )
+    messaging_preference = models.CharField(
+        max_length=20,
+        default="EVERYONE",
+        choices=[
+            ("EVERYONE", "Everyone (Message Requests from non-connections)"),
+            ("FOLLOWING", "People I Follow"),
+            ("CONNECTIONS_ONLY", "Connections Only"),
+            ("NOBODY", "Nobody"),
+        ],
+        help_text="Controls who can direct message or send message requests"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -67,3 +85,175 @@ class StudentProfile(models.Model):
 
     def __str__(self):
         return f"@{self.username} ({self.college.short_name} - {self.course.name})"
+
+
+class Connection(models.Model):
+    """
+    LinkedIn-style mutual professional & campus connections.
+    Always maintains user1_id < user2_id to guarantee uniqueness and prevent bidirectional duplicates.
+    """
+    STATUS_CHOICES = [
+        ("PENDING", "Pending Request"),
+        ("ACCEPTED", "Connected"),
+        ("DECLINED", "Declined"),
+        ("BLOCKED", "Blocked"),
+    ]
+
+    user1 = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="connections_as_u1"
+    )
+    user2 = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="connections_as_u2"
+    )
+    initiated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="initiated_connections"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="PENDING",
+        db_index=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user1", "user2"], name="unique_student_connection"),
+        ]
+        indexes = [
+            models.Index(fields=["status", "user1", "user2"], name="conn_status_u1_u2_idx"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.user1_id and self.user2_id and self.user1_id > self.user2_id:
+            self.user1, self.user2 = self.user2, self.user1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_relationship(cls, u1, u2):
+        if not u1 or not u2 or u1.id == u2.id:
+            return None
+        uid1, uid2 = min(u1.id, u2.id), max(u1.id, u2.id)
+        return cls.objects.filter(user1_id=uid1, user2_id=uid2).first()
+
+    @classmethod
+    def get_status(cls, current_user, other_user):
+        if not current_user or not other_user or current_user.id == other_user.id:
+            return "SELF"
+        rel = cls.get_relationship(current_user, other_user)
+        if not rel:
+            return "NOT_CONNECTED"
+        if rel.status == "ACCEPTED":
+            return "CONNECTED"
+        if rel.status == "PENDING":
+            return "REQUEST_SENT" if rel.initiated_by_id == current_user.id else "REQUEST_RECEIVED"
+        if rel.status == "DECLINED":
+            return "DECLINED"
+        if rel.status == "BLOCKED":
+            return "BLOCKED"
+        return "NOT_CONNECTED"
+
+    @classmethod
+    def are_connected(cls, u1, u2):
+        if not u1 or not u2 or u1.id == u2.id:
+            return False
+        uid1, uid2 = min(u1.id, u2.id), max(u1.id, u2.id)
+        return cls.objects.filter(user1_id=uid1, user2_id=uid2, status="ACCEPTED").exists()
+
+
+class Follow(models.Model):
+    """
+    Instagram-style one-way follower graph.
+    If target profile is private: status is 'PENDING' until approved.
+    If target profile is public: status is immediately 'ACCEPTED'.
+    """
+    STATUS_CHOICES = [
+        ("PENDING", "Pending Follow Request"),
+        ("ACCEPTED", "Following"),
+    ]
+
+    follower = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="following_relations"
+    )
+    following = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="follower_relations"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="ACCEPTED",
+        db_index=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["follower", "following"], name="unique_student_follow"),
+        ]
+        indexes = [
+            models.Index(fields=["follower", "status"], name="follow_follower_status_idx"),
+            models.Index(fields=["following", "status"], name="follow_following_status_idx"),
+        ]
+
+    @classmethod
+    def is_following(cls, follower, target):
+        if not follower or not target or follower.id == target.id:
+            return False
+        return cls.objects.filter(follower=follower, following=target, status="ACCEPTED").exists()
+
+    @classmethod
+    def get_status(cls, follower, target):
+        if not follower or not target or follower.id == target.id:
+            return "SELF"
+        rel = cls.objects.filter(follower=follower, following=target).first()
+        if not rel:
+            return "NOT_FOLLOWING"
+        if rel.status == "ACCEPTED":
+            return "FOLLOWING"
+        if rel.status == "PENDING":
+            return "REQUEST_SENT"
+        return "NOT_FOLLOWING"
+
+
+class UserBlock(models.Model):
+    """
+    Universal student blocking model.
+    Prevents direct messaging, connection requests, follows, and view of private activity.
+    """
+    blocker = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="blocked_users_set"
+    )
+    blocked = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="blocked_by_users_set"
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["blocker", "blocked"], name="unique_user_block"),
+        ]
+
+    @classmethod
+    def is_blocked(cls, u1, u2):
+        if not u1 or not u2 or u1.id == u2.id:
+            return False
+        return cls.objects.filter(
+            models.Q(blocker=u1, blocked=u2) | models.Q(blocker=u2, blocked=u1)
+        ).exists()
+

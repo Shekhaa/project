@@ -130,3 +130,41 @@ class CreateEphemeralGroupSerializer(serializers.Serializer):
         default="24_HOURS"
     )
     purpose_tag = serializers.CharField(max_length=50, required=False, allow_blank=True, default="Hangout")
+
+
+class MessageRequestSerializer(serializers.ModelSerializer):
+    sender = serializers.SerializerMethodField()
+    conversation_id = serializers.UUIDField(source="conversation.id", read_only=True)
+
+    class Meta:
+        from .models import MessageRequest
+        model = MessageRequest
+        fields = [
+            "id",
+            "sender",
+            "initial_message",
+            "conversation_id",
+            "status",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_sender(self, obj):
+        from profiles.models import Connection
+        request = self.context.get("request")
+        current_user = request.user if request else None
+        s = obj.sender
+        prof = getattr(s, "profile", None)
+        conn_status = Connection.get_status(current_user, s) if current_user else "NOT_CONNECTED"
+        return {
+            "id": s.id,
+            "full_name": s.full_name or (prof.username if prof else s.email.split("@")[0]),
+            "username": prof.username if prof else "",
+            "email": s.email,
+            "college_name": prof.college.name if (prof and prof.college) else "",
+            "branch_name": prof.branch.name if (prof and prof.branch) else "",
+            "avatar": prof.profile_picture.url if (prof and prof.profile_picture) else None,
+            "is_verified": getattr(s, "is_verified_student", False),
+            "connection_status": conn_status,
+        }
+

@@ -5,11 +5,17 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.core.files.base import ContentFile
 from django.conf import settings
+from django.shortcuts import get_object_or_404
+from django.db.models import Q
+from django.contrib.auth import get_user_model
 from colleges.models import College, CollegeDomain, Course, Branch, AcademicYear, Section
 from communities.models import CommunityMember
-from .models import StudentProfile
-from .serializers import StudentProfileSerializer
+from notifications.views import create_notification
+from .models import StudentProfile, Connection, Follow, UserBlock
+from .serializers import StudentProfileSerializer, ConnectionSerializer, FollowSerializer
 from .ocr_service import IDCardOCRService
+
+User = get_user_model()
 
 
 class CompleteProfileView(APIView):
@@ -300,3 +306,498 @@ class AdminAuditActionView(APIView):
             msg = f"Flag cleared for user @{profile.username}."
 
         return Response({"message": msg, "user_id": user_id, "is_flagged_fake": profile.is_flagged_fake})
+
+
+class ConnectionRequestView(APIView):
+    """
+    POST /api/profile/connections/request/
+    Sends a LinkedIn-style connection request to another student.
+    Payload: {"user_id": <int>}
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        target_user_id = request.data.get("user_id")
+        if not target_user_id:
+            return Response({"error": "user_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if int(target_user_id) == request.user.id:
+            return Response({"error": "Cannot connect with yourself."}, status=status.HTTP_400_BAD_REQUEST)
+
+        target_user = User.objects.filter(id=target_user_id).first()
+        if not target_user:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if UserBlock.is_blocked(request.user, target_user):
+            return Response({"error": "Cannot connect with this user."}, status=status.HTTP_403_FORBIDDEN)
+
+        u1_id, u2_id = min(request.user.id, target_user.id), max(request.user.id, target_user.id)
+        connection = Connection.objects.filter(user1_id=u1_id, user2_id=u2_id).first()
+
+        if connection:
+            if connection.status == "ACCEPTED":
+                return Response({"status": "CONNECTED", "message": "You are already connected with this student."})
+            if connection.status == "PENDING":
+                if connection.initiated_by_id == request.user.id:
+                    return Response({"status": "REQUEST_SENT", "message": "Connection request already sent."})
+                else:
+                    # Target had sent a request to current user, auto-accept it!
+                    connection.status = "ACCEPTED"
+                    connection.save(update_fields=["status", "updated_at"])
+                    create_notification(
+                        recipient=target_user,
+                        sender=request.user,
+                        notification_type="CONNECTION_ACCEPTED",
+                        title="Connection Accepted 🤝",
+                        message=f"{request.user.full_name or request.user.email.split('@')[0]} accepted your connection request.",
+                        data={"user_id": request.user.id}
+                    )
+                    return Response({"status": "CONNECTED", "message": "Mutual connection established!"})
+            if connection.status == "BLOCKED":
+                return Response({"error": "Cannot connect with this user."}, status=status.HTTP_403_FORBIDDEN)
+            # Was DECLINED
+            connection.status = "PENDING"
+            connection.initiated_by = request.user
+            connection.save(update_fields=["status", "initiated_by", "updated_at"])
+        else:
+            connection = Connection.objects.create(
+                user1_id=u1_id,
+                user2_id=u2_id,
+                initiated_by=request.user,
+                status="PENDING"
+            )
+
+        # Notify recipient
+        sender_name = request.user.full_name or (request.user.profile.username if hasattr(request.user, "profile") else request.user.email.split('@')[0])
+        create_notification(
+            recipient=target_user,
+            sender=request.user,
+            notification_type="CONNECTION_REQUEST",
+            title="New Connection Request 🤝",
+            message=f"{sender_name} wants to connect with you.",
+            data={"user_id": request.user.id, "connection_id": connection.id}
+        )
+
+        return Response({
+            "status": "REQUEST_SENT",
+            "message": "Connection request sent successfully.",
+            "connection_id": connection.id
+        }, status=status.HTTP_201_CREATED)
+
+
+class RespondConnectionView(APIView):
+    """
+    POST /api/profile/connections/<user_id>/respond/
+    Payload: {"action": "ACCEPT" | "DECLINE" | "BLOCK"}
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        action = request.data.get("action", "ACCEPT").upper()
+        target_user = User.objects.filter(id=user_id).first()
+        if not target_user:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        u1_id, u2_id = min(request.user.id, target_user.id), max(request.user.id, target_user.id)
+        connection = Connection.objects.filter(user1_id=u1_id, user2_id=u2_id).first()
+
+        if not connection:
+            return Response({"error": "No connection request found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if action == "ACCEPT":
+            connection.status = "ACCEPTED"
+            connection.save(update_fields=["status", "updated_at"])
+            # Notify requester
+            sender_name = request.user.full_name or (request.user.profile.username if hasattr(request.user, "profile") else request.user.email.split('@')[0])
+            create_notification(
+                recipient=target_user,
+                sender=request.user,
+                notification_type="CONNECTION_ACCEPTED",
+                title="Connection Accepted 🤝",
+                message=f"{sender_name} accepted your connection request.",
+                data={"user_id": request.user.id}
+            )
+            return Response({"status": "CONNECTED", "message": "Connection accepted."})
+
+        elif action == "DECLINE":
+            connection.status = "DECLINED"
+            connection.save(update_fields=["status", "updated_at"])
+            return Response({"status": "DECLINED", "message": "Connection request declined."})
+
+        elif action == "BLOCK":
+            connection.status = "BLOCKED"
+            connection.save(update_fields=["status", "updated_at"])
+            UserBlock.objects.get_or_create(blocker=request.user, blocked=target_user)
+            return Response({"status": "BLOCKED", "message": "User blocked."})
+
+        return Response({"error": "Invalid action. Use ACCEPT, DECLINE, or BLOCK."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class RemoveConnectionView(APIView):
+    """
+    DELETE /api/profile/connections/<user_id>/
+    Removes an existing connection or cancels a pending sent request.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, user_id):
+        target_user = User.objects.filter(id=user_id).first()
+        if not target_user:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        u1_id, u2_id = min(request.user.id, target_user.id), max(request.user.id, target_user.id)
+        deleted_count, _ = Connection.objects.filter(user1_id=u1_id, user2_id=u2_id).delete()
+        if deleted_count == 0:
+            return Response({"status": "NOT_CONNECTED", "message": "No connection found."})
+        return Response({"status": "NOT_CONNECTED", "message": "Connection removed."})
+
+
+class ListConnectionsView(APIView):
+    """
+    GET /api/profile/connections/?tab=connected|received|sent
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        tab = request.query_params.get("tab", "connected").lower()
+        user = request.user
+
+        if tab == "received":
+            qs = Connection.objects.filter(
+                (Q(user1=user) | Q(user2=user)),
+                status="PENDING"
+            ).exclude(initiated_by=user).select_related("user1", "user2", "user1__profile", "user2__profile")
+        elif tab == "sent":
+            qs = Connection.objects.filter(
+                initiated_by=user,
+                status="PENDING"
+            ).select_related("user1", "user2", "user1__profile", "user2__profile")
+        else:  # "connected"
+            qs = Connection.objects.filter(
+                (Q(user1=user) | Q(user2=user)),
+                status="ACCEPTED"
+            ).select_related("user1", "user2", "user1__profile", "user2__profile")
+
+        serializer = ConnectionSerializer(qs, many=True, context={"request": request})
+        return Response({
+            "tab": tab,
+            "count": qs.count(),
+            "results": serializer.data
+        })
+
+
+class FollowToggleView(APIView):
+    """
+    POST /api/profile/follow/<user_id>/
+    Follows a user or sends a follow request if the account is private.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        if int(user_id) == request.user.id:
+            return Response({"error": "Cannot follow yourself."}, status=status.HTTP_400_BAD_REQUEST)
+
+        target_user = User.objects.filter(id=user_id).first()
+        if not target_user:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if UserBlock.is_blocked(request.user, target_user):
+            return Response({"error": "Cannot follow this user."}, status=status.HTTP_403_FORBIDDEN)
+
+        target_profile = getattr(target_user, "profile", None)
+        is_private = target_profile.is_private_account if target_profile else False
+
+        follow_rel = Follow.objects.filter(follower=request.user, following=target_user).first()
+        if follow_rel:
+            if follow_rel.status == "ACCEPTED":
+                return Response({"follow_status": "FOLLOWING", "message": "Already following this student."})
+            if follow_rel.status == "PENDING":
+                return Response({"follow_status": "REQUEST_SENT", "message": "Follow request already pending."})
+
+        # Check privacy
+        new_status = "PENDING" if is_private else "ACCEPTED"
+        follow_rel = Follow.objects.create(
+            follower=request.user,
+            following=target_user,
+            status=new_status
+        )
+
+        sender_name = request.user.full_name or (request.user.profile.username if hasattr(request.user, "profile") else request.user.email.split('@')[0])
+        if is_private:
+            create_notification(
+                recipient=target_user,
+                sender=request.user,
+                notification_type="FOLLOW_REQUEST",
+                title="Follow Request 🔒",
+                message=f"{sender_name} requested to follow you.",
+                data={"user_id": request.user.id, "follow_id": follow_rel.id}
+            )
+            return Response({
+                "follow_status": "REQUEST_SENT",
+                "message": "Follow request sent to private account.",
+                "is_private": True
+            }, status=status.HTTP_201_CREATED)
+        else:
+            create_notification(
+                recipient=target_user,
+                sender=request.user,
+                notification_type="FOLLOW",
+                title="New Follower 👤",
+                message=f"{sender_name} started following you.",
+                data={"user_id": request.user.id}
+            )
+            return Response({
+                "follow_status": "FOLLOWING",
+                "message": f"You are now following {sender_name}.",
+                "is_private": False
+            }, status=status.HTTP_201_CREATED)
+
+
+class UnfollowView(APIView):
+    """
+    POST /api/profile/unfollow/<user_id>/
+    Unfollows a user or cancels a pending follow request.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        target_user = User.objects.filter(id=user_id).first()
+        if not target_user:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        Follow.objects.filter(follower=request.user, following=target_user).delete()
+        return Response({"follow_status": "NOT_FOLLOWING", "message": "Unfollowed successfully."})
+
+
+class RespondFollowRequestView(APIView):
+    """
+    POST /api/profile/follow/requests/<request_id>/respond/
+    Payload: {"action": "ACCEPT" | "REJECT"}
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id):
+        action = request.data.get("action", "ACCEPT").upper()
+        follow_req = Follow.objects.filter(id=request_id, following=request.user, status="PENDING").first()
+        if not follow_req:
+            return Response({"error": "Follow request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if action == "ACCEPT":
+            follow_req.status = "ACCEPTED"
+            follow_req.save(update_fields=["status", "updated_at"])
+            recipient_name = request.user.full_name or (request.user.profile.username if hasattr(request.user, "profile") else request.user.email.split('@')[0])
+            create_notification(
+                recipient=follow_req.follower,
+                sender=request.user,
+                notification_type="FOLLOW_ACCEPTED",
+                title="Follow Request Accepted ✅",
+                message=f"{recipient_name} accepted your follow request.",
+                data={"user_id": request.user.id}
+            )
+            return Response({"status": "ACCEPTED", "message": "Follow request accepted."})
+        elif action == "REJECT":
+            follow_req.delete()
+            return Response({"status": "REJECTED", "message": "Follow request rejected."})
+
+        return Response({"error": "Invalid action. Use ACCEPT or REJECT."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ListFollowRequestsView(APIView):
+    """
+    GET /api/profile/follow/requests/
+    Returns pending follow requests for the authenticated user.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = Follow.objects.filter(following=request.user, status="PENDING").select_related("follower", "follower__profile")
+        serializer = FollowSerializer(qs, many=True, context={"request": request})
+        return Response({
+            "count": qs.count(),
+            "results": serializer.data
+        })
+
+
+class ListFollowersView(APIView):
+    """
+    GET /api/profile/<user_id>/followers/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        target_user = get_object_or_404(User, id=user_id)
+        if UserBlock.is_blocked(request.user, target_user):
+            return Response({"error": "Content unavailable."}, status=status.HTTP_403_FORBIDDEN)
+
+        # If private account and viewer is not following and not self, hide
+        prof = getattr(target_user, "profile", None)
+        if prof and prof.is_private_account and target_user.id != request.user.id:
+            if not Follow.is_following(request.user, target_user):
+                return Response({"error": "This account is private. Follow to view followers."}, status=status.HTTP_403_FORBIDDEN)
+
+        qs = Follow.objects.filter(following=target_user, status="ACCEPTED").select_related("follower", "follower__profile")
+        serializer = FollowSerializer(qs, many=True, context={"request": request})
+        return Response({"results": serializer.data, "count": qs.count()})
+
+
+class ListFollowingView(APIView):
+    """
+    GET /api/profile/<user_id>/following/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        target_user = get_object_or_404(User, id=user_id)
+        if UserBlock.is_blocked(request.user, target_user):
+            return Response({"error": "Content unavailable."}, status=status.HTTP_403_FORBIDDEN)
+
+        prof = getattr(target_user, "profile", None)
+        if prof and prof.is_private_account and target_user.id != request.user.id:
+            if not Follow.is_following(request.user, target_user):
+                return Response({"error": "This account is private. Follow to view following list."}, status=status.HTTP_403_FORBIDDEN)
+
+        qs = Follow.objects.filter(follower=target_user, status="ACCEPTED").select_related("following", "following__profile")
+        serializer = FollowSerializer(qs, many=True, context={"request": request})
+        return Response({"results": serializer.data, "count": qs.count()})
+
+
+class UserProfileDetailView(APIView):
+    """
+    GET /api/profile/<user_id>/
+    Fetches full student profile with relationship statuses (connection_status, follow_status, is_blocked)
+    and enforces privacy masking for private accounts.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        target_user = get_object_or_404(User, id=user_id)
+        is_self = (request.user.id == target_user.id)
+
+        is_blocked = UserBlock.is_blocked(request.user, target_user)
+        if is_blocked and not is_self:
+            return Response({
+                "id": target_user.id,
+                "is_blocked": True,
+                "message": "User is blocked or unavailable."
+            }, status=status.HTTP_200_OK)
+
+        prof = getattr(target_user, "profile", None)
+        conn_status = Connection.get_status(request.user, target_user)
+        follow_status = Follow.get_status(request.user, target_user)
+
+        is_private = prof.is_private_account if prof else False
+        can_view_content = is_self or (not is_private) or (follow_status == "FOLLOWING")
+
+        base_data = {
+            "id": target_user.id,
+            "email": target_user.email if (can_view_content or is_self) else "",
+            "full_name": target_user.full_name or (prof.username if prof else ""),
+            "username": prof.username if prof else "",
+            "avatar": prof.profile_picture.url if (prof and prof.profile_picture) else None,
+            "college_name": prof.college.name if (prof and prof.college) else "",
+            "college_short_name": prof.college.short_name if (prof and prof.college) else "",
+            "branch_name": prof.branch.name if (prof and prof.branch) else "",
+            "course_name": prof.course.name if (prof and prof.course) else "",
+            "academic_year_name": prof.academic_year.display_name if (prof and prof.academic_year) else "",
+            "is_verified": getattr(target_user, "is_verified_student", False),
+            "verification_tier": getattr(target_user, "verification_tier", "SEMI_VERIFIED"),
+            "badge_label": getattr(target_user, "badge_label", ""),
+            "is_private_account": is_private,
+            "messaging_preference": prof.messaging_preference if prof else "EVERYONE",
+            "connection_status": conn_status,
+            "follow_status": follow_status,
+            "is_blocked": False,
+            "can_view_content": can_view_content,
+            "followers_count": Follow.objects.filter(following=target_user, status="ACCEPTED").count(),
+            "following_count": Follow.objects.filter(follower=target_user, status="ACCEPTED").count(),
+            "connections_count": Connection.objects.filter(
+                Q(user1=target_user) | Q(user2=target_user),
+                status="ACCEPTED"
+            ).count(),
+        }
+
+        if can_view_content:
+            base_data["bio"] = prof.bio if prof else ""
+            base_data["admission_number"] = prof.admission_number if prof else ""
+            base_data["gender"] = prof.gender if prof else ""
+        else:
+            base_data["bio"] = "This account is private."
+            base_data["admission_number"] = ""
+            base_data["gender"] = ""
+
+        return Response(base_data)
+
+
+class UpdatePrivacySettingsView(APIView):
+    """
+    PATCH /api/profile/settings/privacy/
+    Payload: {"is_private_account": bool, "messaging_preference": "EVERYONE"|"FOLLOWING"|"CONNECTIONS_ONLY"|"NOBODY"}
+    """
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        prof = getattr(request.user, "profile", None)
+        if not prof:
+            return Response({"error": "Profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        fields_to_update = []
+        if "is_private_account" in request.data:
+            prof.is_private_account = bool(request.data["is_private_account"])
+            fields_to_update.append("is_private_account")
+
+        if "messaging_preference" in request.data:
+            pref = str(request.data["messaging_preference"]).upper()
+            if pref in ["EVERYONE", "FOLLOWING", "CONNECTIONS_ONLY", "NOBODY"]:
+                prof.messaging_preference = pref
+                fields_to_update.append("messaging_preference")
+
+        if fields_to_update:
+            prof.save(update_fields=fields_to_update)
+
+        return Response({
+            "message": "Privacy settings updated successfully.",
+            "is_private_account": prof.is_private_account,
+            "messaging_preference": prof.messaging_preference
+        })
+
+
+class BlockUserView(APIView):
+    """
+    POST /api/profile/block/<user_id>/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        if int(user_id) == request.user.id:
+            return Response({"error": "Cannot block yourself."}, status=status.HTTP_400_BAD_REQUEST)
+        target = get_object_or_404(User, id=user_id)
+
+        UserBlock.objects.get_or_create(blocker=request.user, blocked=target)
+
+        # Sever follow connections
+        Follow.objects.filter(
+            Q(follower=request.user, following=target) |
+            Q(follower=target, following=request.user)
+        ).delete()
+
+        # Update connection to BLOCKED
+        u1_id, u2_id = min(request.user.id, target.id), max(request.user.id, target.id)
+        Connection.objects.filter(user1_id=u1_id, user2_id=u2_id).update(status="BLOCKED")
+
+        return Response({"is_blocked": True, "message": "Blocked user successfully."})
+
+
+class UnblockUserView(APIView):
+    """
+    POST /api/profile/unblock/<user_id>/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        target = get_object_or_404(User, id=user_id)
+        UserBlock.objects.filter(blocker=request.user, blocked=target).delete()
+
+        u1_id, u2_id = min(request.user.id, target.id), max(request.user.id, target.id)
+        Connection.objects.filter(user1_id=u1_id, user2_id=u2_id, status="BLOCKED").update(status="DECLINED")
+
+        return Response({"is_blocked": False, "message": "Unblocked user successfully."})
+

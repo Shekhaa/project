@@ -3,7 +3,7 @@ import { AttachmentItem } from './chatService';
 
 export interface Post {
   id: number;
-  visibility?: 'GLOBAL' | 'COLLEGE' | 'COMMUNITY';
+  visibility?: 'GLOBAL' | 'COLLEGE' | 'FOLLOWERS' | 'CONNECTIONS' | 'COMMUNITY' | 'ONLY_ME';
   community?: number | null;
   community_name?: string;
   community_slug?: string;
@@ -29,6 +29,25 @@ export interface Post {
   created_at: string;
 }
 
+export interface LockedPostResponse {
+  detail: string;
+  is_private: boolean;
+  post_id?: number;
+  visibility?: string;
+  author?: {
+    id: number;
+    full_name: string;
+    username: string;
+    avatar?: string;
+    college_name: string;
+    branch_name: string;
+    is_verified: boolean;
+    is_private_account: boolean;
+    connection_status: string;
+    follow_status: string;
+  };
+}
+
 export interface Comment {
   id: number;
   post: number;
@@ -52,7 +71,7 @@ export interface PaginatedPosts {
 export const postService = {
   // Feed for enrolled communities with page pagination and scope support
   async getFeed(
-    options?: { communityId?: number; scope?: 'GLOBAL' | 'COLLEGE' | 'COMMUNITY' } | number,
+    options?: { communityId?: number; scope?: 'GLOBAL' | 'COLLEGE' | 'FOLLOWERS' | 'CONNECTIONS' | 'COMMUNITY' } | number,
     page: number = 1
   ): Promise<PaginatedPosts> {
     const params: any = { page };

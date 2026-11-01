@@ -11,6 +11,9 @@ class StudentProfileSerializer(serializers.ModelSerializer):
     section_name = serializers.CharField(source="section.name", read_only=True)
     verification_tier = serializers.CharField(source="user.verification_tier", read_only=True)
     badge_label = serializers.CharField(source="user.badge_label", read_only=True)
+    followers_count = serializers.SerializerMethodField()
+    following_count = serializers.SerializerMethodField()
+    connections_count = serializers.SerializerMethodField()
 
     class Meta:
         model = StudentProfile
@@ -21,6 +24,11 @@ class StudentProfileSerializer(serializers.ModelSerializer):
             "profile_picture",
             "gender",
             "anonymous_enabled",
+            "is_private_account",
+            "messaging_preference",
+            "followers_count",
+            "following_count",
+            "connections_count",
             "admission_number",
             "college",
             "college_name",
@@ -102,6 +110,22 @@ class StudentProfileSerializer(serializers.ModelSerializer):
 
         return attrs
 
+    def get_followers_count(self, obj):
+        from .models import Follow
+        return Follow.objects.filter(following=obj.user, status="ACCEPTED").count()
+
+    def get_following_count(self, obj):
+        from .models import Follow
+        return Follow.objects.filter(follower=obj.user, status="ACCEPTED").count()
+
+    def get_connections_count(self, obj):
+        from .models import Connection
+        from django.db.models import Q
+        return Connection.objects.filter(
+            Q(user1=obj.user) | Q(user2=obj.user),
+            status="ACCEPTED"
+        ).count()
+
     def update(self, instance, validated_data):
         # Lock academic identity fields once completed
         if instance.profile_completed:
@@ -110,3 +134,65 @@ class StudentProfileSerializer(serializers.ModelSerializer):
                 validated_data.pop(field, None)
 
         return super().update(instance, validated_data)
+
+
+class ConnectionSerializer(serializers.ModelSerializer):
+    other_user = serializers.SerializerMethodField()
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+
+    class Meta:
+        from .models import Connection
+        model = Connection
+        fields = [
+            "id",
+            "status",
+            "status_label",
+            "initiated_by",
+            "other_user",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_other_user(self, obj):
+        request = self.context.get("request")
+        if not request:
+            return None
+        current_user = request.user
+        other = obj.user2 if obj.user1_id == current_user.id else obj.user1
+        prof = getattr(other, "profile", None)
+        return {
+            "id": other.id,
+            "full_name": other.full_name or (prof.username if prof else other.email.split("@")[0]),
+            "username": prof.username if prof else "",
+            "email": other.email,
+            "college_name": prof.college.name if (prof and prof.college) else "",
+            "branch_name": prof.branch.name if (prof and prof.branch) else "",
+            "avatar": prof.profile_picture.url if (prof and prof.profile_picture) else None,
+            "is_verified": getattr(other, "is_verified_student", False),
+        }
+
+
+class FollowSerializer(serializers.ModelSerializer):
+    user = serializers.SerializerMethodField()
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+
+    class Meta:
+        from .models import Follow
+        model = Follow
+        fields = ["id", "status", "status_label", "user", "created_at"]
+
+    def get_user(self, obj):
+        request = self.context.get("request")
+        current_user = request.user if request else None
+        target = obj.follower if (current_user and obj.following_id == current_user.id) else obj.following
+        prof = getattr(target, "profile", None)
+        return {
+            "id": target.id,
+            "full_name": target.full_name or (prof.username if prof else target.email.split("@")[0]),
+            "username": prof.username if prof else "",
+            "email": target.email,
+            "avatar": prof.profile_picture.url if (prof and prof.profile_picture) else None,
+            "college_name": prof.college.name if (prof and prof.college) else "",
+            "is_verified": getattr(target, "is_verified_student", False),
+        }
+

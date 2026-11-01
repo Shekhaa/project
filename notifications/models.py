@@ -11,6 +11,13 @@ class Notification(models.Model):
         ('MESSAGE', 'Sent you a direct message'),
         ('ACCEPTED_ANSWER', 'Accepted your answer'),
         ('ANNOUNCEMENT', 'Campus Announcement'),
+        ('CONNECTION_REQUEST', 'Sent you a connection request'),
+        ('CONNECTION_ACCEPTED', 'Accepted your connection request'),
+        ('FOLLOW', 'Started following you'),
+        ('FOLLOW_REQUEST', 'Requested to follow you'),
+        ('FOLLOW_ACCEPTED', 'Accepted your follow request'),
+        ('MESSAGE_REQUEST', 'Sent you a message request'),
+        ('MESSAGE_REQUEST_ACCEPTED', 'Accepted your message request'),
     )
 
     recipient = models.ForeignKey(
@@ -26,7 +33,7 @@ class Notification(models.Model):
         null=True,
         blank=True
     )
-    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES, db_index=True)
+    notification_type = models.CharField(max_length=35, choices=NOTIFICATION_TYPES, db_index=True)
     title = models.CharField(max_length=255, default="")
     message = models.TextField(default="")
     data = models.JSONField(default=dict, blank=True, help_text="Metadata like post_id, conversation_id, comment_id")
