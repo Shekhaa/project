@@ -34,12 +34,39 @@ class Community(models.Model):
         default=False,
         help_text="True for automatic college/course hierarchy communities"
     )
+    invite_code = models.CharField(
+        max_length=64,
+        unique=True,
+        blank=True,
+        null=True,
+        db_index=True,
+        help_text="Unique invite token for sharing community link (Instagram style)"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["name"]
         unique_together = ("name", "community_type")
         verbose_name_plural = "Communities"
+
+    def get_or_create_invite_code(self):
+        if not self.invite_code:
+            import secrets
+            code = secrets.token_urlsafe(10)
+            while Community.objects.filter(invite_code=code).exists():
+                code = secrets.token_urlsafe(10)
+            self.invite_code = code
+            self.save(update_fields=["invite_code"])
+        return self.invite_code
+
+    def reset_invite_code(self):
+        import secrets
+        code = secrets.token_urlsafe(10)
+        while Community.objects.filter(invite_code=code).exists():
+            code = secrets.token_urlsafe(10)
+        self.invite_code = code
+        self.save(update_fields=["invite_code"])
+        return self.invite_code
 
     def save(self, *args, **kwargs):
         if not self.slug:

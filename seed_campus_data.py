@@ -99,19 +99,8 @@ def seed():
     print(" -> Seeded Academic Years (1-4) and Sections (A, B)")
 
     # 5. Campus Clubs (Opt-In Communities)
-    clubs = [
-        ("Google Developer Student Club (GDSC)", "gdsc-campus", "Official campus developer community for tech & workshops"),
-        ("ACM Student Chapter", "acm-chapter", "Competitive programming, research and hackathons"),
-        ("Cultural & Arts Society", "cultural-society", "Music, dance, dramatics and campus festivals"),
-        ("Sports Council", "sports-council", "Campus athletics, football, basketball & tournaments"),
-    ]
-    for name, slug, desc in clubs:
-        Community.objects.get_or_create(
-            name=name,
-            community_type="CLUB",
-            defaults={"slug": slug, "description": desc}
-        )
-    print(" -> Seeded Student Clubs & Societies")
+    # Note: Only 2 default communities (College & Course) are created by default.
+    # All student clubs / societies are custom communities created by students with invite links.
 
     # 6. Admin User
     admin_user, admin_created = User.objects.get_or_create(

@@ -576,23 +576,46 @@ class CommunityMembersView(APIView):
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
-        student_id = request.data.get("student_id")
-        user_to_add = get_object_or_404(User, id=student_id)
+        student_ids = request.data.get("student_ids")
+        if not student_ids and request.data.get("student_id"):
+            student_ids = [request.data.get("student_id")]
+
+        if not student_ids:
+            return Response({"error": "No students specified to add."}, status=status.HTTP_400_BAD_REQUEST)
 
         target_role = request.data.get("role", "MEMBER").upper()
         if target_role not in ["ADMIN", "MODERATOR", "MEMBER"]:
             target_role = "MEMBER"
 
-        member, created = CommunityMember.objects.get_or_create(
-            community=community,
-            user=user_to_add,
-            defaults={"role": target_role}
-        )
-        if not created and member.role != target_role:
-            member.role = target_role
-            member.save(update_fields=["role"])
+        added_members = []
+        for s_id in student_ids:
+            try:
+                user_to_add = User.objects.get(id=s_id)
+                member, created = CommunityMember.objects.get_or_create(
+                    community=community,
+                    user=user_to_add,
+                    defaults={"role": target_role}
+                )
+                if not created and member.role != target_role:
+                    member.role = target_role
+                    member.save(update_fields=["role"])
+                added_members.append(member)
+                if created:
+                    create_notification(
+                        recipient=user_to_add,
+                        sender=request.user,
+                        notification_type="MESSAGE",
+                        title="Added to Community",
+                        message=f"{request.user.full_name} added you to {community.name}",
+                        extra_data={"community_slug": community.slug}
+                    )
+            except User.DoesNotExist:
+                continue
 
-        return Response(CommunityMemberListSerializer(member).data, status=status.HTTP_201_CREATED)
+        return Response({
+            "added_count": len(added_members),
+            "members": CommunityMemberListSerializer(added_members, many=True).data
+        }, status=status.HTTP_201_CREATED)
 
 
 class CommunityMemberDetailView(APIView):
@@ -707,3 +730,84 @@ class CommunityReportActionView(APIView):
         report.save()
 
         return Response(CommunityReportSerializer(report).data)
+
+
+class CommunityInviteLinkView(APIView):
+    """
+    GET /api/communities/<slug>/invite-link/
+    POST /api/communities/<slug>/invite-link/ (action='reset')
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, slug):
+        community = get_object_or_404(Community, slug=slug)
+        code = community.get_or_create_invite_code()
+        invite_url = f"https://campusconnect.edu/invite/c/{code}"
+        return Response({
+            "invite_code": code,
+            "invite_url": invite_url,
+            "community_name": community.name,
+            "community_slug": community.slug,
+        })
+
+    def post(self, request, slug):
+        community = get_object_or_404(Community, slug=slug)
+        role = get_user_community_role(community, request.user)
+        if role not in ["OWNER", "ADMIN"] and not request.user.is_staff:
+            return Response({"error": "Only community owners and admins can reset invite links."}, status=status.HTTP_403_FORBIDDEN)
+
+        code = community.reset_invite_code()
+        invite_url = f"https://campusconnect.edu/invite/c/{code}"
+        return Response({
+            "invite_code": code,
+            "invite_url": invite_url,
+            "community_name": community.name,
+            "community_slug": community.slug,
+            "message": "Invite link has been reset successfully."
+        })
+
+
+class CommunityJoinByInviteView(APIView):
+    """
+    GET /api/communities/invite/<invite_code>/ (Preview community)
+    POST /api/communities/invite/<invite_code>/ (Join community)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, invite_code):
+        community = get_object_or_404(Community, invite_code=invite_code)
+        membership = CommunityMember.objects.filter(community=community, user=request.user).first()
+        return Response({
+            "id": community.id,
+            "name": community.name,
+            "slug": community.slug,
+            "description": community.description,
+            "community_type": community.community_type,
+            "members_count": community.members.count(),
+            "owner_name": getattr(community.owner, "full_name", "") if community.owner else None,
+            "is_already_member": membership is not None,
+            "role": membership.role if membership else None,
+        })
+
+    def post(self, request, invite_code):
+        community = get_object_or_404(Community, invite_code=invite_code)
+        member, created = CommunityMember.objects.get_or_create(
+            community=community,
+            user=request.user,
+            defaults={"role": "MEMBER"}
+        )
+        if created and community.owner:
+            create_notification(
+                recipient=community.owner,
+                sender=request.user,
+                notification_type="MESSAGE",
+                title="New Community Member",
+                message=f"{request.user.full_name} joined {community.name} via invite link",
+                extra_data={"community_slug": community.slug}
+            )
+        return Response({
+            "status": "joined" if created else "already_member",
+            "community": CommunitySerializer(community, context={"request": request}).data,
+            "role": member.role
+        }, status=status.HTTP_200_OK)
+

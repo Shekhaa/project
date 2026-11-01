@@ -31,16 +31,11 @@ def seed_gehu_data():
     )
     print(f"Verified Community: {gehu_comm.name} ({gehu_comm.slug})")
 
-    # Course & Branch Communities for GEHU
+    # Course Communities for GEHU (strictly College + Course default communities)
     gehu_btech_comm, _ = Community.objects.get_or_create(
         name="GEHU B.Tech",
         community_type="COURSE",
         defaults={"description": "B.Tech Engineering students at Graphic Era Hill University"}
-    )
-    gehu_cse_comm, _ = Community.objects.get_or_create(
-        name="GEHU Computer Science & Engineering",
-        community_type="BRANCH",
-        defaults={"description": "CSE & Tech specialization students at GEHU"}
     )
     gehu_bca_comm, _ = Community.objects.get_or_create(
         name="GEHU BCA",

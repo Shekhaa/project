@@ -46,6 +46,8 @@ import {
   ExternalLink,
   Heart,
   MessageCircle,
+  Link2,
+  UserPlus,
 } from 'lucide-react-native';
 import { MediaGrid } from '../components/media/MediaGrid';
 import { DocumentCard } from '../components/media/DocumentCard';
@@ -54,6 +56,9 @@ import { parseSharedPostCard, SharedPostCardData } from '../components/chat/Mess
 import { SharedPostViewerModal } from '../components/chat/SharedPostViewerModal';
 import { ImageViewerModal } from '../components/media/ImageViewerModal';
 import { DiscussTab } from '../components/discuss/DiscussTab';
+import { AddMembersModal } from '../components/chat/AddMembersModal';
+import { InviteLinkModal } from '../components/chat/InviteLinkModal';
+import { JoinByInviteModal } from '../components/chat/JoinByInviteModal';
 
 interface CommunitiesScreenProps {
   currentUser?: any;
@@ -107,6 +112,34 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [creatingCommunity, setCreatingCommunity] = useState(false);
+
+  // Invite Link & Add Members Modal States (Instagram Style)
+  const [addMembersModalVisible, setAddMembersModalVisible] = useState(false);
+  const [inviteLinkModalVisible, setInviteLinkModalVisible] = useState(false);
+  const [joinViaInviteModalVisible, setJoinViaInviteModalVisible] = useState(false);
+
+  const handleAddCommunityMembers = async (selectedIds: number[]) => {
+    if (!activeCommunity) return;
+    await communityService.addMembers(activeCommunity.slug, selectedIds);
+    Alert.alert('Success! 🎉', `Added ${selectedIds.length} members to ${activeCommunity.name}.`);
+    setMembersLoading(true);
+    try {
+      const data = await communityService.getMembers(activeCommunity.slug);
+      setMembersList(data || []);
+    } catch {
+    } finally {
+      setMembersLoading(false);
+    }
+  };
+
+  const handleJoinedCommunityViaInvite = async (slug: string) => {
+    await loadCommunities();
+    try {
+      const comm = await communityService.getCommunityDetail(slug);
+      setActiveCommunity(comm);
+    } catch {
+    }
+  };
 
   // FlatList Ref for Auto-Scroll
   const chatFlatListRef = useRef<FlatList>(null);
@@ -494,6 +527,23 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={styles.headerIconBtn}
+              onPress={() => setInviteLinkModalVisible(true)}
+              accessibilityLabel="Invite link"
+            >
+              <Link2 size={18} color="#38bdf8" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              onPress={() => {
+                handleOpenMembers();
+                setAddMembersModalVisible(true);
+              }}
+              accessibilityLabel="Add members"
+            >
+              <UserPlus size={18} color="#38bdf8" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIconBtn}
               onPress={handleOpenMembers}
               accessibilityLabel="View members"
             >
@@ -786,7 +836,28 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
               <View style={{ width: 24 }} />
             </View>
 
-            <View style={{ padding: 16 }}>
+            <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6 }}>
+              {/* Quick Action Bar for Add People & Invite Link */}
+              <View style={styles.membersActionBar}>
+                <TouchableOpacity
+                  style={styles.memberActionPill}
+                  onPress={() => setAddMembersModalVisible(true)}
+                  activeOpacity={0.8}
+                >
+                  <UserPlus size={15} color="#38bdf8" style={{ marginRight: 6 }} />
+                  <Text style={styles.memberActionPillText}>Add People</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.memberActionPill}
+                  onPress={() => setInviteLinkModalVisible(true)}
+                  activeOpacity={0.8}
+                >
+                  <Link2 size={15} color="#38bdf8" style={{ marginRight: 6 }} />
+                  <Text style={styles.memberActionPillText}>Invite Link</Text>
+                </TouchableOpacity>
+              </View>
+
               <View style={styles.discussSearchBox}>
                 <Search size={14} color="#64748b" />
                 <TextInput
@@ -921,6 +992,29 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   onPress={() => {
                     setMoreMenuVisible(false);
                     handleOpenMembers();
+                    setAddMembersModalVisible(true);
+                  }}
+                >
+                  <UserPlus size={16} color="#38bdf8" />
+                  <Text style={styles.sheetActionText}>Add People</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.sheetActionItem}
+                  onPress={() => {
+                    setMoreMenuVisible(false);
+                    setInviteLinkModalVisible(true);
+                  }}
+                >
+                  <Link2 size={16} color="#38bdf8" />
+                  <Text style={styles.sheetActionText}>Group Invite Link</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.sheetActionItem}
+                  onPress={() => {
+                    setMoreMenuVisible(false);
+                    handleOpenMembers();
                   }}
                 >
                   <Users size={16} color="#38bdf8" />
@@ -982,6 +1076,25 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
             onClose={() => setViewingSharedPost(null)}
           />
         )}
+
+        {/* ADD MEMBERS MODAL (Instagram Style) */}
+        <AddMembersModal
+          visible={addMembersModalVisible}
+          title={`Add to ${activeCommunity.name}`}
+          existingMemberIds={membersList.map((m) => m.user.id)}
+          onClose={() => setAddMembersModalVisible(false)}
+          onAddMembers={handleAddCommunityMembers}
+        />
+
+        {/* GROUP INVITE LINK MODAL (Instagram Style) */}
+        <InviteLinkModal
+          visible={inviteLinkModalVisible}
+          title={activeCommunity.name}
+          type="COMMUNITY"
+          targetIdOrSlug={activeCommunity.slug}
+          canReset={activeCommunity.user_role === 'OWNER' || activeCommunity.user_role === 'ADMIN'}
+          onClose={() => setInviteLinkModalVisible(false)}
+        />
       </KeyboardAvoidingView>
     );
   }
@@ -999,14 +1112,25 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
             Your verified academic & student communities
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.createBtn}
-          onPress={() => setCreateCommunityModalVisible(true)}
-          activeOpacity={0.8}
-        >
-          <Plus size={16} color="#fff" style={{ marginRight: 4 }} />
-          <Text style={styles.createBtnText}>Create Hub</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            style={styles.joinLinkHeaderBtn}
+            onPress={() => setJoinViaInviteModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Link2 size={14} color="#38bdf8" style={{ marginRight: 4 }} />
+            <Text style={styles.joinLinkHeaderBtnText}>Join via Link</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.createBtn}
+            onPress={() => setCreateCommunityModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Plus size={16} color="#fff" style={{ marginRight: 4 }} />
+            <Text style={styles.createBtnText}>Create Hub</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search Bar */}
@@ -1014,7 +1138,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
         <Search size={16} color={colors.textSecondary} style={{ marginRight: 8 }} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search colleges, branches, courses, clubs..."
+          placeholder="Search official college, course, or custom hubs..."
           placeholderTextColor={colors.textSecondary}
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -1026,10 +1150,10 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
         ) : null}
       </View>
 
-      {/* Category Chips Bar */}
+      {/* Category Chips Bar (2 Default: College & Course, plus Custom) */}
       <View style={styles.categoryBar}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
-          {(['ALL', 'COLLEGE', 'COURSE', 'CLUB', 'CUSTOM'] as const).map((cat) => (
+          {(['ALL', 'COLLEGE', 'COURSE', 'CUSTOM'] as const).map((cat) => (
             <TouchableOpacity
               key={cat}
               style={[styles.categoryPill, selectedCategory === cat && styles.categoryPillActive]}
@@ -1041,9 +1165,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   : cat === 'COLLEGE'
                   ? '🎓 College'
                   : cat === 'COURSE'
-                  ? '📚 Courses & Branch'
-                  : cat === 'CLUB'
-                  ? '⚡ Clubs'
+                  ? '📚 Course'
                   : '👥 Custom'}
               </Text>
             </TouchableOpacity>
@@ -1163,6 +1285,13 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* JOIN VIA INVITE LINK MODAL */}
+      <JoinByInviteModal
+        visible={joinViaInviteModalVisible}
+        onClose={() => setJoinViaInviteModalVisible(false)}
+        onJoinedCommunity={handleJoinedCommunityViaInvite}
+      />
     </View>
   );
 };
@@ -1204,6 +1333,44 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 12,
+  },
+  joinLinkHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  joinLinkHeaderBtnText: {
+    color: '#38bdf8',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  membersActionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  memberActionPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.25)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  memberActionPillText: {
+    color: '#38bdf8',
+    fontSize: 13,
+    fontWeight: '600',
   },
   searchContainer: {
     flexDirection: 'row',

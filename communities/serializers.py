@@ -224,6 +224,7 @@ class CommunitySerializer(serializers.ModelSerializer):
             "user_role",
             "latest_discussion",
             "latest_chat_preview",
+            "invite_code",
             "created_at",
         ]
 

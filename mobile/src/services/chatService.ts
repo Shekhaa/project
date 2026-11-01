@@ -151,4 +151,34 @@ export const chatService = {
     const res = await api.post(`/chat/${conversationId}/clear/`);
     return res.data;
   },
+
+  // Add members to a group chat (Instagram style)
+  async addMembers(conversationId: string, userIds: number[]): Promise<{ added_count: number; members: any[] }> {
+    const res = await api.post(`/chat/${conversationId}/add-members/`, { user_ids: userIds });
+    return res.data;
+  },
+
+  // Get or generate group invite link
+  async getInviteLink(conversationId: string): Promise<{ invite_code: string; invite_url: string; group_name: string }> {
+    const res = await api.get(`/chat/${conversationId}/invite-link/`);
+    return res.data;
+  },
+
+  // Reset group invite link
+  async resetInviteLink(conversationId: string): Promise<{ invite_code: string; invite_url: string; group_name: string; message: string }> {
+    const res = await api.post(`/chat/${conversationId}/invite-link/`, { action: 'reset' });
+    return res.data;
+  },
+
+  // Preview group chat by invite code
+  async previewInvite(inviteCode: string): Promise<any> {
+    const res = await api.get(`/chat/invite/${inviteCode}/`);
+    return res.data;
+  },
+
+  // Join group chat by invite code
+  async joinByInvite(inviteCode: string): Promise<any> {
+    const res = await api.post(`/chat/invite/${inviteCode}/`);
+    return res.data;
+  },
 };

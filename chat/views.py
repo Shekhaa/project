@@ -10,7 +10,7 @@ from accounts.models import User
 from attachments.services import AttachmentService
 from notifications.views import create_notification
 from .models import Conversation, ConversationMember, Message
-from .serializers import ConversationSerializer, MessageSerializer, CreateEphemeralGroupSerializer
+from .serializers import ConversationSerializer, MessageSerializer, CreateEphemeralGroupSerializer, ConversationMemberSerializer
 
 class InboxView(generics.ListAPIView):
     """
@@ -379,3 +379,154 @@ class ClearConversationMessagesView(APIView):
             "message": "Chat history cleared successfully.",
             "id": str(conversation_id)
         }, status=status.HTTP_200_OK)
+
+
+class AddConversationMembersView(APIView):
+    """
+    POST /api/chat/<uuid:conversation_id>/add-members/
+    Adds selected students to group conversation (Instagram style)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, conversation_id):
+        conv = get_object_or_404(Conversation, id=conversation_id)
+        if not conv.is_group:
+            return Response({"error": "Cannot add multiple members to a direct 1-on-1 message."}, status=status.HTTP_400_BAD_REQUEST)
+
+        is_member = ConversationMember.objects.filter(conversation=conv, user=request.user).exists()
+        if not is_member and not request.user.is_staff:
+            return Response({"error": "You must be a member of this group to add people."}, status=status.HTTP_403_FORBIDDEN)
+
+        user_ids = request.data.get("user_ids", [])
+        if not user_ids and request.data.get("user_id"):
+            user_ids = [request.data.get("user_id")]
+
+        if not user_ids:
+            return Response({"error": "No students selected to add."}, status=status.HTTP_400_BAD_REQUEST)
+
+        added_users = []
+        for uid in user_ids:
+            try:
+                u = User.objects.get(id=uid)
+                member, created = ConversationMember.objects.get_or_create(
+                    conversation=conv,
+                    user=u,
+                    defaults={"is_admin": False}
+                )
+                if created:
+                    added_users.append(u)
+                    create_notification(
+                        recipient=u,
+                        sender=request.user,
+                        notification_type="MESSAGE",
+                        title="Added to Group Chat",
+                        message=f"{request.user.full_name} added you to '{conv.name or 'Campus Group'}'",
+                        data={"conversation_id": str(conv.id)}
+                    )
+            except User.DoesNotExist:
+                continue
+
+        if added_users:
+            names = ", ".join([u.full_name or u.email.split("@")[0] for u in added_users])
+            Message.objects.create(
+                conversation=conv,
+                sender=request.user,
+                text=f"👋 {request.user.full_name} added {names} to the group."
+            )
+
+        return Response({
+            "added_count": len(added_users),
+            "members": ConversationMemberSerializer(conv.members.all(), many=True).data
+        }, status=status.HTTP_201_CREATED)
+
+
+class ConversationInviteLinkView(APIView):
+    """
+    GET /api/chat/<uuid:conversation_id>/invite-link/
+    POST /api/chat/<uuid:conversation_id>/invite-link/ (action='reset')
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, conversation_id):
+        conv = get_object_or_404(Conversation, id=conversation_id)
+        if not conv.is_group:
+            return Response({"error": "Invite links are only available for group chats."}, status=status.HTTP_400_BAD_REQUEST)
+
+        is_member = ConversationMember.objects.filter(conversation=conv, user=request.user).exists()
+        if not is_member and not request.user.is_staff:
+            return Response({"error": "You must be a member of this chat to view invite link."}, status=status.HTTP_403_FORBIDDEN)
+
+        code = conv.get_or_create_invite_code()
+        invite_url = f"https://campusconnect.edu/invite/g/{code}"
+        return Response({
+            "invite_code": code,
+            "invite_url": invite_url,
+            "group_name": conv.name or "Campus Group",
+            "conversation_id": str(conv.id)
+        })
+
+    def post(self, request, conversation_id):
+        conv = get_object_or_404(Conversation, id=conversation_id)
+        if not conv.is_group:
+            return Response({"error": "Invite links are only available for group chats."}, status=status.HTTP_400_BAD_REQUEST)
+
+        membership = ConversationMember.objects.filter(conversation=conv, user=request.user).first()
+        if not membership or (not membership.is_admin and not request.user.is_staff):
+            return Response({"error": "Only group admins can reset group invite links."}, status=status.HTTP_403_FORBIDDEN)
+
+        code = conv.reset_invite_code()
+        invite_url = f"https://campusconnect.edu/invite/g/{code}"
+        return Response({
+            "invite_code": code,
+            "invite_url": invite_url,
+            "group_name": conv.name or "Campus Group",
+            "conversation_id": str(conv.id),
+            "message": "Group invite link has been reset successfully."
+        })
+
+
+class JoinByConversationInviteView(APIView):
+    """
+    GET /api/chat/invite/<str:invite_code>/ (Preview group chat)
+    POST /api/chat/invite/<str:invite_code>/ (Join group chat)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, invite_code):
+        conv = get_object_or_404(Conversation, invite_code=invite_code)
+        if conv.is_ephemeral and conv.is_expired:
+            return Response({"error": "This ephemeral group has expired."}, status=status.HTTP_410_GONE)
+
+        is_member = ConversationMember.objects.filter(conversation=conv, user=request.user).exists()
+        return Response({
+            "id": str(conv.id),
+            "name": conv.name or "Campus Group",
+            "is_group": conv.is_group,
+            "is_ephemeral": conv.is_ephemeral,
+            "duration": conv.duration,
+            "purpose_tag": conv.purpose_tag,
+            "members_count": conv.members.count(),
+            "is_already_member": is_member
+        })
+
+    def post(self, request, invite_code):
+        conv = get_object_or_404(Conversation, invite_code=invite_code)
+        if conv.is_ephemeral and conv.is_expired:
+            return Response({"error": "This ephemeral group has expired."}, status=status.HTTP_410_GONE)
+
+        member, created = ConversationMember.objects.get_or_create(
+            conversation=conv,
+            user=request.user,
+            defaults={"is_admin": False}
+        )
+        if created:
+            Message.objects.create(
+                conversation=conv,
+                sender=request.user,
+                text=f"👋 {request.user.full_name} joined the group via invite link."
+            )
+        return Response({
+            "status": "joined" if created else "already_member",
+            "conversation": ConversationSerializer(conv, context={"request": request}).data
+        }, status=status.HTTP_200_OK)
+

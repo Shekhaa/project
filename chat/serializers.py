@@ -31,11 +31,31 @@ class MessageSerializer(serializers.ModelSerializer):
         return None
 
 
+class ConversationMemberSerializer(serializers.ModelSerializer):
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    full_name = serializers.SerializerMethodField()
+    email = serializers.EmailField(source="user.email", read_only=True)
+    avatar = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ConversationMember
+        fields = ["id", "user_id", "full_name", "email", "avatar", "is_admin", "joined_at"]
+
+    def get_full_name(self, obj):
+        return getattr(obj.user, "full_name", "") or obj.user.email.split("@")[0]
+
+    def get_avatar(self, obj):
+        if hasattr(obj.user, "profile") and obj.user.profile.profile_picture:
+            return obj.user.profile.profile_picture.url
+        return None
+
+
 class ConversationSerializer(serializers.ModelSerializer):
     last_message = serializers.SerializerMethodField()
     recipient = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
     is_expired = serializers.BooleanField(read_only=True)
+    members = ConversationMemberSerializer(many=True, read_only=True)
 
     class Meta:
         model = Conversation
@@ -51,6 +71,8 @@ class ConversationSerializer(serializers.ModelSerializer):
             "recipient",
             "last_message",
             "unread_count",
+            "invite_code",
+            "members",
             "updated_at",
             "created_at",
         ]

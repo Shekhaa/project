@@ -231,6 +231,34 @@ export const communityService = {
     return res.data;
   },
 
+  async addMembers(slug: string, studentIds: number[], role: string = 'MEMBER') {
+    const res = await api.post(`/communities/${slug}/members/`, {
+      student_ids: studentIds,
+      role,
+    });
+    return res.data;
+  },
+
+  async getInviteLink(slug: string): Promise<{ invite_code: string; invite_url: string; community_name: string }> {
+    const res = await api.get(`/communities/${slug}/invite-link/`);
+    return res.data;
+  },
+
+  async resetInviteLink(slug: string): Promise<{ invite_code: string; invite_url: string; community_name: string }> {
+    const res = await api.post(`/communities/${slug}/invite-link/`, { action: 'reset' });
+    return res.data;
+  },
+
+  async previewInvite(inviteCode: string) {
+    const res = await api.get(`/communities/invite/${inviteCode}/`);
+    return res.data;
+  },
+
+  async joinByInvite(inviteCode: string) {
+    const res = await api.post(`/communities/invite/${inviteCode}/`);
+    return res.data;
+  },
+
   async updateMemberRole(slug: string, memberId: number, role: string) {
     const res = await api.patch(`/communities/${slug}/members/${memberId}/`, { role });
     return res.data;

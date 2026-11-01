@@ -20,12 +20,39 @@ class Conversation(models.Model):
     duration = models.CharField(max_length=20, choices=DURATION_CHOICES, blank=True, default="")
     purpose_tag = models.CharField(max_length=50, blank=True, default="", help_text="e.g. Trip, Canteen, Study, Gaming")
     expires_at = models.DateTimeField(null=True, blank=True)
+    invite_code = models.CharField(
+        max_length=64,
+        unique=True,
+        blank=True,
+        null=True,
+        db_index=True,
+        help_text="Unique invite token for group chat invite link (Instagram style)"
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-updated_at"]
+
+    def get_or_create_invite_code(self):
+        if not self.invite_code:
+            import secrets
+            code = secrets.token_urlsafe(10)
+            while Conversation.objects.filter(invite_code=code).exists():
+                code = secrets.token_urlsafe(10)
+            self.invite_code = code
+            self.save(update_fields=["invite_code"])
+        return self.invite_code
+
+    def reset_invite_code(self):
+        import secrets
+        code = secrets.token_urlsafe(10)
+        while Conversation.objects.filter(invite_code=code).exists():
+            code = secrets.token_urlsafe(10)
+        self.invite_code = code
+        self.save(update_fields=["invite_code"])
+        return self.invite_code
 
     def __str__(self):
         if self.is_ephemeral:

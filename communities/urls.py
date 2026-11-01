@@ -16,12 +16,16 @@ from .views import (
     CommunityMemberDetailView,
     CommunityReportsView,
     CommunityReportActionView,
+    CommunityInviteLinkView,
+    CommunityJoinByInviteView,
 )
 
 urlpatterns = [
     path("me/", MyCommunitiesView.as_view(), name="my-communities"),
     path("", AllCommunitiesView.as_view(), name="all-communities"),
     path("create/", CreateCustomCommunityView.as_view(), name="community-create"),
+    path("invite/<str:invite_code>/", CommunityJoinByInviteView.as_view(), name="community-join-by-invite"),
+    path("<slug:slug>/invite-link/", CommunityInviteLinkView.as_view(), name="community-invite-link"),
     path("<slug:slug>/", CommunityDetailView.as_view(), name="community-detail"),
     path("<slug:slug>/toggle-join/", JoinLeaveCommunityView.as_view(), name="community-toggle-join"),
     path("<slug:slug>/chat/", CommunityGroupChatView.as_view(), name="community-chat"),

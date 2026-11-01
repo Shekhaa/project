@@ -20,6 +20,9 @@ import { SharedPostViewerModal } from '../components/chat/SharedPostViewerModal'
 import { DirectorySearchModal } from '../components/chat/DirectorySearchModal';
 import { EphemeralGroupModal } from '../components/chat/EphemeralGroupModal';
 import { AttachmentPickerModal, StagedAttachment } from '../components/media/AttachmentPickerModal';
+import { AddMembersModal } from '../components/chat/AddMembersModal';
+import { InviteLinkModal } from '../components/chat/InviteLinkModal';
+import { JoinByInviteModal } from '../components/chat/JoinByInviteModal';
 import {
   Search,
   Plus,
@@ -32,6 +35,8 @@ import {
   Users,
   Copy,
   Paperclip,
+  Link2,
+  UserPlus,
 } from 'lucide-react-native';
 
 interface ChatScreenProps {
@@ -64,6 +69,24 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [selectedPostCard, setSelectedPostCard] = useState<SharedPostCardData | null>(null);
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
   const [attachmentPickerVisible, setAttachmentPickerVisible] = useState(false);
+
+  // Group Invite & Add Members Modals (Instagram Style)
+  const [addMembersModalVisible, setAddMembersModalVisible] = useState(false);
+  const [inviteLinkModalVisible, setInviteLinkModalVisible] = useState(false);
+  const [joinViaInviteModalVisible, setJoinViaInviteModalVisible] = useState(false);
+
+  const handleAddChatMembers = async (selectedIds: number[]) => {
+    if (!activeConv) return;
+    await chatService.addMembers(activeConv.id, selectedIds);
+    await loadMessages(activeConv.id);
+    await loadInbox();
+    Alert.alert('Success! 🎉', `Added ${selectedIds.length} members to the group.`);
+  };
+
+  const handleJoinedChatViaInvite = async (conv: any) => {
+    await loadInbox();
+    setActiveConv(conv);
+  };
 
   const flatListRef = useRef<FlatList>(null);
 
@@ -286,13 +309,35 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             </Text>
           </View>
 
-          {/* Delete chat button (Calling buttons removed!) */}
-          <TouchableOpacity
-            style={styles.headerActionBtn}
-            onPress={() => handleDeleteConversation(activeConv.id)}
-          >
-            <Trash2 size={20} color="#ef4444" />
-          </TouchableOpacity>
+          {/* Header Action Buttons (Instagram Style) */}
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {activeConv.is_group && (
+              <TouchableOpacity
+                style={styles.headerActionBtn}
+                onPress={() => setInviteLinkModalVisible(true)}
+                accessibilityLabel="Group invite link"
+              >
+                <Link2 size={19} color="#38bdf8" />
+              </TouchableOpacity>
+            )}
+
+            {activeConv.is_group && (
+              <TouchableOpacity
+                style={styles.headerActionBtn}
+                onPress={() => setAddMembersModalVisible(true)}
+                accessibilityLabel="Add people"
+              >
+                <UserPlus size={19} color="#38bdf8" />
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.headerActionBtn}
+              onPress={() => handleDeleteConversation(activeConv.id)}
+            >
+              <Trash2 size={20} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Message List */}
@@ -408,6 +453,29 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             </TouchableOpacity>
           </Modal>
         )}
+
+        {/* ADD MEMBERS MODAL (Instagram Style) */}
+        {activeConv && activeConv.is_group && (
+          <AddMembersModal
+            visible={addMembersModalVisible}
+            title={`Add to ${activeConv.name || 'Group Chat'}`}
+            existingMemberIds={(activeConv.members || []).map((m: any) => m.user_id || m.id)}
+            onClose={() => setAddMembersModalVisible(false)}
+            onAddMembers={handleAddChatMembers}
+          />
+        )}
+
+        {/* GROUP INVITE LINK MODAL (Instagram Style) */}
+        {activeConv && activeConv.is_group && (
+          <InviteLinkModal
+            visible={inviteLinkModalVisible}
+            title={activeConv.name || 'Group Chat'}
+            type="CHAT"
+            targetIdOrSlug={activeConv.id}
+            canReset={true}
+            onClose={() => setInviteLinkModalVisible(false)}
+          />
+        )}
       </KeyboardAvoidingView>
     );
   }
@@ -421,6 +489,15 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       <View style={styles.inboxHeader}>
         <Text style={styles.inboxTitle}>Campus Messages</Text>
         <View style={styles.headerBtnGroup}>
+          <TouchableOpacity
+            style={styles.joinLinkPill}
+            onPress={() => setJoinViaInviteModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Link2 size={13} color="#38bdf8" />
+            <Text style={styles.joinLinkPillText}>Join Link</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.ephemeralPill}
             onPress={() => setEphemeralModalVisible(true)}
@@ -596,6 +673,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           setActiveConv(conv);
         }}
       />
+
+      {/* Join By Invite Modal (Instagram Style) */}
+      <JoinByInviteModal
+        visible={joinViaInviteModalVisible}
+        onClose={() => setJoinViaInviteModalVisible(false)}
+        onJoinedChat={handleJoinedChatViaInvite}
+      />
     </View>
   );
 };
@@ -623,6 +707,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  joinLinkPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 2,
+    gap: 4,
+  },
+  joinLinkPillText: {
+    color: '#38bdf8',
+    fontSize: 12,
+    fontWeight: '700',
   },
   ephemeralPill: {
     flexDirection: 'row',
