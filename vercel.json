@@ -2,13 +2,10 @@
   "buildCommand": "cd mobile && npm install && npx expo export -p web",
   "outputDirectory": "mobile/dist",
   "framework": null,
-  "routes": [
+  "rewrites": [
     {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/.*",
-      "dest": "/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
