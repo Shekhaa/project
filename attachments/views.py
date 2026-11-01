@@ -33,7 +33,7 @@ class AttachmentDownloadView(APIView):
                 community=attachment.post.community,
                 user=request.user
             ).exists()
-            if not is_member and attachment.post.author != request.user:
+            if not is_member and attachment.post.author != request.user and not request.user.is_staff:
                 return Response(
                     {"error": "Access denied. You must be an enrolled member of this community to download attachments."},
                     status=status.HTTP_403_FORBIDDEN
@@ -45,9 +45,29 @@ class AttachmentDownloadView(APIView):
                 conversation=attachment.message.conversation,
                 user=request.user
             ).exists()
-            if not is_chat_member:
+            if not is_chat_member and not request.user.is_staff:
                 return Response(
                     {"error": "Access denied. You are not a participant in this conversation."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        # 3. Check authorization for Community Discussion attachment
+        if attachment.discussion:
+            is_comm_member = CommunityMember.objects.filter(
+                community=attachment.discussion.community,
+                user=request.user
+            ).exists()
+            if not is_comm_member and attachment.discussion.author != request.user and not request.user.is_staff:
+                return Response(
+                    {"error": "Access denied. You must be an enrolled member of this community to download attachments."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        # 4. Check authorization for standalone unlinked attachment
+        if not attachment.post and not attachment.message and not attachment.discussion:
+            if attachment.uploaded_by != request.user and not request.user.is_staff:
+                return Response(
+                    {"error": "Access denied. You do not have permission to access this attachment."},
                     status=status.HTTP_403_FORBIDDEN
                 )
 

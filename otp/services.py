@@ -8,6 +8,7 @@ from datetime import timedelta
 from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
+from django.db import transaction
 from .models import OTP
 
 class OTPService:
@@ -223,7 +224,11 @@ class OTPService:
         msg = (
             "Verification code sent via SMS to your phone."
             if real_sent
-            else f"Verification code generated (Test Mode: {code})."
+            else (
+                f"Verification code generated (Test Mode: {code})."
+                if getattr(settings, "DEBUG", False)
+                else "Verification code generated and dispatched."
+            )
         )
         return (True, msg, otp_record) if return_record else (True, msg)
 
@@ -231,56 +236,60 @@ class OTPService:
     def verify_otp(cls, destination, otp_code, purpose):
         """
         Validates OTP code for a destination and purpose.
+        Uses database transaction lock and constant-time string comparison.
         Returns: (True, None) or (False, "Error message")
         """
         destination = destination.strip().lower()
-        otp_record = OTP.objects.filter(
-            destination=destination,
-            purpose=purpose,
-            is_used=False
-        ).order_by("-created_at").first()
+        with transaction.atomic():
+            otp_record = OTP.objects.select_for_update().filter(
+                destination=destination,
+                purpose=purpose,
+                is_used=False
+            ).order_by("-created_at").first()
 
-        if not otp_record:
-            return False, "No active verification code found. Please request a new one."
+            if not otp_record:
+                return False, "No active verification code found. Please request a new one."
 
-        if otp_record.is_expired:
-            otp_record.is_used = True
-            otp_record.save(update_fields=["is_used"])
-            return False, "The verification code has expired. Please request a new one."
+            if otp_record.is_expired:
+                otp_record.is_used = True
+                otp_record.save(update_fields=["is_used"])
+                return False, "The verification code has expired. Please request a new one."
 
-        if otp_record.otp != otp_code.strip():
-            otp_record.record_attempt()
-            remaining = otp_record.max_attempts - otp_record.attempts
-            if remaining <= 0:
-                return False, "Maximum verification attempts exceeded. Code has been invalidated."
-            return False, f"Invalid verification code. {remaining} attempt(s) remaining."
+            if not secrets.compare_digest(str(otp_record.otp), str(otp_code).strip()):
+                otp_record.record_attempt()
+                remaining = otp_record.max_attempts - otp_record.attempts
+                if remaining <= 0:
+                    return False, "Maximum verification attempts exceeded. Code has been invalidated."
+                return False, f"Invalid verification code. {remaining} attempt(s) remaining."
 
-        # Mark consumed
-        otp_record.mark_consumed()
-        return True, None
+            # Mark consumed
+            otp_record.mark_consumed()
+            return True, None
 
     @classmethod
     def verify_magic_token(cls, magic_token, purpose="EMAIL_LOGIN"):
         """
         Validates a 1-click magic link token.
+        Uses database transaction lock to prevent race condition replays.
         Returns: (is_valid, error_message, destination_email)
         """
         try:
-            otp_record = OTP.objects.filter(
-                magic_token=magic_token,
-                purpose=purpose,
-                is_used=False
-            ).first()
+            with transaction.atomic():
+                otp_record = OTP.objects.select_for_update().filter(
+                    magic_token=magic_token,
+                    purpose=purpose,
+                    is_used=False
+                ).first()
+
+                if not otp_record:
+                    return False, "This verification link is invalid or has already been used.", None
+
+                if otp_record.is_expired:
+                    otp_record.is_used = True
+                    otp_record.save(update_fields=["is_used"])
+                    return False, "This verification link has expired. Please request a new one.", None
+
+                otp_record.mark_consumed()
+                return True, None, otp_record.destination
         except (ValueError, TypeError):
             return False, "Invalid verification token format.", None
-
-        if not otp_record:
-            return False, "This verification link is invalid or has already been used.", None
-
-        if otp_record.is_expired:
-            otp_record.is_used = True
-            otp_record.save(update_fields=["is_used"])
-            return False, "This verification link has expired. Please request a new one.", None
-
-        otp_record.mark_consumed()
-        return True, None, otp_record.destination

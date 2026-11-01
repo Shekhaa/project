@@ -3,6 +3,7 @@ import io
 import re
 from typing import Dict, Any, Optional
 from PIL import Image
+from django.conf import settings
 from colleges.models import College, Course, Branch, AcademicYear, Section
 from .models import StudentProfile
 
@@ -231,9 +232,19 @@ class IDCardOCRService:
             raw_text = ""
             print(f"[IDCardOCR] Failed to open image: {e}")
 
-        # If OCR text is blank (e.g. simulated card in test), fallback to sample parsing
+        # If OCR text is blank, only fallback to test mock if DEBUG is enabled
         if not raw_text.strip():
-            raw_text = "GRAPHIC ERA UNIVERSITY\nNAME: AARAV SHARMA\nROLL NO: GEU2024CSE142\nCOURSE: B.TECH COMPUTER SCIENCE\nYEAR: 1ST YEAR"
+            if getattr(settings, "DEBUG", False):
+                raw_text = "GRAPHIC ERA UNIVERSITY\nNAME: AARAV SHARMA\nROLL NO: GEU2024CSE142\nCOURSE: B.TECH COMPUTER SCIENCE\nYEAR: 1ST YEAR"
+            else:
+                return {
+                    "success": False,
+                    "error": "Could not recognize legible text from the uploaded ID card. Please ensure the card photo is clear.",
+                    "raw_text": "",
+                    "image_hash": img_hash,
+                    "extracted_data": {},
+                    "anti_fraud": {"is_flagged": False, "flag_reason": ""},
+                }
 
         extracted = cls.extract_details_from_text(raw_text)
 

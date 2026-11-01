@@ -377,17 +377,28 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
             <X size={22} color={colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Create Post</Text>
-          <TouchableOpacity
-            style={[styles.postBtn, submitting && styles.postBtnDisabled]}
-            onPress={handleSubmit}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.postBtnText}>Publish</Text>
-            )}
-          </TouchableOpacity>
+          {(() => {
+            const canPublish = (content.trim().length > 0 || stagedFiles.length > 0) && !submitting;
+            return (
+              <TouchableOpacity
+                style={[styles.postBtn, !canPublish && styles.postBtnDisabled]}
+                onPress={handleSubmit}
+                disabled={!canPublish}
+                activeOpacity={0.8}
+              >
+                {submitting ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <ActivityIndicator size="small" color="#ffffff" />
+                    <Text style={styles.postBtnText}>Publishing...</Text>
+                  </View>
+                ) : (
+                  <Text style={[styles.postBtnText, !canPublish && styles.postBtnTextDisabled]}>
+                    Publish Post
+                  </Text>
+                )}
+              </TouchableOpacity>
+            );
+          })()}
         </View>
 
         <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
@@ -606,17 +617,25 @@ const styles = StyleSheet.create({
   },
   postBtn: {
     backgroundColor: colors.primary,
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   postBtnDisabled: {
-    opacity: 0.6,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
   },
   postBtnText: {
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
+  },
+  postBtnTextDisabled: {
+    color: '#64748b',
+    fontWeight: '600',
   },
   body: {
     flex: 1,

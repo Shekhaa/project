@@ -73,6 +73,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         if (onNavigateToChat) {
           onNavigateToChat(notif.data.conversation_id);
         }
+      } else if (notif.data?.discussion_id) {
+        Alert.alert('Hub Discussion', notif.message);
       }
     },
     [posts, onNavigateToChat]

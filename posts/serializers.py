@@ -1,3 +1,4 @@
+import random
 from rest_framework import serializers
 from communities.models import CommunityMember
 from attachments.serializers import MediaAttachmentSerializer
@@ -177,6 +178,8 @@ class PostSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
             return False
+        if hasattr(obj, "user_has_liked"):
+            return bool(obj.user_has_liked)
         return obj.likes.filter(user=request.user).exists()
 
     def get_likes_count(self, obj):

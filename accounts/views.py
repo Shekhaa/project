@@ -543,6 +543,12 @@ class DemoUsersListView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
+        if not getattr(settings, "DEBUG", False):
+            return Response(
+                {"error": "Demo user directory is disabled in production."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
         gehu_users = list(User.objects.filter(is_verified_student=True, email__icontains="gehu.ac.in").select_related("profile", "profile__course", "profile__branch", "profile__college"))
         other_users = list(User.objects.filter(is_verified_student=True).exclude(email__icontains="gehu.ac.in").select_related("profile", "profile__course", "profile__branch", "profile__college")[:10])
         users = gehu_users + other_users
@@ -573,6 +579,12 @@ class DevQuickLoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        if not getattr(settings, "DEBUG", False):
+            return Response(
+                {"error": "Developer quick login is disabled in production."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
         identifier = request.data.get("email") or request.data.get("username")
         user_id = request.data.get("user_id")
 
@@ -909,6 +921,13 @@ class IDCardLoginView(APIView):
                 "anti_fraud": anti_fraud,
             }, status=status.HTTP_409_CONFLICT)
 
+        # Check scan success
+        if not scan_res.get("success", True):
+            return Response(
+                {"error": scan_res.get("error", "Unable to recognize text from ID card. Please upload a clear photo.")},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         ext = scan_res["extracted_data"]
         full_name = ext.get("full_name") or "Verified Student"
         admission_num = ext.get("admission_number") or f"GEU2024{int(timezone.now().timestamp()) % 10000}"
@@ -927,15 +946,15 @@ class IDCardLoginView(APIView):
                 is_verified_student=True,
             )
             is_new_user = True
+            password = str(request.data.get("password", "")).strip()
+            if password and len(password) >= 6:
+                user.set_password(password)
+                user.save(update_fields=["password"])
         else:
-            if not user.is_verified_student:
-                user.is_verified_student = True
-                user.save(update_fields=["is_verified_student"])
-
-        password = str(request.data.get("password", "")).strip()
-        if password and len(password) >= 6:
-            user.set_password(password)
-            user.save(update_fields=["password"])
+            return Response(
+                {"error": "An account for this student roll number already exists. Please sign in with your password or college email OTP."},
+                status=status.HTTP_409_CONFLICT
+            )
 
         # Create or update profile
         clean_user = re.sub(r"[^a-z0-9]", "_", full_name.lower()) + "_" + safe_roll[-4:]

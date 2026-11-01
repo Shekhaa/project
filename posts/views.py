@@ -5,7 +5,7 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Exists, OuterRef
 from django.contrib.auth import get_user_model
 from communities.models import Community, CommunityMember
 from notifications.views import create_notification
@@ -31,19 +31,24 @@ class FeedView(generics.ListAPIView):
             user=self.request.user
         ).values_list("community_id", flat=True)
 
-        return (
+        qs = (
             Post.objects.filter(
                 community_id__in=user_community_ids,
                 is_deleted=False
             )
             .select_related("author", "author__profile", "community")
-            .prefetch_related("images", "attachments", "likes", "comments")
+            .prefetch_related("images", "attachments", "comments")
             .annotate(
                 likes_count=Count("likes", distinct=True),
                 comments_count=Count("comments", distinct=True)
             )
             .order_by("-created_at")
         )
+        if self.request.user.is_authenticated:
+            qs = qs.annotate(
+                user_has_liked=Exists(PostLike.objects.filter(post=OuterRef("pk"), user=self.request.user))
+            )
+        return qs
 
 
 class CommunityFeedView(generics.ListAPIView):
@@ -59,16 +64,21 @@ class CommunityFeedView(generics.ListAPIView):
         community_slug = self.kwargs["slug"]
         community = get_object_or_404(Community, slug=community_slug)
 
-        return (
+        qs = (
             Post.objects.filter(community=community, is_deleted=False)
             .select_related("author", "author__profile", "community")
-            .prefetch_related("images", "attachments", "likes", "comments")
+            .prefetch_related("images", "attachments", "comments")
             .annotate(
                 likes_count=Count("likes", distinct=True),
                 comments_count=Count("comments", distinct=True)
             )
             .order_by("-created_at")
         )
+        if self.request.user.is_authenticated:
+            qs = qs.annotate(
+                user_has_liked=Exists(PostLike.objects.filter(post=OuterRef("pk"), user=self.request.user))
+            )
+        return qs
 
 
 class CreatePostView(APIView):

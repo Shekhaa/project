@@ -8,6 +8,7 @@ from django.db.models import Q, Count
 from django.utils import timezone
 from accounts.models import User
 from attachments.services import AttachmentService
+from notifications.views import create_notification
 from .models import Conversation, ConversationMember, Message
 from .serializers import ConversationSerializer, MessageSerializer, CreateEphemeralGroupSerializer
 
@@ -223,6 +224,25 @@ class SendMessageView(APIView):
                     pass
 
         conv.save()  # update updated_at timestamp
+
+        # Dispatch in-app notification to all other conversation members
+        sender_name = request.user.full_name or request.user.email.split("@")[0]
+        other_members = conv.members.exclude(user=request.user).select_related("user")
+        is_shared_card = "[CAMPUS_POST_CARD:" in text
+        notif_type = 'SHARE' if is_shared_card else 'MESSAGE'
+        notif_title = f"Post Shared 🔗" if is_shared_card else (f"{conv.name}" if conv.is_group else f"{sender_name} 💬")
+        notif_msg = f"{sender_name} shared a post with you." if is_shared_card else f"{sender_name}: {text[:75] or 'Sent an attachment'}"
+
+        for m in other_members:
+            if not m.is_hidden:
+                create_notification(
+                    recipient=m.user,
+                    sender=request.user,
+                    notification_type=notif_type,
+                    title=notif_title,
+                    message=notif_msg,
+                    data={'conversation_id': str(conv.id)}
+                )
 
         return Response(MessageSerializer(msg, context={"request": request}).data, status=status.HTTP_201_CREATED)
 

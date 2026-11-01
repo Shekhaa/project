@@ -9,6 +9,7 @@ class Notification(models.Model):
         ('TAG', 'Tagged you in a comment'),
         ('SHARE', 'Shared a post with you'),
         ('MESSAGE', 'Sent you a direct message'),
+        ('ACCEPTED_ANSWER', 'Accepted your answer'),
         ('ANNOUNCEMENT', 'Campus Announcement'),
     )
 

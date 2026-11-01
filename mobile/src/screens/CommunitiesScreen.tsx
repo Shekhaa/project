@@ -51,6 +51,7 @@ import { MediaGrid } from '../components/media/MediaGrid';
 import { DocumentCard } from '../components/media/DocumentCard';
 import { AttachmentPickerModal, StagedAttachment } from '../components/media/AttachmentPickerModal';
 import { parseSharedPostCard, SharedPostCardData } from '../components/chat/MessageBubble';
+import { SharedPostViewerModal } from '../components/chat/SharedPostViewerModal';
 import { ImageViewerModal } from '../components/media/ImageViewerModal';
 import { DiscussTab } from '../components/discuss/DiscussTab';
 
@@ -84,6 +85,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   const [chatLoading, setChatLoading] = useState(false);
   const [attachmentPickerVisible, setAttachmentPickerVisible] = useState(false);
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
+  const [viewingSharedPost, setViewingSharedPost] = useState<SharedPostCardData | null>(null);
 
   // Members Modal State
   const [membersModalVisible, setMembersModalVisible] = useState(false);
@@ -234,6 +236,70 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
     } finally {
       setMembersLoading(false);
     }
+  };
+
+  const handleUpdateRole = async (memberId: number, currentRole: string) => {
+    if (!activeCommunity) return;
+    const nextRole = currentRole === 'MEMBER' ? 'MODERATOR' : currentRole === 'MODERATOR' ? 'ADMIN' : 'MEMBER';
+    try {
+      await communityService.updateMemberRole(activeCommunity.slug, memberId, nextRole);
+      setMembersList((prev) =>
+        prev.map((m) => (m.id === memberId ? { ...m, role: nextRole as any } : m))
+      );
+      Alert.alert('Role Updated', `Member role updated to ${nextRole}`);
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.error || 'Could not change member role.');
+    }
+  };
+
+  const handleRemoveMember = async (memberId: number, memberName: string) => {
+    if (!activeCommunity) return;
+    Alert.alert(
+      'Remove Member',
+      `Are you sure you want to remove ${memberName} from this community?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await communityService.removeMember(activeCommunity.slug, memberId);
+              setMembersList((prev) => prev.filter((m) => m.id !== memberId));
+              Alert.alert('Removed', `${memberName} was removed from the community.`);
+            } catch (e: any) {
+              Alert.alert('Error', e.response?.data?.error || 'Could not remove member.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleLeaveCommunity = async () => {
+    if (!activeCommunity) return;
+    Alert.alert(
+      'Leave Community',
+      `Are you sure you want to leave ${activeCommunity.name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await communityService.joinLeaveCommunity(activeCommunity.slug);
+              setMembersModalVisible(false);
+              setActiveCommunity(null);
+              loadCommunities();
+              Alert.alert('Left Community', `You have left ${activeCommunity.name}.`);
+            } catch (e: any) {
+              Alert.alert('Error', e.response?.data?.error || 'Could not leave community.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Submit Community Report
@@ -546,7 +612,13 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                         {cardData && (
                           <TouchableOpacity
                             style={styles.sharedPostCard}
-                            onPress={() => onOpenPostDetail && onOpenPostDetail(cardData.id)}
+                            onPress={() => {
+                              if (onOpenPostDetail) {
+                                onOpenPostDetail(cardData.id);
+                              } else {
+                                setViewingSharedPost(cardData);
+                              }
+                            }}
                             activeOpacity={0.88}
                           >
                             <View style={styles.sharedPostHeader}>
@@ -559,6 +631,13 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                                 </Text>
                               )}
                             </View>
+                            {cardData.media_type === 'IMAGE' && cardData.media_url ? (
+                              <Image
+                                source={{ uri: cardData.media_url }}
+                                style={styles.sharedPostThumb}
+                                resizeMode="cover"
+                              />
+                            ) : null}
                             {cardData.content ? (
                               <Text style={styles.sharedPostSnippet} numberOfLines={2}>
                                 {cardData.content}
@@ -733,23 +812,55 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                 )}
                 keyExtractor={(item) => String(item.id)}
                 contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
-                renderItem={({ item }) => (
-                  <View style={styles.memberRow}>
-                    <View style={styles.memberAvatar}>
-                      <Text style={styles.memberAvatarText}>
-                        {item.user.full_name.charAt(0).toUpperCase()}
-                      </Text>
+                renderItem={({ item }) => {
+                  const isCustom = activeCommunity?.community_type === 'CUSTOM';
+                  const isAdmin = activeCommunity?.user_role === 'OWNER' || activeCommunity?.user_role === 'ADMIN';
+                  const canManage = isCustom && isAdmin && item.role !== 'OWNER';
+
+                  return (
+                    <View style={styles.memberRow}>
+                      <View style={styles.memberAvatar}>
+                        <Text style={styles.memberAvatarText}>
+                          {item.user.full_name.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.memberName}>{item.user.full_name}</Text>
+                        <Text style={styles.memberCourse}>{item.user.course_branch || item.user.email}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={styles.roleBadge}>
+                          <Text style={styles.roleBadgeText}>{item.role}</Text>
+                        </View>
+                        {canManage && (
+                          <>
+                            <TouchableOpacity
+                              style={[styles.memberActionBtn, { borderColor: '#38bdf8' }]}
+                              onPress={() => handleUpdateRole(item.id, item.role)}
+                            >
+                              <Text style={[styles.memberActionText, { color: '#38bdf8' }]}>Role</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.memberActionBtn, { borderColor: '#ef4444' }]}
+                              onPress={() => handleRemoveMember(item.id, item.user.full_name)}
+                            >
+                              <Text style={[styles.memberActionText, { color: '#ef4444' }]}>Remove</Text>
+                            </TouchableOpacity>
+                          </>
+                        )}
+                      </View>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.memberName}>{item.user.full_name}</Text>
-                      <Text style={styles.memberCourse}>{item.user.course_branch || item.user.email}</Text>
-                    </View>
-                    <View style={styles.roleBadge}>
-                      <Text style={styles.roleBadgeText}>{item.role}</Text>
-                    </View>
-                  </View>
-                )}
+                  );
+                }}
               />
+            )}
+
+            {activeCommunity?.community_type === 'CUSTOM' && activeCommunity?.user_role !== 'OWNER' && (
+              <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: '#1e293b' }}>
+                <TouchableOpacity style={styles.leaveCommunityBtn} onPress={handleLeaveCommunity}>
+                  <Text style={styles.leaveCommunityBtnText}>Leave Community</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         </Modal>
@@ -862,6 +973,14 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
               </View>
             </TouchableOpacity>
           </Modal>
+        )}
+
+        {/* SHARED POST VIEWER MODAL */}
+        {viewingSharedPost && (
+          <SharedPostViewerModal
+            cardData={viewingSharedPost}
+            onClose={() => setViewingSharedPost(null)}
+          />
         )}
       </KeyboardAvoidingView>
     );
@@ -1399,6 +1518,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 15,
     marginBottom: 4,
+  },
+  sharedPostThumb: {
+    width: '100%',
+    height: 120,
+    borderRadius: 6,
+    marginVertical: 4,
   },
   sharedPostFooter: {
     borderTopWidth: 1,
@@ -1993,6 +2118,31 @@ const styles = StyleSheet.create({
   roleBadgeText: {
     color: '#38bdf8',
     fontSize: 10,
+    fontWeight: '700',
+  },
+  memberActionBtn: {
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: '#0f172a',
+  },
+  memberActionText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  leaveCommunityBtn: {
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  leaveCommunityBtnText: {
+    color: '#ef4444',
+    fontSize: 13,
     fontWeight: '700',
   },
   // Report Sheet

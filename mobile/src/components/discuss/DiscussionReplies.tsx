@@ -67,7 +67,18 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
         </View>
 
         {/* Content */}
-        <Text style={styles.replyContent}>{item.content}</Text>
+        <Text style={styles.replyContent}>
+          {item.content.split(/(@[a-zA-Z0-9_\.]+(?=\s|$|[.,!?]))/g).map((part, idx) => {
+            if (part.startsWith('@')) {
+              return (
+                <Text key={idx} style={styles.mentionHighlight}>
+                  {part}
+                </Text>
+              );
+            }
+            return <Text key={idx}>{part}</Text>;
+          })}
+        </Text>
 
         {/* Actions Bar: Upvote, Reply, Accept */}
         <View style={styles.replyActions}>
@@ -199,6 +210,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     marginBottom: 10,
+  },
+  mentionHighlight: {
+    color: '#38bdf8',
+    fontWeight: '700',
   },
   replyActions: {
     flexDirection: 'row',

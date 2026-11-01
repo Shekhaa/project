@@ -5,6 +5,8 @@ from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.db.models import Count, Q, F
 from django.utils import timezone
+import re
+from notifications.views import create_notification
 from .models import Community, CommunityMember, Discussion, DiscussionReply, DiscussionVote, CommunityReport
 from .serializers import (
     CommunitySerializer,
@@ -124,8 +126,12 @@ class CommunityGroupChatView(APIView):
 
     def post(self, request, slug):
         community = get_object_or_404(Community, slug=slug)
-        # Ensure user is a member
-        CommunityMember.objects.get_or_create(community=community, user=request.user)
+        # Ensure user is an enrolled member
+        if not CommunityMember.objects.filter(community=community, user=request.user).exists():
+            return Response(
+                {"error": "Access denied. You must be an enrolled member to access this chat."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         from chat.models import Conversation, ConversationMember
         from chat.serializers import ConversationSerializer
@@ -191,8 +197,12 @@ class CommunityDiscussionsView(APIView):
 
     def post(self, request, slug):
         community = get_object_or_404(Community, slug=slug)
-        # Ensure user is enrolled
-        CommunityMember.objects.get_or_create(community=community, user=request.user)
+        # Ensure user is an enrolled member
+        if not CommunityMember.objects.filter(community=community, user=request.user).exists():
+            return Response(
+                {"error": "Access denied. You must be an enrolled member to create discussions."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         serializer = DiscussionCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -206,6 +216,34 @@ class CommunityDiscussionsView(APIView):
                 id__in=attachment_ids,
                 uploaded_by=request.user
             ).update(discussion=discussion)
+
+        # Parse @mentions and notify mentioned community members
+        mention_tags = set(re.findall(r'@([a-zA-Z0-9_\.]+)', f"{discussion.title} {discussion.content}"))
+        if mention_tags:
+            from accounts.models import User
+            member_user_ids = CommunityMember.objects.filter(community=community).values_list("user_id", flat=True)
+            filter_q = Q()
+            for tag in mention_tags:
+                filter_q |= Q(email__istartswith=tag) | Q(full_name__icontains=tag)
+            matched_users = User.objects.filter(
+                id__in=member_user_ids
+            ).filter(filter_q).exclude(id=request.user.id).distinct()[:10]
+
+            if matched_users.exists():
+                discussion.mentioned_users.set(matched_users)
+                sender_name = request.user.full_name or request.user.email.split("@")[0]
+                for m_user in matched_users:
+                    create_notification(
+                        recipient=m_user,
+                        sender=request.user,
+                        notification_type='TAG',
+                        title=f"Mentioned in {community.name} 🏷️",
+                        message=f"{sender_name} mentioned you in a discussion: '{discussion.title[:70]}'",
+                        data={
+                            'community_slug': community.slug,
+                            'discussion_id': str(discussion.id)
+                        }
+                    )
 
         return Response(
             DiscussionSerializer(discussion, context={"request": request}).data,
@@ -326,6 +364,68 @@ class DiscussionRepliesView(APIView):
             parent_reply=parent_reply
         )
 
+        # Parse mentions and notify community members
+        sender_name = request.user.full_name or request.user.email.split("@")[0]
+        notified_user_ids = {request.user.id}
+
+        mention_tags = set(re.findall(r'@([a-zA-Z0-9_\.]+)', content))
+        if mention_tags:
+            from accounts.models import User
+            member_user_ids = CommunityMember.objects.filter(community=community).values_list("user_id", flat=True)
+            filter_q = Q()
+            for tag in mention_tags:
+                filter_q |= Q(email__istartswith=tag) | Q(full_name__icontains=tag)
+            matched_users = User.objects.filter(
+                id__in=member_user_ids
+            ).filter(filter_q).exclude(id=request.user.id).distinct()[:10]
+
+            if matched_users.exists():
+                reply.mentioned_users.set(matched_users)
+                for m_user in matched_users:
+                    notified_user_ids.add(m_user.id)
+                    create_notification(
+                        recipient=m_user,
+                        sender=request.user,
+                        notification_type='TAG',
+                        title=f"Mentioned in {community.name} 🏷️",
+                        message=f"{sender_name} mentioned you in a reply: '{content[:70]}'",
+                        data={
+                            'community_slug': community.slug,
+                            'discussion_id': str(discussion.id),
+                            'reply_id': str(reply.id)
+                        }
+                    )
+
+        # Notify parent reply author (for nested replies) or discussion author
+        if parent_reply and parent_reply.author and parent_reply.author.id not in notified_user_ids:
+            notified_user_ids.add(parent_reply.author.id)
+            create_notification(
+                recipient=parent_reply.author,
+                sender=request.user,
+                notification_type='REPLY',
+                title='New Reply to Your Answer 💬',
+                message=f"{sender_name} replied to your answer in '{discussion.title[:60]}'",
+                data={
+                    'community_slug': community.slug,
+                    'discussion_id': str(discussion.id),
+                    'reply_id': str(reply.id)
+                }
+            )
+        elif not parent_reply and discussion.author and discussion.author.id not in notified_user_ids:
+            notified_user_ids.add(discussion.author.id)
+            create_notification(
+                recipient=discussion.author,
+                sender=request.user,
+                notification_type='COMMENT',
+                title='New Answer on Your Discussion 💬',
+                message=f"{sender_name} answered your question: '{discussion.title[:60]}'",
+                data={
+                    'community_slug': community.slug,
+                    'discussion_id': str(discussion.id),
+                    'reply_id': str(reply.id)
+                }
+            )
+
         return Response(
             DiscussionReplySerializer(reply, context={"request": request}).data,
             status=status.HTTP_201_CREATED
@@ -375,6 +475,22 @@ class DiscussionReplyDetailView(APIView):
         else:
             discussion.accepted_answer = reply
             discussion.is_solved = True
+
+            # Notify reply author that their answer was verified and accepted
+            if reply.author != request.user:
+                sender_name = request.user.full_name or request.user.email.split("@")[0]
+                create_notification(
+                    recipient=reply.author,
+                    sender=request.user,
+                    notification_type='ACCEPTED_ANSWER',
+                    title='Answer Accepted! 🎯',
+                    message=f"{sender_name} verified your answer as the accepted solution in '{discussion.title[:60]}'",
+                    data={
+                        'community_slug': community.slug,
+                        'discussion_id': str(discussion.id),
+                        'reply_id': str(reply.id)
+                    }
+                )
 
         discussion.save(update_fields=["accepted_answer", "is_solved"])
         return Response({
@@ -582,7 +698,7 @@ class CommunityReportActionView(APIView):
             if report.target_type == "DISCUSSION":
                 Discussion.objects.filter(community=community, id=report.target_id).delete()
             elif report.target_type == "REPLY":
-                DiscussionReply.objects.filter(id=report.target_id).delete()
+                DiscussionReply.objects.filter(id=report.target_id, discussion__community=community).delete()
         else:
             report.status = "RESOLVED"
             report.action_taken = request.data.get("note", "Moderation action taken.")

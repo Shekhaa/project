@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.core.files.base import ContentFile
 from django.conf import settings
 from colleges.models import College, CollegeDomain, Course, Branch, AcademicYear, Section
-from communities.services import CommunityEnrollmentService
+from communities.models import CommunityMember
 from .models import StudentProfile
 from .serializers import StudentProfileSerializer
 from .ocr_service import IDCardOCRService
@@ -85,9 +85,9 @@ class CompleteProfileView(APIView):
                 data["section"] = section.id if section else None
 
         # Check existing profile
-        profile = getattr(user, "profile", None)
+        existing_profile = getattr(user, "profile", None)
 
-        serializer = StudentProfileSerializer(instance=profile, data=data, partial=bool(profile))
+        serializer = StudentProfileSerializer(instance=existing_profile, data=data, partial=bool(existing_profile))
         serializer.is_valid(raise_exception=True)
 
         verification_method = data.get("verification_method", "ID_CARD_OCR" if data.get("id_card_image") else "MANUAL")
@@ -105,14 +105,16 @@ class CompleteProfileView(APIView):
             verification_method=verification_method,
         )
 
-        # Auto-enroll in 3 Core Communities
-        enrolled_communities = CommunityEnrollmentService.enroll_student_in_core_communities(user, profile)
+        # Retrieve the 3 mandatory communities enrolled via profile post_save signal
+        enrolled_communities = [
+            m.community.name for m in CommunityMember.objects.filter(user=user).select_related("community")
+        ]
 
         return Response({
             "message": f"Welcome to Campus Connect, @{profile.username}! Your college communities have been configured.",
             "profile": StudentProfileSerializer(profile).data,
-            "communities_joined": [c.name for c in enrolled_communities],
-        }, status=status.HTTP_201_CREATED if not profile else status.HTTP_200_OK)
+            "communities_joined": enrolled_communities,
+        }, status=status.HTTP_200_OK if existing_profile else status.HTTP_201_CREATED)
 
 
 class MyProfileView(APIView):
@@ -220,7 +222,7 @@ class AdminIDCardAuditListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        if not (request.user.is_staff or request.user.is_superuser or settings.DEBUG):
+        if not (request.user.is_staff or request.user.is_superuser):
             return Response(
                 {"error": "Unauthorized. Admin privileges required."},
                 status=status.HTTP_403_FORBIDDEN
@@ -263,7 +265,7 @@ class AdminAuditActionView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        if not (request.user.is_staff or request.user.is_superuser or settings.DEBUG):
+        if not (request.user.is_staff or request.user.is_superuser):
             return Response(
                 {"error": "Unauthorized. Admin privileges required."},
                 status=status.HTTP_403_FORBIDDEN

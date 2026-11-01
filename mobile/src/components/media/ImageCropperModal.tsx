@@ -18,9 +18,11 @@ import {
   RotateCw,
   RefreshCw,
   Zap,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react-native';
 
-export type AspectRatioOption = 'AUTO' | 'FREE' | '1:1' | '4:5' | '16:9' | 'DOC';
+export type AspectRatioOption = 'AUTO' | 'ORIGINAL' | '1:1' | '4:5' | '16:9' | 'FREE' | 'DOC';
 
 interface ImageCropperModalProps {
   visible: boolean;
@@ -353,6 +355,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
     if (mode === 'FREE') return; // Freeform: keep current box, unlock aspect
 
     let targetRatio: number | null = null;
+    if (mode === 'ORIGINAL') targetRatio = currentImgW / currentImgH;
     if (mode === '1:1') targetRatio = 1;
     if (mode === '4:5') targetRatio = 4 / 5;
     if (mode === '16:9') targetRatio = 16 / 9;
@@ -416,6 +419,13 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
         const maxRight = imgOffsetX + renderedW;
         const maxBottom = imgOffsetY + renderedH;
 
+        let targetRatio: number | null = null;
+        if (aspectRatio === '1:1') targetRatio = 1;
+        else if (aspectRatio === '4:5') targetRatio = 4 / 5;
+        else if (aspectRatio === '16:9') targetRatio = 16 / 9;
+        else if (aspectRatio === 'ORIGINAL') targetRatio = currentImgW / currentImgH;
+        else if (aspectRatio === 'DOC') targetRatio = 1 / 1.414;
+
         if (handle === 'move') {
           // Move whole box smoothly within bounds
           const newX = Math.max(imgOffsetX, Math.min(box.x + dx, maxRight - box.w));
@@ -457,42 +467,40 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
         // 4 Corners Drag
         if (handle === 'tl') {
           let newX = Math.max(imgOffsetX, Math.min(box.x + dx, box.x + box.w - minW));
-          let newY = Math.max(imgOffsetY, Math.min(box.y + dy, box.y + box.h - minH));
           let newW = box.w - (newX - box.x);
-          let newH = box.h - (newY - box.y);
-          if (aspectRatio === '1:1') {
-            const side = Math.min(newW, newH);
-            newW = side; newH = side;
-            newX = box.x + box.w - side;
-            newY = box.y + box.h - side;
+          let newH = targetRatio ? newW / targetRatio : box.h - (Math.max(imgOffsetY, Math.min(box.y + dy, box.y + box.h - minH)) - box.y);
+          if (targetRatio && box.y + box.h - newH < imgOffsetY) {
+            newH = box.y + box.h - imgOffsetY;
+            newW = newH * targetRatio;
+            newX = box.x + box.w - newW;
           }
+          let newY = box.y + box.h - newH;
           setCropBox({ x: newX, y: newY, w: newW, h: newH });
         } else if (handle === 'tr') {
-          let newY = Math.max(imgOffsetY, Math.min(box.y + dy, box.y + box.h - minH));
           let newW = Math.max(minW, Math.min(box.w + dx, maxRight - box.x));
-          let newH = box.h - (newY - box.y);
-          if (aspectRatio === '1:1') {
-            const side = Math.min(newW, newH);
-            newW = side; newH = side;
-            newY = box.y + box.h - side;
+          let newH = targetRatio ? newW / targetRatio : box.h - (Math.max(imgOffsetY, Math.min(box.y + dy, box.y + box.h - minH)) - box.y);
+          if (targetRatio && box.y + box.h - newH < imgOffsetY) {
+            newH = box.y + box.h - imgOffsetY;
+            newW = newH * targetRatio;
           }
+          let newY = box.y + box.h - newH;
           setCropBox({ x: box.x, y: newY, w: newW, h: newH });
         } else if (handle === 'bl') {
           let newX = Math.max(imgOffsetX, Math.min(box.x + dx, box.x + box.w - minW));
           let newW = box.w - (newX - box.x);
-          let newH = Math.max(minH, Math.min(box.h + dy, maxBottom - box.y));
-          if (aspectRatio === '1:1') {
-            const side = Math.min(newW, newH);
-            newW = side; newH = side;
-            newX = box.x + box.w - side;
+          let newH = targetRatio ? newW / targetRatio : Math.max(minH, Math.min(box.h + dy, maxBottom - box.y));
+          if (targetRatio && box.y + newH > maxBottom) {
+            newH = maxBottom - box.y;
+            newW = newH * targetRatio;
+            newX = box.x + box.w - newW;
           }
           setCropBox({ x: newX, y: box.y, w: newW, h: newH });
         } else if (handle === 'br') {
           let newW = Math.max(minW, Math.min(box.w + dx, maxRight - box.x));
-          let newH = Math.max(minH, Math.min(box.h + dy, maxBottom - box.y));
-          if (aspectRatio === '1:1') {
-            const side = Math.min(newW, newH);
-            newW = side; newH = side;
+          let newH = targetRatio ? newW / targetRatio : Math.max(minH, Math.min(box.h + dy, maxBottom - box.y));
+          if (targetRatio && box.y + newH > maxBottom) {
+            newH = maxBottom - box.y;
+            newW = newH * targetRatio;
           }
           setCropBox({ x: box.x, y: box.y, w: newW, h: newH });
         }
@@ -520,8 +528,8 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
         // Calculate relative coordinates in rendered image
         const relX = Math.max(0, (cropBox.x - imgOffsetX) / scale);
         const relY = Math.max(0, (cropBox.y - imgOffsetY) / scale);
-        const relW = Math.min(cropBox.w / scale, currentImgW);
-        const relH = Math.min(cropBox.h / scale, currentImgH);
+        const relW = Math.max(1, Math.min(cropBox.w / scale, currentImgW - relX));
+        const relH = Math.max(1, Math.min(cropBox.h / scale, currentImgH - relY));
 
         const canvas = document.createElement('canvas');
         canvas.width = Math.round(relW);
@@ -601,7 +609,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
 
         {/* Aspect Ratio Toolbar */}
         <View style={styles.aspectBar}>
-          {(['AUTO', 'FREE', '1:1', '4:5', '16:9', 'DOC'] as AspectRatioOption[]).map((mode) => (
+          {(['ORIGINAL', '1:1', '4:5', '16:9', 'FREE', 'AUTO'] as AspectRatioOption[]).map((mode) => (
             <TouchableOpacity
               key={mode}
               style={[styles.aspectPill, aspectRatio === mode && styles.aspectPillActive]}
@@ -609,7 +617,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
             >
               {mode === 'AUTO' && <Zap size={12} color={aspectRatio === 'AUTO' ? '#ffffff' : '#fbbf24'} style={{ marginRight: 3 }} />}
               <Text style={[styles.aspectPillText, aspectRatio === mode && styles.aspectPillTextActive]}>
-                {mode === 'AUTO' ? 'Auto' : mode === 'FREE' ? 'Freeform' : mode === 'DOC' ? 'A4 Doc' : mode}
+                {mode === 'AUTO' ? 'Auto ⚡' : mode === 'ORIGINAL' ? 'Original' : mode === 'FREE' ? 'Freeform' : mode}
               </Text>
             </TouchableOpacity>
           ))}

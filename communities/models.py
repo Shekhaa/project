@@ -131,6 +131,11 @@ class Discussion(models.Model):
         related_name="+"
     )
     views_count = models.PositiveIntegerField(default=0)
+    mentioned_users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="mentioned_in_discussions"
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -173,6 +178,11 @@ class DiscussionReply(models.Model):
         related_name="children"
     )
     content = models.TextField()
+    mentioned_users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="mentioned_in_discussion_replies"
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 

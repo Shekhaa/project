@@ -35,15 +35,6 @@ def join_mandatory_college_communities(sender, instance, **kwargs):
         ),
     ]
 
-    # 3. Class Section Hub
-    if section:
-        section_name = f"{college.short_name} {course.name} - {section.name}"
-        communities_to_join.append((
-            section_name,
-            "SECTION",
-            f"Official class section community for {section.name}"
-        ))
-
     for name, c_type, desc in communities_to_join:
         community, _ = Community.objects.get_or_create(
             name=name,

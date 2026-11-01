@@ -15,6 +15,7 @@ import {
 import {
   Discussion,
   DiscussionReply,
+  CommunityMemberItem,
   communityService,
 } from '../../services/communityService';
 import { colors } from '../../theme/colors';
@@ -53,6 +54,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   const [replyText, setReplyText] = useState('');
   const [replyingTo, setReplyingTo] = useState<DiscussionReply | null>(null);
   const [submittingReply, setSubmittingReply] = useState(false);
+  const [members, setMembers] = useState<CommunityMemberItem[]>([]);
 
   useEffect(() => {
     if (!discussion || !visible) return;
@@ -70,7 +72,30 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
       }
     };
     loadDetail();
-  }, [discussion?.id, visible]);
+
+    communityService
+      .getMembers(communitySlug)
+      .then((res) => {
+        if (Array.isArray(res)) setMembers(res);
+      })
+      .catch((e) => console.log('Error fetching members for mentions', e));
+  }, [discussion?.id, visible, communitySlug]);
+
+  const lastAtMatch = replyText.match(/@([a-zA-Z0-9_\.]*)$/);
+  const mentionQuery = lastAtMatch !== null ? lastAtMatch[1].toLowerCase() : null;
+  const matchingMembers =
+    mentionQuery !== null
+      ? members
+          .filter((m) => m.user?.full_name?.toLowerCase().includes(mentionQuery))
+          .slice(0, 5)
+      : [];
+
+  const handleSelectMention = (member: CommunityMemberItem) => {
+    const name = member.user?.full_name || '';
+    if (!name) return;
+    const updated = replyText.replace(/@([a-zA-Z0-9_\.]*)$/, `@${name} `);
+    setReplyText(updated);
+  };
 
   if (!detail) return null;
 
@@ -258,7 +283,10 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                 isSolved={detail.is_solved}
                 onVoteReply={handleVoteReply}
                 onAcceptReply={handleAcceptReply}
-                onReplyToReply={(r) => setReplyingTo(r)}
+                onReplyToReply={(r) => {
+                  setReplyingTo(r);
+                  setReplyText((prev) => (prev ? prev : `@${r.author_name} `));
+                }}
               />
             ) : (
               <View style={styles.emptyReplies}>
@@ -285,6 +313,32 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
               <TouchableOpacity onPress={() => setReplyingTo(null)}>
                 <X size={14} color="#ef4444" />
               </TouchableOpacity>
+            </View>
+          )}
+
+          {matchingMembers.length > 0 && (
+            <View style={styles.mentionSuggestionsContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.mentionSuggestionsList}
+              >
+                {matchingMembers.map((m) => (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={styles.mentionPill}
+                    onPress={() => handleSelectMention(m)}
+                  >
+                    <View style={styles.mentionAvatar}>
+                      <Text style={styles.mentionAvatarText}>
+                        {(m.user?.full_name || 'U')[0].toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={styles.mentionName}>@{m.user?.full_name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
           )}
 
@@ -575,5 +629,46 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     opacity: 0.4,
+  },
+  mentionSuggestionsContainer: {
+    backgroundColor: '#0f172a',
+    borderTopWidth: 1,
+    borderTopColor: colors.cardBorder,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  mentionSuggestionsList: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  mentionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.25)',
+  },
+  mentionAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#38bdf8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  mentionAvatarText: {
+    color: '#0f172a',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  mentionName: {
+    color: '#38bdf8',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

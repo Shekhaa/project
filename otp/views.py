@@ -1,3 +1,4 @@
+import warnings
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -5,7 +6,17 @@ from rest_framework.permissions import AllowAny
 from .serializers import SendOTPSerializer, VerifyOTPSerializer
 from .services import OTPService
 
+# NOTE: The endpoints in this module are DEPRECATED.
+# For authenticating students, use the full lifecycle endpoints in `accounts.views`:
+# - /api/authentication/email/send-otp/
+# - /api/authentication/email/verify-otp/
+# - /api/authentication/phone/send-otp/
+# - /api/authentication/phone/verify-otp/
+
 class SendOTPView(APIView):
+    """
+    DEPRECATED: Use /api/authentication/email/send-otp/ or /api/authentication/phone/send-otp/
+    """
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -27,6 +38,9 @@ class SendOTPView(APIView):
 
 
 class VerifyOTPView(APIView):
+    """
+    DEPRECATED: Use /api/authentication/email/verify-otp/ or /api/authentication/phone/verify-otp/
+    """
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -45,6 +59,9 @@ class VerifyOTPView(APIView):
 
 
 class VerifyMagicOTPView(APIView):
+    """
+    DEPRECATED: Use /api/authentication/email/magic-login/
+    """
     permission_classes = [AllowAny]
 
     def get(self, request):

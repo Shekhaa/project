@@ -45,7 +45,18 @@ class StudentProfileSerializer(serializers.ModelSerializer):
             "profile_completed",
             "created_at",
         ]
-        read_only_fields = ["id", "verified", "profile_completed", "created_at"]
+        read_only_fields = [
+            "id",
+            "verified",
+            "profile_completed",
+            "created_at",
+            "id_card_verified",
+            "verification_method",
+            "is_flagged_fake",
+            "flag_reason",
+            "id_card_hash",
+            "id_card_ocr_data",
+        ]
 
     def validate(self, attrs):
         college = attrs.get("college") or (self.instance.college if self.instance else None)

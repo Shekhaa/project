@@ -37,6 +37,12 @@ class CommunityMemberListSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "joined_at"]
 
 
+class DiscussionMentionedUserSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    full_name = serializers.CharField(read_only=True)
+    email = serializers.EmailField(read_only=True)
+
+
 class DiscussionReplySerializer(serializers.ModelSerializer):
     author_name = serializers.SerializerMethodField()
     author_avatar = serializers.SerializerMethodField()
@@ -44,6 +50,7 @@ class DiscussionReplySerializer(serializers.ModelSerializer):
     user_has_voted = serializers.SerializerMethodField()
     is_accepted = serializers.BooleanField(read_only=True)
     children = serializers.SerializerMethodField()
+    mentioned_users = DiscussionMentionedUserSerializer(many=True, read_only=True)
 
     class Meta:
         model = DiscussionReply
@@ -59,6 +66,7 @@ class DiscussionReplySerializer(serializers.ModelSerializer):
             "user_has_voted",
             "is_accepted",
             "children",
+            "mentioned_users",
             "created_at",
             "updated_at",
         ]
@@ -96,6 +104,7 @@ class DiscussionSerializer(serializers.ModelSerializer):
     user_has_voted = serializers.SerializerMethodField()
     attachments = MediaAttachmentSerializer(many=True, read_only=True)
     accepted_answer_snippet = serializers.SerializerMethodField()
+    mentioned_users = DiscussionMentionedUserSerializer(many=True, read_only=True)
 
     class Meta:
         model = Discussion
@@ -120,6 +129,7 @@ class DiscussionSerializer(serializers.ModelSerializer):
             "replies_count",
             "user_has_voted",
             "attachments",
+            "mentioned_users",
             "created_at",
             "updated_at",
         ]
@@ -133,6 +143,7 @@ class DiscussionSerializer(serializers.ModelSerializer):
             "replies_count",
             "user_has_voted",
             "attachments",
+            "mentioned_users",
             "created_at",
             "updated_at",
         ]

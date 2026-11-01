@@ -36,6 +36,8 @@ def run_tests():
     # Clean prior test run artifacts for repeatable, idempotent runs
     User.objects.filter(email="priya.verma@geu.ac.in").delete()
     OTP.objects.filter(destination__in=["priya.verma@geu.ac.in", "+919811223344"]).delete()
+    from profiles.models import StudentProfile
+    StudentProfile.objects.filter(admission_number="GEU2024CSE998").delete()
 
     # Step 1: Detect College Domain
     print("\n[Step 1] Testing College Domain Auto-Detection...")
@@ -134,7 +136,7 @@ def run_tests():
             "gender": "Female",
             "bio": "First year computer science engineer. Building cool stuff!",
             "anonymous_enabled": True,
-            "admission_number": "GEU2024CSE108",
+            "admission_number": "GEU2024CSE998",
             "college": geu.id,
             "course": course.id,
             "branch": branch.id,

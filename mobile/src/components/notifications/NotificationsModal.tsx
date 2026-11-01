@@ -170,6 +170,12 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
             <MessageSquare size={14} color="#fff" />
           </View>
         );
+      case 'ACCEPTED_ANSWER':
+        return (
+          <View style={[styles.iconBadge, { backgroundColor: '#10b981' }]}>
+            <CheckCheck size={14} color="#fff" />
+          </View>
+        );
       default:
         return (
           <View style={[styles.iconBadge, { backgroundColor: colors.primary }]}>
