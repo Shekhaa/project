@@ -16,6 +16,7 @@ import {
 import { colors } from '../../theme/colors';
 import { postService } from '../../services/postService';
 import { StagedAttachment } from '../media/AttachmentPickerModal';
+import { ImageCropperModal, smartAutoCropImage } from '../media/ImageCropperModal';
 import {
   X,
   Image as ImageIcon,
@@ -25,6 +26,7 @@ import {
   Check,
   Trash2,
   Plus,
+  Zap,
 } from 'lucide-react-native';
 
 interface CommunityOption {
@@ -59,6 +61,32 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   const [stagedFiles, setStagedFiles] = useState<StagedAttachment[]>([]);
   const [aspectRatio, setAspectRatio] = useState<AspectRatioMode>('ORIGINAL');
   const [submitting, setSubmitting] = useState(false);
+  const [croppingImage, setCroppingImage] = useState<StagedAttachment | null>(null);
+  const [autoCropping, setAutoCropping] = useState(false);
+
+  const handleCropComplete = (croppedUri: string) => {
+    if (!croppingImage) return;
+    setStagedFiles((prev) =>
+      prev.map((item) =>
+        item.id === croppingImage.id ? { ...item, uri: croppedUri } : item
+      )
+    );
+    setCroppingImage(null);
+  };
+
+  const handleDirectAutoCrop = async (targetFile: StagedAttachment) => {
+    try {
+      setAutoCropping(true);
+      const cropped = await smartAutoCropImage(targetFile.uri);
+      setStagedFiles((prev) =>
+        prev.map((item) => (item.id === targetFile.id ? { ...item, uri: cropped } : item))
+      );
+    } catch (e) {
+      console.warn('Direct auto crop error', e);
+    } finally {
+      setAutoCropping(false);
+    }
+  };
 
   // Hidden file input refs for Web
   const imageInputRef = useRef<any>(null);
@@ -403,6 +431,28 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                   <Sparkles size={14} color="#38bdf8" />
                   <Text style={styles.hdBadgeText}>HD • {imageFiles.length} Photo{imageFiles.length > 1 ? 's' : ''}</Text>
                 </View>
+                <View style={styles.studioActions}>
+                  <TouchableOpacity
+                    style={styles.autoCropBtn}
+                    onPress={() => handleDirectAutoCrop(imageFiles[0])}
+                    disabled={autoCropping}
+                    activeOpacity={0.8}
+                  >
+                    <Zap size={13} color="#fbbf24" />
+                    <Text style={styles.autoCropBtnText}>
+                      {autoCropping ? 'Cropping...' : '⚡ Auto Crop'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.openCropperBtn}
+                    onPress={() => setCroppingImage(imageFiles[0])}
+                    activeOpacity={0.8}
+                  >
+                    <Crop size={13} color="#38bdf8" />
+                    <Text style={styles.openCropperBtnText}>✂️ Crop & Adjust</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {/* Crop Aspect Ratio Presets Bar */}
@@ -427,13 +477,17 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
               </View>
 
               {/* Hero Image Preview with Crop Aspect Ratio */}
-              <View style={[styles.imagePreviewContainer, { aspectRatio: getAspectRatioNumber() }]}>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => setCroppingImage(imageFiles[0])}
+                style={[styles.imagePreviewContainer, { aspectRatio: getAspectRatioNumber() }]}
+              >
                 <Image
                   source={{ uri: imageFiles[0].uri }}
                   style={styles.imagePreview}
                   resizeMode="cover"
                 />
-              </View>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -447,7 +501,17 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                 {stagedFiles.map((file) => (
                   <View key={file.id} style={styles.stagedCard}>
                     {file.type === 'IMAGE' ? (
-                      <Image source={{ uri: file.uri }} style={styles.stagedThumb} />
+                      <View style={{ position: 'relative' }}>
+                        <Image source={{ uri: file.uri }} style={styles.stagedThumb} />
+                        <TouchableOpacity
+                          style={styles.stagedCropBadge}
+                          onPress={() => setCroppingImage(file)}
+                          activeOpacity={0.8}
+                          accessibilityLabel="Crop photo"
+                        >
+                          <Crop size={11} color="#ffffff" />
+                        </TouchableOpacity>
+                      </View>
                     ) : (
                       <View style={styles.stagedDocThumb}>
                         <FileText size={22} color="#ef4444" />
@@ -504,6 +568,16 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
           </View>
         </ScrollView>
       </View>
+
+      {/* Interactive Custom Freeform Crop & Rotate Modal */}
+      {croppingImage && (
+        <ImageCropperModal
+          visible={!!croppingImage}
+          imageUri={croppingImage.uri}
+          onClose={() => setCroppingImage(null)}
+          onCropComplete={handleCropComplete}
+        />
+      )}
     </Modal>
   );
 };
@@ -771,5 +845,56 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 11,
     lineHeight: 15,
+  },
+  studioActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  autoCropBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#fbbf24',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 4,
+  },
+  autoCropBtnText: {
+    color: '#fbbf24',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  openCropperBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#0284c7',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 4,
+  },
+  openCropperBtnText: {
+    color: '#38bdf8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  stagedCropBadge: {
+    position: 'absolute',
+    bottom: 3,
+    right: 3,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#0284c7',
+    borderWidth: 1,
+    borderColor: '#38bdf8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
   },
 });

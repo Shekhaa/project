@@ -19,7 +19,10 @@ import {
   Camera,
   Send,
   Trash2,
+  Crop,
+  Zap,
 } from 'lucide-react-native';
+import { ImageCropperModal, smartAutoCropImage } from './ImageCropperModal';
 
 export interface StagedAttachment {
   id: string;
@@ -48,6 +51,32 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
   const [messageText, setMessageText] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [croppingImage, setCroppingImage] = useState<StagedAttachment | null>(null);
+  const [autoCropping, setAutoCropping] = useState(false);
+
+  const handleCropComplete = (croppedUri: string) => {
+    if (!croppingImage) return;
+    setStagedFiles((prev) =>
+      prev.map((item) =>
+        item.id === croppingImage.id ? { ...item, uri: croppedUri } : item
+      )
+    );
+    setCroppingImage(null);
+  };
+
+  const handleDirectAutoCrop = async (targetFile: StagedAttachment) => {
+    try {
+      setAutoCropping(true);
+      const cropped = await smartAutoCropImage(targetFile.uri);
+      setStagedFiles((prev) =>
+        prev.map((item) => (item.id === targetFile.id ? { ...item, uri: cropped } : item))
+      );
+    } catch (e) {
+      console.warn('Direct auto crop error', e);
+    } finally {
+      setAutoCropping(false);
+    }
+  };
 
   const formatBytes = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -247,11 +276,35 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
                 {stagedFiles.map((file) => (
                   <View key={file.id} style={styles.stagedCard}>
                     {file.type === 'IMAGE' ? (
-                      <Image
-                        source={{ uri: file.uri }}
-                        style={styles.stagedThumb}
-                        resizeMode="cover"
-                      />
+                      <View style={{ position: 'relative' }}>
+                        <TouchableOpacity
+                          activeOpacity={0.9}
+                          onPress={() => setCroppingImage(file)}
+                        >
+                          <Image
+                            source={{ uri: file.uri }}
+                            style={styles.stagedThumb}
+                            resizeMode="cover"
+                          />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.autoCropBadge}
+                          onPress={() => handleDirectAutoCrop(file)}
+                          disabled={autoCropping}
+                          activeOpacity={0.8}
+                          accessibilityLabel="⚡ Auto Crop photo"
+                        >
+                          <Zap size={10} color="#fbbf24" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.cropBtnBadge}
+                          onPress={() => setCroppingImage(file)}
+                          activeOpacity={0.8}
+                          accessibilityLabel="Crop photo"
+                        >
+                          <Crop size={11} color="#ffffff" />
+                        </TouchableOpacity>
+                      </View>
                     ) : (
                       <View style={styles.docPlaceholder}>
                         <FileText size={24} color="#38bdf8" />
@@ -307,6 +360,16 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
           </View>
         </View>
       </View>
+
+      {/* Interactive Custom Crop & Rotate Modal */}
+      {croppingImage && (
+        <ImageCropperModal
+          visible={!!croppingImage}
+          imageUri={croppingImage.uri}
+          onClose={() => setCroppingImage(null)}
+          onCropComplete={handleCropComplete}
+        />
+      )}
     </Modal>
   );
 };
@@ -416,6 +479,34 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
+  },
+  autoCropBadge: {
+    position: 'absolute',
+    bottom: 2,
+    left: 2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#fbbf24',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
+  },
+  cropBtnBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#0284c7',
+    borderWidth: 1,
+    borderColor: '#38bdf8',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,
