@@ -25,6 +25,23 @@ export interface Conversation {
   updated_at?: string;
 }
 
+export interface AttachmentItem {
+  id: string;
+  file_url: string;
+  download_url: string;
+  file_name: string;
+  file_type: 'IMAGE' | 'DOCUMENT';
+  file_extension: string;
+  mime_type: string;
+  file_size: number;
+  file_size_formatted: string;
+  image_width?: number;
+  image_height?: number;
+  caption?: string;
+  order?: number;
+  created_at: string;
+}
+
 export interface Message {
   id: string;
   conversation: string;
@@ -34,6 +51,7 @@ export interface Message {
   sender_avatar?: string;
   text: string;
   attachment?: string;
+  attachments?: AttachmentItem[];
   is_read: boolean;
   created_at: string;
 }
@@ -70,6 +88,43 @@ export const chatService = {
   // Send message
   async sendMessage(conversationId: string, text: string): Promise<Message> {
     const res = await api.post(`/chat/${conversationId}/send/`, { text });
+    return res.data;
+  },
+
+  // Send message with file attachments (images, PDFs, documents)
+  async sendMessageWithAttachments(
+    conversationId: string,
+    text: string,
+    files: any[],
+    onProgress?: (percent: number) => void
+  ): Promise<Message> {
+    const formData = new FormData();
+    if (text) {
+      formData.append('text', text);
+    }
+    files.forEach((item, index) => {
+      if (item.file) {
+        // Web File object
+        formData.append('attachments', item.file);
+      } else if (item.uri) {
+        // React Native mobile file object
+        formData.append('attachments', {
+          uri: item.uri,
+          name: item.name || `attachment_${index}.jpg`,
+          type: item.type || 'image/jpeg',
+        } as any);
+      }
+    });
+
+    const res = await api.post(`/chat/${conversationId}/send/`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total && onProgress) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percent);
+        }
+      },
+    });
     return res.data;
   },
 

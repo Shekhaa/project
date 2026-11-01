@@ -1,10 +1,12 @@
 from rest_framework import serializers
+from attachments.serializers import MediaAttachmentSerializer
 from .models import Conversation, ConversationMember, Message
 
 class MessageSerializer(serializers.ModelSerializer):
     sender_name = serializers.CharField(source="sender.full_name", read_only=True)
     sender_email = serializers.CharField(source="sender.email", read_only=True)
     sender_avatar = serializers.SerializerMethodField()
+    attachments = MediaAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Message
@@ -17,10 +19,11 @@ class MessageSerializer(serializers.ModelSerializer):
             "sender_avatar",
             "text",
             "attachment",
+            "attachments",
             "is_read",
             "created_at",
         ]
-        read_only_fields = ["id", "sender", "sender_name", "sender_email", "sender_avatar", "is_read", "created_at"]
+        read_only_fields = ["id", "sender", "sender_name", "sender_email", "sender_avatar", "attachments", "is_read", "created_at"]
 
     def get_sender_avatar(self, obj):
         if hasattr(obj.sender, "profile") and obj.sender.profile.profile_picture:

@@ -1,6 +1,6 @@
-import random
 from rest_framework import serializers
 from communities.models import CommunityMember
+from attachments.serializers import MediaAttachmentSerializer
 from .models import Post, PostImage, PostLike, Comment
 
 ANONYMOUS_MASCOTS = [
@@ -69,6 +69,7 @@ class CommentSerializer(serializers.ModelSerializer):
 
 class PostSerializer(serializers.ModelSerializer):
     images = PostImageSerializer(many=True, read_only=True)
+    attachments = MediaAttachmentSerializer(many=True, read_only=True)
     total_likes = serializers.SerializerMethodField()
     total_comments = serializers.SerializerMethodField()
     author_name = serializers.SerializerMethodField()
@@ -97,6 +98,7 @@ class PostSerializer(serializers.ModelSerializer):
             "document_name",
             "document_size",
             "images",
+            "attachments",
             "is_anonymous",
             "anonymous_alias",
             "author_name",

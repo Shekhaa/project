@@ -1,4 +1,5 @@
 import { api } from '../config/api';
+import { AttachmentItem } from './chatService';
 
 export interface Post {
   id: number;
@@ -8,6 +9,7 @@ export interface Post {
   document?: string;
   document_name?: string;
   document_size?: string;
+  attachments?: AttachmentItem[];
   is_anonymous: boolean;
   author_name: string;
   author_username?: string;

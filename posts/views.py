@@ -9,6 +9,7 @@ from django.db.models import Count, Q
 from django.contrib.auth import get_user_model
 from communities.models import Community, CommunityMember
 from notifications.views import create_notification
+from attachments.services import AttachmentService
 from .models import Post, PostImage, PostLike, Comment
 from .serializers import PostSerializer, CommentSerializer, ANONYMOUS_MASCOTS
 from .pagination import FeedPagination
@@ -36,7 +37,7 @@ class FeedView(generics.ListAPIView):
                 is_deleted=False
             )
             .select_related("author", "author__profile", "community")
-            .prefetch_related("images", "likes", "comments")
+            .prefetch_related("images", "attachments", "likes", "comments")
             .annotate(
                 likes_count=Count("likes", distinct=True),
                 comments_count=Count("comments", distinct=True)
@@ -61,7 +62,7 @@ class CommunityFeedView(generics.ListAPIView):
         return (
             Post.objects.filter(community=community, is_deleted=False)
             .select_related("author", "author__profile", "community")
-            .prefetch_related("images", "likes", "comments")
+            .prefetch_related("images", "attachments", "likes", "comments")
             .annotate(
                 likes_count=Count("likes", distinct=True),
                 comments_count=Count("comments", distinct=True)
@@ -73,7 +74,7 @@ class CommunityFeedView(generics.ListAPIView):
 class CreatePostView(APIView):
     """
     POST /api/posts/create/
-    Creates a new post with text, optional anonymity, and multiple image uploads.
+    Creates a new post with text, optional anonymity, and multiple image/doc attachments.
     """
     permission_classes = [IsAuthenticated]
 
@@ -83,12 +84,26 @@ class CreatePostView(APIView):
 
         post = serializer.save(author=request.user)
 
-        # Handle multiple image uploads
+        # Handle unified attachments (images, PDFs, documents)
+        attachments = request.FILES.getlist("attachments") or request.FILES.getlist("files")
+        for idx, att_file in enumerate(attachments):
+            try:
+                AttachmentService.create_attachment(
+                    uploaded_file=att_file,
+                    user=request.user,
+                    post=post,
+                    order=idx
+                )
+            except Exception as e:
+                # Still allow post creation even if an attachment fails
+                pass
+
+        # Handle legacy multiple image uploads
         images = request.FILES.getlist("images")
         for img in images:
             PostImage.objects.create(post=post, image=img)
 
-        # Handle document/PDF upload
+        # Handle legacy document/PDF upload
         doc = request.FILES.get("document")
         if doc:
             post.document = doc

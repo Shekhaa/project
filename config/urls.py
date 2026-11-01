@@ -34,6 +34,7 @@ urlpatterns = [
     path('api/calls/', include('calls.urls')),
     path('api/lost-found/', include('lost_found.urls')),
     path('api/notifications/', include('notifications.urls')),
+    path('api/attachments/', include('attachments.urls')),
 ]
 
 if settings.DEBUG:

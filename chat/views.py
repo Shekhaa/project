@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q, Count
 from django.utils import timezone
 from accounts.models import User
+from attachments.services import AttachmentService
 from .models import Conversation, ConversationMember, Message
 from .serializers import ConversationSerializer, MessageSerializer, CreateEphemeralGroupSerializer
 
@@ -168,13 +169,13 @@ class ConversationMessagesView(generics.ListAPIView):
         if membership.cleared_at:
             qs = qs.filter(created_at__gt=membership.cleared_at)
 
-        return qs.select_related("sender", "sender__profile").order_by("created_at")
+        return qs.select_related("sender", "sender__profile").prefetch_related("attachments").order_by("created_at")
 
 
 class SendMessageView(APIView):
     """
     POST /api/chat/<uuid:conversation_id>/send/
-    Sends a message in the conversation. Unhides conversation if previously deleted.
+    Sends a message in the conversation with optional attachments. Unhides conversation if previously deleted.
     """
     permission_classes = [IsAuthenticated]
 
@@ -190,8 +191,9 @@ class SendMessageView(APIView):
 
         text = request.data.get("text", "").strip()
         attachment = request.FILES.get("attachment")
+        attachments = request.FILES.getlist("attachments") or request.FILES.getlist("files")
 
-        if not text and not attachment:
+        if not text and not attachment and not attachments:
             return Response({"error": "Message text or attachment required."}, status=status.HTTP_400_BAD_REQUEST)
 
         # If conversation was hidden by any member, unhide it upon new message
@@ -206,9 +208,23 @@ class SendMessageView(APIView):
             text=text,
             attachment=attachment
         )
+
+        # Handle unified attachments
+        if attachments:
+            for idx, att_file in enumerate(attachments):
+                try:
+                    AttachmentService.create_attachment(
+                        uploaded_file=att_file,
+                        user=request.user,
+                        message=msg,
+                        order=idx
+                    )
+                except Exception as e:
+                    pass
+
         conv.save()  # update updated_at timestamp
 
-        return Response(MessageSerializer(msg).data, status=status.HTTP_201_CREATED)
+        return Response(MessageSerializer(msg, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
 class DeleteMessageForMeView(APIView):

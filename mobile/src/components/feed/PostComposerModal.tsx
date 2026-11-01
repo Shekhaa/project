@@ -15,16 +15,16 @@ import {
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { postService } from '../../services/postService';
+import { StagedAttachment } from '../media/AttachmentPickerModal';
 import {
   X,
   Image as ImageIcon,
   FileText,
   Crop,
   Sparkles,
-  ShieldAlert,
   Check,
   Trash2,
-  UploadCloud,
+  Plus,
 } from 'lucide-react-native';
 
 interface CommunityOption {
@@ -54,31 +54,27 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     defaultCommunityId || (communities[0]?.id || 1)
   );
   const [isAnonymous, setIsAnonymous] = useState(false);
-  const [mediaType, setMediaType] = useState<'NONE' | 'IMAGE' | 'DOCUMENT'>('NONE');
   
-  // Photo State
-  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  // Multi-attachment staging state
+  const [stagedFiles, setStagedFiles] = useState<StagedAttachment[]>([]);
   const [aspectRatio, setAspectRatio] = useState<AspectRatioMode>('ORIGINAL');
-  
-  // Document State
-  const [documentFile, setDocumentFile] = useState<any | null>(null);
-  const [documentName, setDocumentName] = useState('');
-  const [documentSize, setDocumentSize] = useState('');
-
   const [submitting, setSubmitting] = useState(false);
 
   // Hidden file input refs for Web
   const imageInputRef = useRef<any>(null);
   const documentInputRef = useRef<any>(null);
 
+  const formatBytes = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    const kb = bytes / 1024;
+    if (kb < 1024) return `${kb.toFixed(1)} KB`;
+    return `${(kb / 1024).toFixed(1)} MB`;
+  };
+
   const resetForm = () => {
     setContent('');
-    setMediaType('NONE');
-    setMediaUrl(null);
+    setStagedFiles([]);
     setAspectRatio('ORIGINAL');
-    setDocumentFile(null);
-    setDocumentName('');
-    setDocumentSize('');
     setIsAnonymous(false);
     setSubmitting(false);
   };
@@ -89,44 +85,55 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   };
 
   // High-Resolution Image Processing (Sharp Canvas Resize, Quality 0.92)
-  const processHighQualityImage = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new (window as any).Image();
-      img.onload = () => {
-        const MAX_DIM = 1920; // 1080p-1440p high quality
-        let width = img.width;
-        let height = img.height;
+  const processHighQualityImage = (file: File): Promise<StagedAttachment> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new (window as any).Image();
+        img.onload = () => {
+          const MAX_DIM = 1920; // 1080p-1440p high quality
+          let width = img.width;
+          let height = img.height;
 
-        if (width > MAX_DIM || height > MAX_DIM) {
-          if (width > height) {
-            height = Math.round((height * MAX_DIM) / width);
-            width = MAX_DIM;
-          } else {
-            width = Math.round((width * MAX_DIM) / height);
-            height = MAX_DIM;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
           }
-        }
 
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, width, height);
-          const highResDataUrl = canvas.toDataURL('image/jpeg', 0.92);
-          setMediaUrl(highResDataUrl);
-          setMediaType('IMAGE');
-        } else {
-          setMediaUrl(e.target?.result as string);
-          setMediaType('IMAGE');
-        }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          let finalUri = e.target?.result as string;
+
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, width, height);
+            finalUri = canvas.toDataURL('image/jpeg', 0.92);
+          }
+
+          const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+          resolve({
+            id: Math.random().toString(36).substring(7),
+            uri: finalUri,
+            name: file.name,
+            size: file.size,
+            sizeFormatted: formatBytes(file.size),
+            type: 'IMAGE',
+            extension: ext,
+            file,
+          });
+        };
+        img.src = e.target?.result as string;
       };
-      img.src = e.target?.result as string;
-    };
-    reader.readAsDataURL(file);
+      reader.readAsDataURL(file);
+    });
   };
 
   const handlePickImage = async () => {
@@ -144,26 +151,36 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
         }
         const result = await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
+          allowsMultipleSelection: true,
           quality: 0.9,
-          base64: true,
         });
-        if (!result.canceled && result.assets && result.assets.length > 0) {
-          const asset = result.assets[0];
-          const uri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
-          setMediaUrl(uri);
-          setMediaType('IMAGE');
+        if (!result.canceled && result.assets) {
+          const newItems: StagedAttachment[] = result.assets.map((asset: any) => {
+            const fileName = asset.fileName || asset.uri.split('/').pop() || 'photo.jpg';
+            const ext = fileName.split('.').pop()?.toLowerCase() || 'jpg';
+            return {
+              id: Math.random().toString(36).substring(7),
+              uri: asset.uri,
+              name: fileName,
+              size: asset.fileSize || 0,
+              sizeFormatted: formatBytes(asset.fileSize || 0),
+              type: 'IMAGE',
+              extension: ext,
+            };
+          });
+          setStagedFiles((prev) => [...prev, ...newItems]);
         }
       } catch (err: any) {
-        Alert.alert('Upload Error', err.message || 'Could not pick image.');
+        Alert.alert('Upload Error', err.message || 'Could not pick images.');
       }
     }
   };
 
-  const handleImageFileChange = (e: any) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      processHighQualityImage(file);
+  const handleImageFileChange = async (e: any) => {
+    const files: File[] = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      const processed = await Promise.all(files.map((f) => processHighQualityImage(f)));
+      setStagedFiles((prev) => [...prev, ...processed]);
     }
   };
 
@@ -176,41 +193,54 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
       try {
         const DocumentPicker = require('expo-document-picker');
         const result = await DocumentPicker.getDocumentAsync({
-          type: ['application/pdf'],
+          type: '*/*',
+          multiple: true,
           copyToCacheDirectory: true,
         });
-        if (!result.canceled && result.assets && result.assets.length > 0) {
-          const asset = result.assets[0];
-          setDocumentName(asset.name);
-          const sizeKb = (asset.size || 0) / 1024;
-          const sizeStr = sizeKb < 1024 ? `${sizeKb.toFixed(1)} KB` : `${(sizeKb / 1024).toFixed(1)} MB`;
-          setDocumentSize(sizeStr);
-          setMediaUrl(asset.uri);
-          setMediaType('DOCUMENT');
+        if (!result.canceled && result.assets) {
+          const newItems: StagedAttachment[] = result.assets.map((asset: any) => {
+            const fileName = asset.name || 'document';
+            const ext = fileName.split('.').pop()?.toLowerCase() || '';
+            return {
+              id: Math.random().toString(36).substring(7),
+              uri: asset.uri,
+              name: fileName,
+              size: asset.size || 0,
+              sizeFormatted: formatBytes(asset.size || 0),
+              type: 'DOCUMENT',
+              extension: ext,
+            };
+          });
+          setStagedFiles((prev) => [...prev, ...newItems]);
         }
       } catch (err: any) {
-        Alert.alert('Upload Error', err.message || 'Could not pick PDF document.');
+        Alert.alert('Upload Error', err.message || 'Could not pick documents.');
       }
     }
   };
 
   const handleDocumentFileChange = (e: any) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setDocumentFile(file);
-      setDocumentName(file.name);
-      const sizeKb = file.size / 1024;
-      const sizeStr = sizeKb < 1024 ? `${sizeKb.toFixed(1)} KB` : `${(sizeKb / 1024).toFixed(1)} MB`;
-      setDocumentSize(sizeStr);
-      setMediaType('DOCUMENT');
-
-      // Also read as data url so it can be previewed or sent
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        setMediaUrl(ev.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+    const files: File[] = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      const newItems: StagedAttachment[] = files.map((file) => {
+        const ext = file.name.split('.').pop()?.toLowerCase() || '';
+        return {
+          id: Math.random().toString(36).substring(7),
+          uri: URL.createObjectURL(file),
+          name: file.name,
+          size: file.size,
+          sizeFormatted: formatBytes(file.size),
+          type: 'DOCUMENT',
+          extension: ext,
+          file,
+        };
+      });
+      setStagedFiles((prev) => [...prev, ...newItems]);
     }
+  };
+
+  const handleRemoveAttachment = (id: string) => {
+    setStagedFiles((prev) => prev.filter((item) => item.id !== id));
   };
 
   const getAspectRatioNumber = (): number | undefined => {
@@ -228,47 +258,65 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   };
 
   const handleSubmit = async () => {
-    if (!content.trim() && !mediaUrl && !documentFile) {
-      Alert.alert('Empty Post', 'Please write a caption or attach media to post.');
+    if (!content.trim() && stagedFiles.length === 0) {
+      Alert.alert('Empty Post', 'Please write something or attach photos/documents.');
       return;
     }
 
     try {
       setSubmitting(true);
-
       const targetCommunity = selectedCommunity || communities[0]?.id || 1;
 
-      if (mediaType === 'DOCUMENT' && documentFile && Platform.OS === 'web') {
-        const formData = new FormData();
-        formData.append('community', String(targetCommunity));
-        formData.append('content', content.trim());
-        formData.append('is_anonymous', String(isAnonymous));
-        formData.append('media_type', 'DOCUMENT');
-        formData.append('document', documentFile);
-        formData.append('document_name', documentName);
-        formData.append('document_size', documentSize);
+      const hasImages = stagedFiles.some((f) => f.type === 'IMAGE');
+      const hasDocs = stagedFiles.some((f) => f.type === 'DOCUMENT');
+      let determinedMediaType: 'TEXT' | 'IMAGE' | 'DOCUMENT' = 'TEXT';
+      if (hasImages && hasDocs) determinedMediaType = 'IMAGE'; // backend sets attachments
+      else if (hasImages) determinedMediaType = 'IMAGE';
+      else if (hasDocs) determinedMediaType = 'DOCUMENT';
 
-        await postService.createPost(formData);
-      } else {
-        await postService.createPost({
-          community: targetCommunity,
-          content: content.trim(),
-          is_anonymous: isAnonymous,
-          media_type: mediaType === 'NONE' ? 'TEXT' : mediaType,
-          media_url: mediaUrl || '',
-          document_name: mediaType === 'DOCUMENT' ? documentName : undefined,
-          document_size: mediaType === 'DOCUMENT' ? documentSize : undefined,
-        });
+      const formData = new FormData();
+      formData.append('community', String(targetCommunity));
+      formData.append('content', content.trim());
+      formData.append('is_anonymous', String(isAnonymous));
+      formData.append('media_type', determinedMediaType);
+
+      // Append all attachments
+      stagedFiles.forEach((item, index) => {
+        if (item.file) {
+          formData.append('attachments', item.file);
+          // Legacy backwards compatibility for first doc or image
+          if (item.type === 'DOCUMENT' && index === 0) {
+            formData.append('document', item.file);
+            formData.append('document_name', item.name);
+            formData.append('document_size', item.sizeFormatted);
+          }
+        } else if (item.uri) {
+          formData.append('attachments', {
+            uri: item.uri,
+            name: item.name || `file_${index}`,
+            type: item.type === 'IMAGE' ? 'image/jpeg' : 'application/octet-stream',
+          } as any);
+        }
+      });
+
+      // Legacy fallback for media_url if single web image
+      const firstImg = stagedFiles.find((f) => f.type === 'IMAGE');
+      if (firstImg && firstImg.uri.startsWith('data:')) {
+        formData.append('media_url', firstImg.uri);
       }
 
+      await postService.createPost(formData);
       handleClose();
       onPostCreated();
     } catch (err: any) {
-      Alert.alert('Post Failed', err.response?.data?.error || 'Could not publish post. Please try again.');
+      Alert.alert('Post Failed', err.response?.data?.error || err.message || 'Could not publish post. Please try again.');
     } finally {
       setSubmitting(false);
     }
   };
+
+  const imageFiles = stagedFiles.filter((f) => f.type === 'IMAGE');
+  const documentFiles = stagedFiles.filter((f) => f.type === 'DOCUMENT');
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={handleClose}>
@@ -281,24 +329,26 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
               ref={imageInputRef}
               style={{ display: 'none' }}
               accept="image/*"
+              multiple
               onChange={handleImageFileChange}
             />
             <input
               type="file"
               ref={documentInputRef}
               style={{ display: 'none' }}
-              accept="application/pdf"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+              multiple
               onChange={handleDocumentFileChange}
             />
           </>
         )}
 
-        {/* Header */}
+        {/* Top Navigation Bar */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
+          <TouchableOpacity onPress={handleClose} style={styles.closeBtn} disabled={submitting}>
             <X size={22} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>New Campus Post</Text>
+          <Text style={styles.headerTitle}>Create Post</Text>
           <TouchableOpacity
             style={[styles.postBtn, submitting && styles.postBtnDisabled]}
             onPress={handleSubmit}
@@ -307,70 +357,52 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
             {submitting ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.postBtnText}>Post</Text>
+              <Text style={styles.postBtnText}>Publish</Text>
             )}
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.scrollBody} keyboardShouldPersistTaps="handled">
-          {/* Target Community Selector */}
-          {communities.length > 0 && (
-            <View style={styles.communitySelector}>
-              <Text style={styles.sectionLabel}>Post in:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.communityScroll}>
-                {communities.map((c) => {
-                  const isSelected = selectedCommunity === c.id;
-                  return (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={[styles.communityPill, isSelected && styles.communityPillActive]}
-                      onPress={() => setSelectedCommunity(c.id)}
-                    >
-                      <Text
-                        style={[
-                          styles.communityPillText,
-                          isSelected && styles.communityPillTextActive,
-                        ]}
-                      >
-                        🎓 {c.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          )}
+        <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
+          {/* Community Selector Pill */}
+          <View style={styles.communitySelectorRow}>
+            <Text style={styles.selectorLabel}>Post to:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.communityScroll}>
+              {communities.map((c) => {
+                const isSelected = selectedCommunity === c.id;
+                return (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={[styles.commPill, isSelected && styles.commPillSelected]}
+                    onPress={() => setSelectedCommunity(c.id)}
+                  >
+                    <Text style={[styles.commPillText, isSelected && styles.commPillTextSelected]}>
+                      🎓 {c.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
 
-          {/* Caption Text Area */}
+          {/* Main Content Input */}
           <TextInput
             style={styles.contentInput}
             multiline
-            numberOfLines={4}
-            placeholder="What's happening on campus? Share announcements, questions, notes, or tips..."
+            placeholder="Share an update, notes, questions, or ask for help..."
             placeholderTextColor={colors.textSecondary}
             value={content}
             onChangeText={setContent}
             maxLength={3000}
           />
 
-          {/* Dedicated Media Upload & Auto-Crop Studio */}
-          {mediaType === 'IMAGE' && mediaUrl && (
+          {/* Image Aspect Ratio / Auto-Crop Studio (When images attached) */}
+          {imageFiles.length > 0 && (
             <View style={styles.mediaStudio}>
               <View style={styles.studioHeader}>
                 <View style={styles.hdBadge}>
                   <Sparkles size={14} color="#38bdf8" />
-                  <Text style={styles.hdBadgeText}>HD • High Quality Photo</Text>
+                  <Text style={styles.hdBadgeText}>HD • {imageFiles.length} Photo{imageFiles.length > 1 ? 's' : ''}</Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.removeMediaBtn}
-                  onPress={() => {
-                    setMediaUrl(null);
-                    setMediaType('NONE');
-                  }}
-                >
-                  <Trash2 size={16} color="#ef4444" />
-                  <Text style={styles.removeMediaText}>Remove</Text>
-                </TouchableOpacity>
               </View>
 
               {/* Crop Aspect Ratio Presets Bar */}
@@ -379,10 +411,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                 {(['ORIGINAL', '1:1', '4:5', '16:9'] as AspectRatioMode[]).map((mode) => (
                   <TouchableOpacity
                     key={mode}
-                    style={[
-                      styles.aspectRatioBtn,
-                      aspectRatio === mode && styles.aspectRatioBtnActive,
-                    ]}
+                    style={[styles.aspectRatioBtn, aspectRatio === mode && styles.aspectRatioBtnActive]}
                     onPress={() => setAspectRatio(mode)}
                   >
                     <Text
@@ -397,15 +426,10 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                 ))}
               </View>
 
-              {/* Aspect Ratio Preview Container */}
-              <View
-                style={[
-                  styles.imagePreviewContainer,
-                  { aspectRatio: getAspectRatioNumber() },
-                ]}
-              >
+              {/* Hero Image Preview with Crop Aspect Ratio */}
+              <View style={[styles.imagePreviewContainer, { aspectRatio: getAspectRatioNumber() }]}>
                 <Image
-                  source={{ uri: mediaUrl }}
+                  source={{ uri: imageFiles[0].uri }}
                   style={styles.imagePreview}
                   resizeMode="cover"
                 />
@@ -413,67 +437,62 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
             </View>
           )}
 
-          {/* PDF Document Preview Card */}
-          {mediaType === 'DOCUMENT' && (
-            <View style={styles.documentPreviewCard}>
-              <View style={styles.documentIconCircle}>
-                <FileText size={26} color="#ef4444" />
-              </View>
-              <View style={styles.documentMeta}>
-                <Text style={styles.documentName} numberOfLines={1}>
-                  {documentName || 'Campus Document.pdf'}
-                </Text>
-                <Text style={styles.documentSizeText}>
-                  {documentSize || 'PDF Document'} • Attached
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => {
-                  setDocumentFile(null);
-                  setDocumentName('');
-                  setDocumentSize('');
-                  setMediaUrl(null);
-                  setMediaType('NONE');
-                }}
-                style={styles.removeDocBtn}
-              >
-                <X size={18} color="#ef4444" />
-              </TouchableOpacity>
+          {/* Staged Attachments Strip (Images & Documents) */}
+          {stagedFiles.length > 0 && (
+            <View style={styles.stagedSection}>
+              <Text style={styles.stagedTitle}>
+                Attached Files ({stagedFiles.length}):
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.stagedScroll}>
+                {stagedFiles.map((file) => (
+                  <View key={file.id} style={styles.stagedCard}>
+                    {file.type === 'IMAGE' ? (
+                      <Image source={{ uri: file.uri }} style={styles.stagedThumb} />
+                    ) : (
+                      <View style={styles.stagedDocThumb}>
+                        <FileText size={22} color="#ef4444" />
+                        <Text style={styles.stagedDocExt}>{file.extension.toUpperCase() || 'DOC'}</Text>
+                      </View>
+                    )}
+                    <TouchableOpacity
+                      style={styles.stagedRemoveBtn}
+                      onPress={() => handleRemoveAttachment(file.id)}
+                    >
+                      <X size={12} color="#ffffff" />
+                    </TouchableOpacity>
+                    <Text style={styles.stagedName} numberOfLines={1}>
+                      {file.name}
+                    </Text>
+                    <Text style={styles.stagedSize}>{file.sizeFormatted}</Text>
+                  </View>
+                ))}
+              </ScrollView>
             </View>
           )}
 
-          {/* Media Attachment Action Buttons (When no media attached) */}
-          {mediaType === 'NONE' && (
-            <View style={styles.mediaPickerRow}>
-              <TouchableOpacity style={styles.mediaPickerOption} onPress={handlePickImage}>
-                <View style={[styles.optionIconBox, { backgroundColor: '#1e3a8a' }]}>
-                  <ImageIcon size={22} color="#60a5fa" />
-                </View>
-                <View style={styles.optionTextBox}>
-                  <Text style={styles.optionTitle}>Upload Photo</Text>
-                  <Text style={styles.optionSub}>HD Quality with Auto-Crop</Text>
-                </View>
-              </TouchableOpacity>
+          {/* Attachment Action Buttons Toolbar (Always accessible!) */}
+          <View style={styles.toolbar}>
+            <TouchableOpacity style={styles.toolBtn} onPress={handlePickImage}>
+              <View style={[styles.toolIconBox, { backgroundColor: '#1e3a8a' }]}>
+                <ImageIcon size={18} color="#60a5fa" />
+              </View>
+              <Text style={styles.toolBtnText}>Add Photos</Text>
+            </TouchableOpacity>
 
-              <TouchableOpacity style={styles.mediaPickerOption} onPress={handlePickDocument}>
-                <View style={[styles.optionIconBox, { backgroundColor: '#450a0a' }]}>
-                  <FileText size={22} color="#f87171" />
-                </View>
-                <View style={styles.optionTextBox}>
-                  <Text style={styles.optionTitle}>Upload PDF Notes</Text>
-                  <Text style={styles.optionSub}>Assignments & Syllabus</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          )}
+            <TouchableOpacity style={styles.toolBtn} onPress={handlePickDocument}>
+              <View style={[styles.toolIconBox, { backgroundColor: '#450a0a' }]}>
+                <FileText size={18} color="#f87171" />
+              </View>
+              <Text style={styles.toolBtnText}>Add Documents</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* Zero-Leak Anonymity Toggle Card */}
           <View style={styles.anonCard}>
             <View style={styles.anonInfo}>
               <Text style={styles.anonTitle}>🎭 Post Anonymously</Text>
               <Text style={styles.anonSubtitle}>
-                Your real name, profile photo and admission number will be hidden. A random mascot
-                will be assigned.
+                Your real name and admission details will be completely hidden. A random mascot will be assigned.
               </Text>
             </View>
             <Switch
@@ -518,65 +537,58 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   postBtnDisabled: {
-    opacity: 0.5,
+    opacity: 0.6,
   },
   postBtnText: {
-    color: '#fff',
-    fontWeight: '700',
+    color: '#ffffff',
     fontSize: 14,
+    fontWeight: '700',
   },
-  scrollBody: {
+  body: {
     flex: 1,
     padding: 16,
   },
-  communitySelector: {
+  communitySelectorRow: {
     marginBottom: 14,
   },
-  sectionLabel: {
+  selectorLabel: {
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   communityScroll: {
     flexDirection: 'row',
   },
-  communityPill: {
+  commPill: {
     backgroundColor: colors.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.cardBorder,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
     marginRight: 8,
   },
-  communityPillActive: {
+  commPillSelected: {
     backgroundColor: '#1e3a8a',
-    borderColor: colors.primary,
+    borderColor: '#38bdf8',
   },
-  communityPillText: {
+  commPillText: {
     color: colors.textSecondary,
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '600',
   },
-  communityPillTextActive: {
-    color: '#93c5fd',
+  commPillTextSelected: {
+    color: '#38bdf8',
     fontWeight: '700',
   },
   contentInput: {
     color: colors.textPrimary,
-    fontSize: 15.5,
-    lineHeight: 24,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    padding: 14,
-    minHeight: 120,
+    fontSize: 16,
+    minHeight: 110,
     textAlignVertical: 'top',
-    marginBottom: 16,
+    marginBottom: 14,
+    lineHeight: 22,
   },
   mediaStudio: {
     backgroundColor: colors.surface,
@@ -599,103 +611,119 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    gap: 6,
+    gap: 4,
   },
   hdBadgeText: {
     color: '#38bdf8',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-  },
-  removeMediaBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    padding: 4,
-  },
-  removeMediaText: {
-    color: '#ef4444',
-    fontSize: 12,
-    fontWeight: '600',
   },
   aspectRatioBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceLight,
-    padding: 6,
-    borderRadius: 8,
-    marginBottom: 12,
+    marginBottom: 10,
+    gap: 6,
   },
   aspectRatioBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 6,
-    marginRight: 6,
+    backgroundColor: '#1e293b',
   },
   aspectRatioBtnActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#0284c7',
   },
   aspectRatioBtnText: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   aspectRatioBtnTextActive: {
-    color: '#fff',
+    color: '#ffffff',
     fontWeight: '700',
   },
   imagePreviewContainer: {
     width: '100%',
-    maxHeight: 400,
-    backgroundColor: '#000',
     borderRadius: 8,
     overflow: 'hidden',
-    alignSelf: 'center',
+    backgroundColor: '#0f172a',
   },
   imagePreview: {
     width: '100%',
     height: '100%',
   },
-  documentPreviewCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#ef4444',
-    borderRadius: 12,
-    padding: 14,
+  stagedSection: {
     marginBottom: 16,
   },
-  documentIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#450a0a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  documentMeta: {
-    flex: 1,
-  },
-  documentName: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  documentSizeText: {
+  stagedTitle: {
     color: colors.textSecondary,
     fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  stagedScroll: {
+    flexDirection: 'row',
+  },
+  stagedCard: {
+    width: 86,
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: 8,
+    padding: 6,
+    marginRight: 10,
+    position: 'relative',
+  },
+  stagedThumb: {
+    width: 74,
+    height: 60,
+    borderRadius: 6,
+  },
+  stagedDocThumb: {
+    width: 74,
+    height: 60,
+    borderRadius: 6,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stagedDocExt: {
+    color: '#ef4444',
+    fontSize: 9,
+    fontWeight: '800',
     marginTop: 2,
   },
-  removeDocBtn: {
-    padding: 8,
+  stagedRemoveBtn: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
   },
-  mediaPickerRow: {
+  stagedName: {
+    color: colors.textPrimary,
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 4,
+    width: '100%',
+    textAlign: 'center',
+  },
+  stagedSize: {
+    color: colors.textSecondary,
+    fontSize: 9,
+  },
+  toolbar: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  mediaPickerOption: {
+  toolBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -703,53 +731,45 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.cardBorder,
     borderRadius: 12,
-    padding: 12,
+    padding: 10,
+    gap: 8,
   },
-  optionIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+  toolIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
   },
-  optionTextBox: {
-    flex: 1,
-  },
-  optionTitle: {
+  toolBtnText: {
     color: colors.textPrimary,
     fontSize: 13,
-    fontWeight: '700',
-  },
-  optionSub: {
-    color: colors.textSecondary,
-    fontSize: 10.5,
-    marginTop: 2,
+    fontWeight: '600',
   },
   anonCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1a103c',
+    backgroundColor: 'rgba(124, 58, 237, 0.08)',
     borderWidth: 1,
-    borderColor: '#581c87',
+    borderColor: 'rgba(124, 58, 237, 0.25)',
     borderRadius: 12,
     padding: 14,
-    marginBottom: 30,
+    marginBottom: 24,
   },
   anonInfo: {
     flex: 1,
-    marginRight: 12,
+    marginRight: 10,
   },
   anonTitle: {
-    color: '#e9d5ff',
+    color: '#c084fc',
     fontSize: 14,
     fontWeight: '700',
+    marginBottom: 2,
   },
   anonSubtitle: {
-    color: '#c084fc',
-    fontSize: 11.5,
-    lineHeight: 16,
-    marginTop: 4,
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 15,
   },
 });

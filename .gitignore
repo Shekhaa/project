@@ -16,7 +16,8 @@ __pycache__/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
-media/
+/media/
+!mobile/src/components/media/
 
 # Node & React Native
 node_modules/

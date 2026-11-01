@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { Post } from '../../services/postService';
+import { MediaGrid } from '../media/MediaGrid';
+import { DocumentCard } from '../media/DocumentCard';
 import {
   Heart,
   MessageCircle,
@@ -146,44 +148,64 @@ export const PostCard: React.FC<PostCardProps> = ({
         </TouchableOpacity>
       ) : null}
 
-      {/* Post Media: IMAGE */}
-      {post.media_type === 'IMAGE' && post.media_url ? (
-        <TouchableOpacity
-          style={styles.imageContainer}
-          onPress={() => onCommentPress(post)}
-          activeOpacity={0.95}
-        >
-          <Image
-            source={{ uri: post.media_url }}
-            style={styles.postImage}
-            resizeMode="cover"
-          />
-        </TouchableOpacity>
-      ) : null}
+      {/* Post Attachments (Unified Media & Academic Documents) */}
+      {(() => {
+        const imageAttachments = (post.attachments || []).filter((a) => a.file_type === 'IMAGE');
+        const docAttachments = (post.attachments || []).filter((a) => a.file_type === 'DOCUMENT');
 
-      {/* Post Media: DOCUMENT / PDF */}
-      {post.media_type === 'DOCUMENT' && (
-        <TouchableOpacity
-          style={styles.documentCard}
-          onPress={() => handleOpenDocument(post.document || post.media_url)}
-          activeOpacity={0.8}
-        >
-          <View style={styles.documentIconBox}>
-            <FileText size={24} color="#ef4444" />
-          </View>
-          <View style={styles.documentInfo}>
-            <Text style={styles.documentTitle} numberOfLines={1}>
-              {post.document_name || 'Campus Academic Document.pdf'}
-            </Text>
-            <Text style={styles.documentSize}>
-              {post.document_size || 'PDF Document'} • Tap to preview
-            </Text>
-          </View>
-          <View style={styles.downloadBadge}>
-            <Download size={16} color={colors.primary} />
-          </View>
-        </TouchableOpacity>
-      )}
+        return (
+          <>
+            {/* Unified Images Grid */}
+            {imageAttachments.length > 0 ? (
+              <View style={{ marginHorizontal: 12, marginVertical: 6 }}>
+                <MediaGrid images={imageAttachments} />
+              </View>
+            ) : post.media_type === 'IMAGE' && post.media_url ? (
+              <TouchableOpacity
+                style={styles.imageContainer}
+                onPress={() => onCommentPress(post)}
+                activeOpacity={0.95}
+              >
+                <Image
+                  source={{ uri: post.media_url }}
+                  style={styles.postImage}
+                  resizeMode="cover"
+                />
+              </TouchableOpacity>
+            ) : null}
+
+            {/* Unified Academic Documents */}
+            {docAttachments.length > 0 ? (
+              <View style={{ marginHorizontal: 12, marginVertical: 6, gap: 6 }}>
+                {docAttachments.map((doc, idx) => (
+                  <DocumentCard key={doc.id || idx} attachment={doc} />
+                ))}
+              </View>
+            ) : post.media_type === 'DOCUMENT' ? (
+              <TouchableOpacity
+                style={styles.documentCard}
+                onPress={() => handleOpenDocument(post.document || post.media_url)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.documentIconBox}>
+                  <FileText size={24} color="#ef4444" />
+                </View>
+                <View style={styles.documentInfo}>
+                  <Text style={styles.documentTitle} numberOfLines={1}>
+                    {post.document_name || 'Campus Academic Document.pdf'}
+                  </Text>
+                  <Text style={styles.documentSize}>
+                    {post.document_size || 'PDF Document'} • Tap to preview
+                  </Text>
+                </View>
+                <View style={styles.downloadBadge}>
+                  <Download size={16} color={colors.primary} />
+                </View>
+              </TouchableOpacity>
+            ) : null}
+          </>
+        );
+      })()}
 
       {/* Footer Action Bar */}
       <View style={styles.footer}>

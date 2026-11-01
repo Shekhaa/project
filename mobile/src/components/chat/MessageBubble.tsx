@@ -7,8 +7,10 @@ import {
   Image,
 } from 'react-native';
 import { colors } from '../../theme/colors';
-import { Message } from '../../services/chatService';
+import { Message, AttachmentItem } from '../../services/chatService';
 import { ExternalLink, Heart, MessageCircle } from 'lucide-react-native';
+import { MediaGrid } from '../media/MediaGrid';
+import { DocumentCard } from '../media/DocumentCard';
 
 export interface SharedPostCardData {
   id: number;
@@ -70,6 +72,24 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   const senderInitial = (message.sender_name || 'S').charAt(0).toUpperCase();
 
+  const attachments = message.attachments || [];
+  const legacyAttachment = message.attachment ? [{
+    id: 'legacy',
+    file_url: message.attachment,
+    download_url: message.attachment,
+    file_name: 'Attachment',
+    file_type: message.attachment.match(/\.(jpg|jpeg|png|webp|gif)/i) ? ('IMAGE' as const) : ('DOCUMENT' as const),
+    file_extension: message.attachment.split('.').pop() || '',
+    mime_type: '',
+    file_size: 0,
+    file_size_formatted: '',
+    created_at: message.created_at,
+  }] : [];
+
+  const allAttachments = [...attachments, ...legacyAttachment];
+  const imageAttachments = allAttachments.filter((a) => a.file_type === 'IMAGE');
+  const docAttachments = allAttachments.filter((a) => a.file_type === 'DOCUMENT');
+
   return (
     <View style={[styles.row, isMe ? styles.rowMe : styles.rowThem]}>
       {/* Group Sender Avatar on Left */}
@@ -88,6 +108,22 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         {/* Group Sender Name Header */}
         {!isMe && isGroup && message.sender_name && (
           <Text style={styles.senderHeader}>{message.sender_name}</Text>
+        )}
+
+        {/* Media Images Grid */}
+        {imageAttachments.length > 0 && (
+          <View style={{ marginBottom: cleanText ? 6 : 2 }}>
+            <MediaGrid images={imageAttachments} />
+          </View>
+        )}
+
+        {/* Academic Documents */}
+        {docAttachments.length > 0 && (
+          <View style={{ marginBottom: cleanText ? 6 : 2, gap: 4 }}>
+            {docAttachments.map((doc, idx) => (
+              <DocumentCard key={doc.id || idx} attachment={doc} />
+            ))}
+          </View>
         )}
 
         {/* Text Message */}

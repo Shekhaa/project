@@ -19,6 +19,7 @@ import { MessageBubble, SharedPostCardData } from '../components/chat/MessageBub
 import { SharedPostViewerModal } from '../components/chat/SharedPostViewerModal';
 import { DirectorySearchModal } from '../components/chat/DirectorySearchModal';
 import { EphemeralGroupModal } from '../components/chat/EphemeralGroupModal';
+import { AttachmentPickerModal, StagedAttachment } from '../components/media/AttachmentPickerModal';
 import {
   Search,
   Plus,
@@ -30,6 +31,7 @@ import {
   MessageSquare,
   Users,
   Copy,
+  Paperclip,
 } from 'lucide-react-native';
 
 interface ChatScreenProps {
@@ -61,6 +63,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [ephemeralModalVisible, setEphemeralModalVisible] = useState(false);
   const [selectedPostCard, setSelectedPostCard] = useState<SharedPostCardData | null>(null);
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
+  const [attachmentPickerVisible, setAttachmentPickerVisible] = useState(false);
 
   const flatListRef = useRef<FlatList>(null);
 
@@ -144,6 +147,25 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       setInputMessage(textToSend);
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleSendAttachments = async (staged: StagedAttachment[], caption: string) => {
+    if (!activeConv) return;
+    try {
+      const filesToSend = staged.map((item) => {
+        if (item.file) return { file: item.file };
+        return {
+          uri: item.uri,
+          name: item.name,
+          type: item.type === 'IMAGE' ? 'image/jpeg' : 'application/octet-stream',
+        };
+      });
+      const sent = await chatService.sendMessageWithAttachments(activeConv.id, caption, filesToSend);
+      setMessages((prev) => [...prev, sent]);
+    } catch (err: any) {
+      Alert.alert('Upload Failed', err.response?.data?.error || err.message || 'Could not send attachments.');
+      throw err;
     }
   };
 
@@ -306,6 +328,15 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
         {/* Bottom Message Input Bar */}
         <View style={styles.inputArea}>
+          <TouchableOpacity
+            style={styles.attachBtn}
+            onPress={() => setAttachmentPickerVisible(true)}
+            activeOpacity={0.7}
+            accessibilityLabel="Share media or document"
+          >
+            <Paperclip size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
+
           <TextInput
             style={styles.messageInput}
             placeholder="Type a message..."
@@ -327,6 +358,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             )}
           </TouchableOpacity>
         </View>
+
+        {/* WhatsApp-Style Media & Document Attachment Drawer */}
+        <AttachmentPickerModal
+          visible={attachmentPickerVisible}
+          onClose={() => setAttachmentPickerVisible(false)}
+          onSend={handleSendAttachments}
+        />
 
         {/* Shared Post Viewer Modal */}
         <SharedPostViewerModal
@@ -848,6 +886,12 @@ const styles = StyleSheet.create({
     borderTopColor: colors.cardBorder,
     paddingHorizontal: 12,
     paddingVertical: 8,
+  },
+  attachBtn: {
+    padding: 8,
+    marginRight: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   messageInput: {
     flex: 1,
