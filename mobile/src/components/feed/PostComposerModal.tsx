@@ -15,8 +15,6 @@ import {
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { postService } from '../../services/postService';
-import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
 import {
   X,
   Image as ImageIcon,
@@ -138,6 +136,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
       }
     } else {
       try {
+        const ImagePicker = require('expo-image-picker');
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
           Alert.alert('Permission Needed', 'Please allow camera roll access to upload photos.');
@@ -175,6 +174,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
       }
     } else {
       try {
+        const DocumentPicker = require('expo-document-picker');
         const result = await DocumentPicker.getDocumentAsync({
           type: ['application/pdf'],
           copyToCacheDirectory: true,

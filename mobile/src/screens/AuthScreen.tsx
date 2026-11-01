@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { authService } from '../services/authService';
-import * as ImagePicker from 'expo-image-picker';
 
 interface AuthScreenProps {
   onLoginSuccess: (user: any) => void;
@@ -439,6 +438,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       };
       input.click();
     } else {
+      const ImagePicker = require('expo-image-picker');
       Alert.alert(
         'Upload Physical ID Card',
         'Choose how to scan your College ID Card:',
