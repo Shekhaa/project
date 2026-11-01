@@ -17,7 +17,7 @@ class MediaAttachment(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     
-    # Ownership (belonging to a Community Post OR a Chat Message)
+    # Ownership (belonging to a Community Post, Chat Message, OR Community Discussion)
     post = models.ForeignKey(
         "posts.Post",
         on_delete=models.CASCADE,
@@ -27,6 +27,13 @@ class MediaAttachment(models.Model):
     )
     message = models.ForeignKey(
         "chat.Message",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="attachments"
+    )
+    discussion = models.ForeignKey(
+        "communities.Discussion",
         on_delete=models.CASCADE,
         null=True,
         blank=True,
@@ -66,9 +73,10 @@ class MediaAttachment(models.Model):
         indexes = [
             models.Index(fields=["post", "order"]),
             models.Index(fields=["message", "order"]),
+            models.Index(fields=["discussion", "order"]),
             models.Index(fields=["uploaded_by", "-created_at"]),
         ]
 
     def __str__(self):
-        owner = f"Post #{self.post_id}" if self.post_id else f"Message #{self.message_id}"
+        owner = f"Post #{self.post_id}" if self.post_id else f"Message #{self.message_id}" if self.message_id else f"Discussion #{self.discussion_id}"
         return f"{self.file_name} ({self.file_type}) -> {owner}"

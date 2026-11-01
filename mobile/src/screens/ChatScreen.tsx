@@ -316,7 +316,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                   message={item}
                   isMe={isMe}
                   isGroup={activeConv.is_group}
-                  onPress={(m) => setActionMessage(m)}
+                  onLongPress={(m) => setActionMessage(m)}
                   onPostCardPress={(card) => setSelectedPostCard(card)}
                 />
               );

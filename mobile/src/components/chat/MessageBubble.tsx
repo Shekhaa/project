@@ -27,7 +27,8 @@ interface MessageBubbleProps {
   message: Message;
   isMe: boolean;
   isGroup?: boolean;
-  onPress: (msg: Message) => void;
+  onPress?: (msg: Message) => void;
+  onLongPress?: (msg: Message) => void;
   onPostCardPress?: (cardData: SharedPostCardData) => void;
 }
 
@@ -56,6 +57,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   isMe,
   isGroup,
   onPress,
+  onLongPress,
   onPostCardPress,
 }) => {
   const { cleanText, cardData } = parseSharedPostCard(message.text);
@@ -101,9 +103,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
       <TouchableOpacity
         style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}
-        onPress={() => onPress(message)}
-        onLongPress={() => onPress(message)}
-        activeOpacity={0.85}
+        delayLongPress={450}
+        onLongPress={() => onLongPress ? onLongPress(message) : onPress && onPress(message)}
+        activeOpacity={0.92}
       >
         {/* Group Sender Name Header */}
         {!isMe && isGroup && message.sender_name && (
