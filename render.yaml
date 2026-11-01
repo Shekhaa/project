@@ -18,7 +18,7 @@ services:
           name: campus-connect-db
           property: connectionString
       - key: BACKEND_URL
-        value: "https://campus-connect-api.onrender.com"
+        value: "https://campus-connect-api-us3i.onrender.com"
 
 databases:
   - name: campus-connect-db
