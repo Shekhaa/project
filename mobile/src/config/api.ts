@@ -2,7 +2,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-// Dynamically determine backend URL for local Wi-Fi testers and Web/Expo
+// Dynamically determine backend URL for Vercel, Expo, and local Wi-Fi testers
 const getBaseUrl = (): string => {
   if (process.env.EXPO_PUBLIC_API_URL) {
     return process.env.EXPO_PUBLIC_API_URL;
@@ -12,9 +12,13 @@ const getBaseUrl = (): string => {
       const stored = window.localStorage?.getItem('custom_backend_url');
       if (stored) return stored;
     } catch {}
-    return `http://${window.location.hostname}:8000/api`;
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return `http://${window.location.hostname}:8000/api`;
+    }
+    // Deployed on Vercel or public domain -> use live Render API
+    return 'https://campus-connect-api-us3i.onrender.com/api';
   }
-  return 'http://192.168.1.33:8000/api';
+  return 'https://campus-connect-api-us3i.onrender.com/api';
 };
 
 export const API_BASE_URL = getBaseUrl();
