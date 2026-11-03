@@ -2,10 +2,10 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-// Dynamically determine backend URL for Vercel, Expo, and local Wi-Fi testers
 const getBaseUrl = (): string => {
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
+  const envApiUrl = (process.env as any)?.EXPO_PUBLIC_API_URL;
+  if (envApiUrl) {
+    return envApiUrl;
   }
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.hostname) {
     try {

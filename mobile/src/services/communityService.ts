@@ -212,6 +212,18 @@ export const communityService = {
     return res.data;
   },
 
+  async postReply(slug: string, discussionId: string, content: string, parentReplyId?: string): Promise<DiscussionReply> {
+    return this.createReply(slug, discussionId, content, parentReplyId);
+  },
+
+  async acceptReply(slug: string, discussionId: string, replyId: string) {
+    return this.markAcceptedAnswer(slug, discussionId, replyId);
+  },
+
+  async joinLeaveCommunity(slug: string) {
+    return this.toggleJoin(slug);
+  },
+
   // ==========================================
   // MEMBERS & ROLES API
   // ==========================================

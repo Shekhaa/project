@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { postService } from '../../services/postService';
-import { StagedAttachment } from '../media/AttachmentPickerModal';
+import { StagedAttachment, dataURLtoFile } from '../media/AttachmentPickerModal';
 import { ImageCropperModal, smartAutoCropImage } from '../media/ImageCropperModal';
 import {
   X,
@@ -76,9 +76,15 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
 
   const handleCropComplete = (croppedUri: string) => {
     if (!croppingImage) return;
+    const newFile = croppedUri.startsWith('data:')
+      ? (dataURLtoFile(croppedUri, croppingImage.name || 'cropped.jpg') || croppingImage.file)
+      : croppingImage.file;
+
     setStagedFiles((prev) =>
       prev.map((item) =>
-        item.id === croppingImage.id ? { ...item, uri: croppedUri } : item
+        item.id === croppingImage.id
+          ? { ...item, uri: croppedUri, file: newFile }
+          : item
       )
     );
     setCroppingImage(null);
@@ -88,8 +94,12 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     try {
       setAutoCropping(true);
       const cropped = await smartAutoCropImage(targetFile.uri);
+      const newFile = cropped.startsWith('data:')
+        ? (dataURLtoFile(cropped, targetFile.name || 'cropped.jpg') || targetFile.file)
+        : targetFile.file;
+
       setStagedFiles((prev) =>
-        prev.map((item) => (item.id === targetFile.id ? { ...item, uri: cropped } : item))
+        prev.map((item) => (item.id === targetFile.id ? { ...item, uri: cropped, file: newFile } : item))
       );
     } catch (e) {
       console.warn('Direct auto crop error', e);
@@ -326,11 +336,16 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
 
       // Append all attachments
       stagedFiles.forEach((item, index) => {
-        if (item.file) {
-          formData.append('attachments', item.file);
+        let fileToAppend = item.file;
+        if (!fileToAppend && item.uri && typeof window !== 'undefined' && item.uri.startsWith('data:')) {
+          fileToAppend = dataURLtoFile(item.uri, item.name || `photo_${index}.jpg`);
+        }
+
+        if (fileToAppend) {
+          formData.append('attachments', fileToAppend);
           // Legacy backwards compatibility for first doc or image
           if (item.type === 'DOCUMENT' && index === 0) {
-            formData.append('document', item.file);
+            formData.append('document', fileToAppend);
             formData.append('document_name', item.name);
             formData.append('document_size', item.sizeFormatted);
           }

@@ -604,6 +604,9 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   const senderName = item.sender_name || 'Campus Student';
                   const initialLetter = senderName.trim()[0]?.toUpperCase() || '?';
                   const { cleanText, cardData } = parseSharedPostCard(item.text);
+                  const imageAttachments = (item.attachments || []).filter((a: any) => a.file_type === 'IMAGE');
+                  const docAttachments = (item.attachments || []).filter((a: any) => a.file_type === 'DOCUMENT');
+                  const hasMedia = imageAttachments.length > 0 || docAttachments.length > 0 || Boolean(cardData);
 
                   return (
                     <View
@@ -626,6 +629,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                         style={[
                           styles.chatBubble,
                           isMe ? styles.chatBubbleRight : styles.chatBubbleLeft,
+                          hasMedia && styles.chatBubbleWithMedia,
                         ]}
                       >
                         {!isMe && (
@@ -633,18 +637,18 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                         )}
 
                         {/* Media Grid */}
-                        {item.attachments && item.attachments.filter((a) => a.file_type === 'IMAGE').length > 0 && (
+                        {item.attachments && item.attachments.filter((a: any) => a.file_type === 'IMAGE').length > 0 && (
                           <View style={{ marginBottom: cleanText ? 6 : 2 }}>
-                            <MediaGrid images={item.attachments.filter((a) => a.file_type === 'IMAGE')} />
+                            <MediaGrid images={item.attachments.filter((a: any) => a.file_type === 'IMAGE')} />
                           </View>
                         )}
 
                         {/* Document Cards */}
-                        {item.attachments && item.attachments.filter((a) => a.file_type === 'DOCUMENT').length > 0 && (
+                        {item.attachments && item.attachments.filter((a: any) => a.file_type === 'DOCUMENT').length > 0 && (
                           <View style={{ marginBottom: cleanText ? 6 : 2, gap: 4 }}>
                             {item.attachments
-                              .filter((a) => a.file_type === 'DOCUMENT')
-                              .map((doc, idx) => (
+                              .filter((a: any) => a.file_type === 'DOCUMENT')
+                              .map((doc: any, idx: number) => (
                                 <DocumentCard key={doc.id || idx} attachment={doc} />
                               ))}
                           </View>
@@ -1604,6 +1608,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 6,
+  },
+  chatBubbleWithMedia: {
+    width: 260,
+    maxWidth: '85%',
   },
   chatBubbleRight: {
     backgroundColor: '#1d4ed8',

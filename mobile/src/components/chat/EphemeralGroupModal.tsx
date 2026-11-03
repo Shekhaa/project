@@ -19,11 +19,13 @@ interface EphemeralGroupModalProps {
   onGroupCreated: (conv: Conversation) => void;
 }
 
-const DURATION_OPTIONS = [
-  { label: '1 Hour', value: 1 },
-  { label: '6 Hours', value: 6 },
-  { label: '24 Hours', value: 24 },
-  { label: '7 Days', value: 168 },
+type EphemeralDuration = '10_MIN' | '1_HOUR' | '12_HOURS' | '24_HOURS';
+
+const DURATION_OPTIONS: { label: string; value: EphemeralDuration }[] = [
+  { label: '10 Mins', value: '10_MIN' },
+  { label: '1 Hour', value: '1_HOUR' },
+  { label: '12 Hours', value: '12_HOURS' },
+  { label: '24 Hours', value: '24_HOURS' },
 ];
 
 export const EphemeralGroupModal: React.FC<EphemeralGroupModalProps> = ({
@@ -33,7 +35,7 @@ export const EphemeralGroupModal: React.FC<EphemeralGroupModalProps> = ({
 }) => {
   const [name, setName] = useState('');
   const [purposeTag, setPurposeTag] = useState('');
-  const [duration, setDuration] = useState(24);
+  const [duration, setDuration] = useState<EphemeralDuration>('24_HOURS');
   const [submitting, setSubmitting] = useState(false);
 
   const handleCreate = async () => {
@@ -51,7 +53,7 @@ export const EphemeralGroupModal: React.FC<EphemeralGroupModalProps> = ({
       });
       setName('');
       setPurposeTag('');
-      setDuration(24);
+      setDuration('24_HOURS');
       onClose();
       onGroupCreated(conv);
     } catch (e: any) {

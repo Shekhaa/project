@@ -80,7 +80,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     file_url: message.attachment,
     download_url: message.attachment,
     file_name: 'Attachment',
-    file_type: message.attachment.match(/\.(jpg|jpeg|png|webp|gif)/i) ? ('IMAGE' as const) : ('DOCUMENT' as const),
+    file_type: (message.attachment.startsWith('data:image/') || message.attachment.match(/\.(jpg|jpeg|png|webp|gif)/i)) ? ('IMAGE' as const) : ('DOCUMENT' as const),
     file_extension: message.attachment.split('.').pop() || '',
     mime_type: '',
     file_size: 0,
@@ -91,6 +91,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const allAttachments = [...attachments, ...legacyAttachment];
   const imageAttachments = allAttachments.filter((a) => a.file_type === 'IMAGE');
   const docAttachments = allAttachments.filter((a) => a.file_type === 'DOCUMENT');
+  const hasMedia = imageAttachments.length > 0 || docAttachments.length > 0 || Boolean(cardData);
 
   return (
     <View style={[styles.row, isMe ? styles.rowMe : styles.rowThem]}>
@@ -102,7 +103,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
       )}
 
       <TouchableOpacity
-        style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}
+        style={[
+          styles.bubble,
+          isMe ? styles.bubbleMe : styles.bubbleThem,
+          hasMedia && styles.bubbleWithMedia,
+        ]}
         delayLongPress={450}
         onLongPress={() => onLongPress ? onLongPress(message) : onPress && onPress(message)}
         activeOpacity={0.92}
@@ -227,6 +232,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 6,
+  },
+  bubbleWithMedia: {
+    width: 260,
+    maxWidth: '85%',
   },
   bubbleMe: {
     backgroundColor: '#1d4ed8',

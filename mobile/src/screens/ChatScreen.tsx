@@ -184,14 +184,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const handleSendAttachments = async (staged: StagedAttachment[], caption: string) => {
     if (!activeConv) return;
     try {
-      const filesToSend = staged.map((item) => {
-        if (item.file) return { file: item.file };
-        return {
-          uri: item.uri,
-          name: item.name,
-          type: item.type === 'IMAGE' ? 'image/jpeg' : 'application/octet-stream',
-        };
-      });
+      const filesToSend = staged.map((item) => ({
+        file: item.file,
+        uri: item.uri,
+        name: item.name,
+        type: item.type === 'IMAGE' ? 'image/jpeg' : 'application/octet-stream',
+      }));
       const sent = await chatService.sendMessageWithAttachments(activeConv.id, caption, filesToSend);
       setMessages((prev) => [...prev, sent]);
     } catch (err: any) {

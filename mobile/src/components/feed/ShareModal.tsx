@@ -44,7 +44,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     try {
       setLoading(true);
       const data = await chatService.getInbox();
-      setConversations(data);
+      setConversations(data.results || (Array.isArray(data) ? data : []));
     } catch (e) {
       console.log('Error loading inbox for share', e);
     } finally {

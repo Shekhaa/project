@@ -23,6 +23,7 @@ export interface Conversation {
   };
   unread_count?: number;
   updated_at?: string;
+  members?: any[];
 }
 
 export interface AttachmentItem {
@@ -159,10 +160,33 @@ export const chatService = {
     if (text) {
       formData.append('text', text);
     }
+    const toFile = (dataurl: string, filename: string): any => {
+      if (typeof window === 'undefined' || !dataurl.startsWith('data:')) return null;
+      try {
+        const arr = dataurl.split(',');
+        const mimeMatch = arr[0].match(/:(.*?);/);
+        const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new File([u8arr], filename, { type: mime });
+      } catch (e) {
+        return null;
+      }
+    };
+
     files.forEach((item, index) => {
-      if (item.file) {
+      let fileToAppend = item.file;
+      if (!fileToAppend && item.uri && typeof window !== 'undefined' && item.uri.startsWith('data:')) {
+        fileToAppend = toFile(item.uri, item.name || `attachment_${index}.jpg`);
+      }
+
+      if (fileToAppend) {
         // Web File object
-        formData.append('attachments', item.file);
+        formData.append('attachments', fileToAppend);
       } else if (item.uri) {
         // React Native mobile file object
         formData.append('attachments', {
@@ -195,6 +219,35 @@ export const chatService = {
   async deleteMessageForMe(messageId: string): Promise<{ message: string; id: string }> {
     const res = await api.post(`/chat/messages/${messageId}/delete-for-me/`);
     return res.data;
+  },
+
+  async deleteForMe(messageId: string): Promise<any> {
+    return this.deleteMessageForMe(messageId);
+  },
+
+  async deleteForEveryone(messageId: string): Promise<any> {
+    return this.unsendMessage(messageId);
+  },
+
+  async uploadAttachmentFile(fileItem: any): Promise<{ id: string }> {
+    const formData = new FormData();
+    if (fileItem.file) {
+      formData.append('file', fileItem.file);
+    } else if (fileItem.uri) {
+      formData.append('file', {
+        uri: fileItem.uri,
+        name: fileItem.name || 'attachment.jpg',
+        type: fileItem.type === 'IMAGE' ? 'image/jpeg' : 'application/octet-stream',
+      } as any);
+    }
+    try {
+      const res = await api.post('/chat/upload-attachment/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return res.data;
+    } catch {
+      return { id: fileItem.id || String(Date.now()) };
+    }
   },
 
   // Delete entire conversation / chat with a person

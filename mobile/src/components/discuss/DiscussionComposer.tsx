@@ -63,7 +63,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
         const uploaded = await Promise.all(
           stagedFiles.map((file) => chatService.uploadAttachmentFile(file))
         );
-        attachment_ids = uploaded.map((u) => u.id);
+        attachment_ids = uploaded.map((u: any) => u.id);
       }
 
       await onSubmit({
@@ -208,7 +208,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
         <AttachmentPickerModal
           visible={pickerVisible}
           onClose={() => setPickerVisible(false)}
-          onSend={(files) => {
+          onSend={async (files) => {
             setStagedFiles(files);
             setPickerVisible(false);
           }}

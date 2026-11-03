@@ -188,7 +188,8 @@ const styles = StyleSheet.create({
   },
   singleImageWrapper: {
     width: '100%',
-    height: 220,
+    minWidth: 240,
+    height: 200,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#0f172a',
@@ -199,6 +200,8 @@ const styles = StyleSheet.create({
   },
   twoGrid: {
     flexDirection: 'row',
+    width: '100%',
+    minWidth: 240,
     height: 180,
     gap: 4,
   },
@@ -211,6 +214,8 @@ const styles = StyleSheet.create({
   },
   threeGrid: {
     flexDirection: 'row',
+    width: '100%',
+    minWidth: 240,
     height: 200,
     gap: 4,
   },
@@ -235,6 +240,8 @@ const styles = StyleSheet.create({
   fourGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    width: '100%',
+    minWidth: 240,
     height: 220,
     gap: 4,
   },

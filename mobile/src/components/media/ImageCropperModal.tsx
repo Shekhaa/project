@@ -51,7 +51,9 @@ export const smartAutoCropImage = (imageUri: string): Promise<string> => {
     }
 
     const img = new (window as any).Image();
-    img.crossOrigin = 'anonymous';
+    if (!imageUri.startsWith('data:') && !imageUri.startsWith('blob:')) {
+      img.crossOrigin = 'anonymous';
+    }
     img.onload = () => {
       try {
         const origW = img.naturalWidth || img.width;
@@ -185,6 +187,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
   cropBoxRef.current = cropBox;
 
   const dragStartRef = useRef<{ box: Box; touchX: number; touchY: number } | null>(null);
+  const isDraggingRef = useRef(false);
 
   // Compute fitted dimensions in the stage
   const isRotatedSideways = rotation === 90 || rotation === 270;
@@ -350,8 +353,15 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
   // Direct Web Pointer/Mouse Drag Handlers (100% butter-smooth on browsers)
   const handleWebPointerDown = (e: any, handle: HandleType) => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    if (isDraggingRef.current) return;
+    isDraggingRef.current = true;
+
     e.preventDefault?.();
     e.stopPropagation?.();
+    if (e.nativeEvent) {
+      e.nativeEvent.stopImmediatePropagation?.();
+      e.nativeEvent.stopPropagation?.();
+    }
     const startX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
     const startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
     const initialBox = { ...cropBoxRef.current };
@@ -366,6 +376,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
     };
 
     const onPointerUp = () => {
+      isDraggingRef.current = false;
       window.removeEventListener('mousemove', onPointerMove);
       window.removeEventListener('mouseup', onPointerUp);
       window.removeEventListener('touchmove', onPointerMove);
@@ -437,7 +448,9 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
     setAspectRatio('AUTO');
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       const img = new (window as any).Image();
-      img.crossOrigin = 'anonymous';
+      if (!imageUri.startsWith('data:') && !imageUri.startsWith('blob:')) {
+        img.crossOrigin = 'anonymous';
+      }
       img.onload = () => {
         try {
           const sampleW = 220;
@@ -606,49 +619,68 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
   // Execute Final Pixel-Perfect Crop
   const handleApplyCrop = () => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const img = new (window as any).Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        const currentBox = cropBoxRef.current;
-        const relX = Math.max(0, (currentBox.x - imgOffsetX) / scale);
-        const relY = Math.max(0, (currentBox.y - imgOffsetY) / scale);
-        const relW = Math.max(1, Math.min(currentBox.w / scale, currentImgW - relX));
-        const relH = Math.max(1, Math.min(currentBox.h / scale, currentImgH - relY));
-
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.round(relW);
-        canvas.height = Math.round(relH);
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          onCropComplete(imageUri);
-          return;
+      try {
+        const img = new (window as any).Image();
+        if (!imageUri.startsWith('data:') && !imageUri.startsWith('blob:')) {
+          img.crossOrigin = 'anonymous';
         }
 
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
+        const executeCrop = () => {
+          try {
+            const currentBox = cropBoxRef.current;
+            const relX = Math.max(0, (currentBox.x - imgOffsetX) / scale);
+            const relY = Math.max(0, (currentBox.y - imgOffsetY) / scale);
+            const relW = Math.max(1, Math.min(currentBox.w / scale, currentImgW - relX));
+            const relH = Math.max(1, Math.min(currentBox.h / scale, currentImgH - relY));
 
-        if (rotation === 0) {
-          ctx.drawImage(img, relX, relY, relW, relH, 0, 0, canvas.width, canvas.height);
-        } else {
-          const rotCanvas = document.createElement('canvas');
-          rotCanvas.width = currentImgW;
-          rotCanvas.height = currentImgH;
-          const rotCtx = rotCanvas.getContext('2d');
-          if (rotCtx) {
-            rotCtx.translate(currentImgW / 2, currentImgH / 2);
-            rotCtx.rotate((rotation * Math.PI) / 180);
-            rotCtx.drawImage(img, -naturalSize.width / 2, -naturalSize.height / 2);
-            ctx.drawImage(rotCanvas, relX, relY, relW, relH, 0, 0, canvas.width, canvas.height);
-          } else {
-            ctx.drawImage(img, relX, relY, relW, relH, 0, 0, canvas.width, canvas.height);
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(relW);
+            canvas.height = Math.round(relH);
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              onCropComplete(imageUri);
+              return;
+            }
+
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
+            if (rotation === 0) {
+              ctx.drawImage(img, relX, relY, relW, relH, 0, 0, canvas.width, canvas.height);
+            } else {
+              const rotCanvas = document.createElement('canvas');
+              rotCanvas.width = currentImgW;
+              rotCanvas.height = currentImgH;
+              const rotCtx = rotCanvas.getContext('2d');
+              if (rotCtx) {
+                rotCtx.translate(currentImgW / 2, currentImgH / 2);
+                rotCtx.rotate((rotation * Math.PI) / 180);
+                rotCtx.drawImage(img, -naturalSize.width / 2, -naturalSize.height / 2);
+                ctx.drawImage(rotCanvas, relX, relY, relW, relH, 0, 0, canvas.width, canvas.height);
+              } else {
+                ctx.drawImage(img, relX, relY, relW, relH, 0, 0, canvas.width, canvas.height);
+              }
+            }
+
+            const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+            onCropComplete(croppedDataUrl);
+          } catch (canvasErr) {
+            console.warn('Canvas export error during crop', canvasErr);
+            onCropComplete(imageUri);
           }
-        }
+        };
 
-        const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
-        onCropComplete(croppedDataUrl);
-      };
-      img.onerror = () => onCropComplete(imageUri);
-      img.src = imageUri;
+        if (img.complete && img.naturalWidth) {
+          executeCrop();
+        } else {
+          img.onload = executeCrop;
+          img.onerror = () => onCropComplete(imageUri);
+          img.src = imageUri;
+        }
+      } catch (err) {
+        console.warn('handleApplyCrop error', err);
+        onCropComplete(imageUri);
+      }
     } else {
       onCropComplete(imageUri);
     }

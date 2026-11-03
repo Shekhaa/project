@@ -42,6 +42,25 @@ interface AttachmentPickerModalProps {
   onSend: (attachments: StagedAttachment[], messageText: string) => Promise<void>;
 }
 
+export const dataURLtoFile = (dataurl: string, filename: string): any => {
+  if (typeof window === 'undefined' || !dataurl.startsWith('data:')) return null;
+  try {
+    const arr = dataurl.split(',');
+    const mimeMatch = arr[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
+  } catch (e) {
+    console.warn('dataURLtoFile failed', e);
+    return null;
+  }
+};
+
 export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
   visible,
   onClose,
@@ -56,9 +75,15 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
 
   const handleCropComplete = (croppedUri: string) => {
     if (!croppingImage) return;
+    const newFile = croppedUri.startsWith('data:')
+      ? (dataURLtoFile(croppedUri, croppingImage.name || 'cropped.jpg') || croppingImage.file)
+      : croppingImage.file;
+
     setStagedFiles((prev) =>
       prev.map((item) =>
-        item.id === croppingImage.id ? { ...item, uri: croppedUri } : item
+        item.id === croppingImage.id
+          ? { ...item, uri: croppedUri, file: newFile }
+          : item
       )
     );
     setCroppingImage(null);
@@ -68,8 +93,12 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
     try {
       setAutoCropping(true);
       const cropped = await smartAutoCropImage(targetFile.uri);
+      const newFile = cropped.startsWith('data:')
+        ? (dataURLtoFile(cropped, targetFile.name || 'cropped.jpg') || targetFile.file)
+        : targetFile.file;
+
       setStagedFiles((prev) =>
-        prev.map((item) => (item.id === targetFile.id ? { ...item, uri: cropped } : item))
+        prev.map((item) => (item.id === targetFile.id ? { ...item, uri: cropped, file: newFile } : item))
       );
     } catch (e) {
       console.warn('Direct auto crop error', e);
