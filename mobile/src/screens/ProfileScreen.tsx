@@ -16,6 +16,8 @@ import {
 import { colors } from '../theme/colors';
 import { authService, User, DemoUser } from '../services/authService';
 import { profileService } from '../services/profileService';
+import { postService, Post } from '../services/postService';
+import { PostCard } from '../components/feed/PostCard';
 import { StudentProfileModal } from '../components/profile/StudentProfileModal';
 import { SocialListModal, SocialModalType } from '../components/profile/SocialListModal';
 
@@ -32,6 +34,8 @@ interface ProfileData {
   following_count?: number;
   connections_count?: number;
   posts_count?: number;
+  credibility_score?: number;
+  has_endorsed?: boolean;
   admission_number: string;
   college_name: string;
   college_short_name: string;
@@ -80,6 +84,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [isPrivateAccount, setIsPrivateAccount] = useState(false);
   const [messagingPreference, setMessagingPreference] = useState<'EVERYONE' | 'FOLLOWING' | 'CONNECTIONS_ONLY' | 'NOBODY'>('EVERYONE');
   const [updatingPrivacy, setUpdatingPrivacy] = useState(false);
+
+  // User's own posts state
+  const [userPosts, setUserPosts] = useState<Post[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(false);
 
   // Blind-Testing 100-User Audit State
   const [auditStudents, setAuditStudents] = useState<any[]>([]);
@@ -144,13 +152,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   const loadProfileAndDemoUsers = async () => {
     setLoading(true);
+    setLoadingPosts(true);
     try {
-      const [profileData, users] = await Promise.all([
+      const [profileData, users, postsData] = await Promise.all([
         profileService.getMyProfile().catch(() => null),
         authService.getDemoUsers().catch(() => []),
+        postService.getUserPosts(currentUser.id, 1).catch(() => ({ results: [], count: 0 })),
       ]);
       setProfile(profileData);
       setDemoUsers(users);
+      setUserPosts(postsData.results || []);
 
       if (profileData) {
         setEditUsername(profileData.username || '');
@@ -164,6 +175,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       console.log('Error loading profile data', e);
     } finally {
       setLoading(false);
+      setLoadingPosts(false);
     }
   };
 
@@ -359,16 +371,18 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {/* Top Header Card */}
       <View style={styles.heroCard}>
         <View style={styles.heroTopActions}>
-          <TouchableOpacity
-            style={styles.auditIconBtn}
-            onPress={() => {
-              setActiveSettingsSection('AUDIT');
-              setSettingsModalVisible(true);
-              loadAuditList();
-            }}
-          >
-            <Text style={styles.auditIconText}>🛡️ Audit (100)</Text>
-          </TouchableOpacity>
+          {(currentUser.is_staff || currentUser.is_superuser) && (
+            <TouchableOpacity
+              style={styles.auditIconBtn}
+              onPress={() => {
+                setActiveSettingsSection('AUDIT');
+                setSettingsModalVisible(true);
+                loadAuditList();
+              }}
+            >
+              <Text style={styles.auditIconText}>🛡️ Audit (100)</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.settingsIconBtn}
             onPress={() => setSettingsModalVisible(true)}
@@ -427,10 +441,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         ) : null}
 
-        {/* Social Stats Row (Instagram/LinkedIn Style) */}
+        {/* Social Stats Row: Posts | Followers | Following | Credibility */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>{profile?.posts_count ?? 0}</Text>
+            <Text style={styles.statNumber}>{profile?.posts_count ?? userPosts.length}</Text>
             <Text style={styles.statLabel}>Posts</Text>
           </View>
 
@@ -466,28 +480,22 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
           <View style={styles.statDivider} />
 
-          <TouchableOpacity
-            style={styles.statBox}
-            onPress={() => {
-              setSocialModalType('connections');
-              setSocialModalUserId(currentUser.id);
-              setSocialModalVisible(true);
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.statNumber}>{profile?.connections_count ?? 0}</Text>
-            <Text style={styles.statLabel}>Connections</Text>
-          </TouchableOpacity>
+          <View style={styles.statBox}>
+            <Text style={[styles.statNumber, { color: '#fbbf24' }]}>⭐ {profile?.credibility_score ?? 0}</Text>
+            <Text style={styles.statLabel}>Credibility</Text>
+          </View>
         </View>
 
-        {/* Quick Switch Button in Hero */}
-        <TouchableOpacity
-          style={styles.switchButton}
-          onPress={() => setSwitcherModalVisible(true)}
-        >
-          <Text style={styles.switchButtonIcon}>🔄</Text>
-          <Text style={styles.switchButtonText}>Switch Demo Account (12 Students)</Text>
-        </TouchableOpacity>
+        {/* Quick Switch Button in Hero - Dev or Staff Only */}
+        {(Boolean(__DEV__) || currentUser.is_staff || currentUser.is_superuser) && (
+          <TouchableOpacity
+            style={styles.switchButton}
+            onPress={() => setSwitcherModalVisible(true)}
+          >
+            <Text style={styles.switchButtonIcon}>🔄</Text>
+            <Text style={styles.switchButtonText}>Switch Demo Account (12 Students)</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Academic Identity Details */}
@@ -565,91 +573,164 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         </View>
       </View>
 
-      {/* Testing & Multi-User Switcher Section */}
+      {/* My Campus Posts Section */}
       <View style={styles.sectionCard}>
-        <View style={styles.switcherHeaderRow}>
-          <Text style={styles.sectionTitle}>👥 Multi-User Testing Bench</Text>
-          <Text style={styles.switcherCount}>{demoUsers.length} Students</Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>📝 My Campus Posts</Text>
+          <Text style={styles.sectionBadgeText}>{userPosts.length} published</Text>
         </View>
-        <Text style={styles.switcherDescription}>
-          Tap any student to instantly switch sessions and test multi-person group chats, direct messaging, posts, and audio/video calling.
-        </Text>
 
-        <View style={styles.demoGrid}>
-          {demoUsers.map((user) => {
-            const isCurrent = user.email.toLowerCase() === currentUser.email.toLowerCase();
-            const userInitial = user.full_name[0] || 'U';
-            return (
-              <TouchableOpacity
-                key={user.id}
-                style={[styles.demoCard, isCurrent && styles.demoCardActive]}
-                onPress={() => handleSwitchAccount(user.email)}
-                disabled={switchingUser !== null}
-              >
-                <View style={styles.demoAvatarCircle}>
-                  <Text style={styles.demoAvatarLetter}>{userInitial}</Text>
-                  {isCurrent && <View style={styles.activeCheck} />}
-                </View>
-                <View style={styles.demoInfoCol}>
-                  <View style={styles.demoNameRow}>
-                    <Text style={[styles.demoName, isCurrent && styles.demoNameActive]}>
-                      {user.full_name}
-                    </Text>
-                    {isCurrent && (
-                      <View style={styles.currentPill}>
-                        <Text style={styles.currentPillText}>YOU</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.demoMeta}>
-                    {user.course} {user.branch ? `• ${user.branch}` : ''}
-                  </Text>
-                  <Text style={styles.demoBio} numberOfLines={1}>
-                    {user.bio}
-                  </Text>
-                </View>
-
-                {/* Quick Call & View Profile Action Buttons for other users */}
-                {!isCurrent && (
-                  <View style={styles.demoCallActions}>
-                    <TouchableOpacity
-                      style={styles.quickCallBtn}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        setViewingStudentId(user.id);
-                      }}
-                    >
-                      <Text style={styles.quickCallIcon}>👤</Text>
-                    </TouchableOpacity>
-                    {onStartCall && (
-                      <>
-                        <TouchableOpacity
-                          style={styles.quickCallBtn}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            onStartCall(user.id, user.full_name, 'AUDIO');
-                          }}
-                        >
-                          <Text style={styles.quickCallIcon}>📞</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.quickCallBtn}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            onStartCall(user.id, user.full_name, 'VIDEO');
-                          }}
-                        >
-                          <Text style={styles.quickCallIcon}>📹</Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {loadingPosts ? (
+          <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 8 }}>Loading your posts...</Text>
+          </View>
+        ) : userPosts.length === 0 ? (
+          <View style={styles.emptyPostsBox}>
+            <Text style={{ fontSize: 24, marginBottom: 6 }}>📭</Text>
+            <Text style={styles.emptyPostsTitle}>No posts yet</Text>
+            <Text style={styles.emptyPostsSub}>
+              Share updates, class resources, or thoughts on the campus feed.
+            </Text>
+          </View>
+        ) : (
+          <View style={{ gap: 12, marginTop: 10 }}>
+            {userPosts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                currentUser={currentUser}
+                onLike={async (pid) => {
+                  try {
+                    const res = await postService.toggleLike(pid);
+                    setUserPosts((prev) =>
+                      prev.map((p) =>
+                        p.id === pid
+                          ? { ...p, has_liked: res.has_liked ?? res.liked, likes_count: res.likes_count }
+                          : p
+                      )
+                    );
+                  } catch (e) {
+                    console.log('Like error', e);
+                  }
+                }}
+                onCommentPress={() => {
+                  Alert.alert('Post Comments', 'Tap into the Campus Feed tab to view and reply to comments on this post.');
+                }}
+                onSharePress={(p) => {
+                  Alert.alert('Share', `Post by ${p.author_name} is published on Campus Connect.`);
+                }}
+                onDeletePost={async (pid) => {
+                  try {
+                    await postService.deletePost(pid);
+                    setUserPosts((prev) => prev.filter((p) => p.id !== pid));
+                    Alert.alert('Deleted', 'Post removed.');
+                  } catch {
+                    Alert.alert('Error', 'Could not delete post.');
+                  }
+                }}
+                onArchivePost={async (pid) => {
+                  try {
+                    await postService.archivePost(pid);
+                    setUserPosts((prev) => prev.filter((p) => p.id !== pid));
+                    Alert.alert('Archived', 'Post archived.');
+                  } catch {
+                    Alert.alert('Error', 'Could not archive post.');
+                  }
+                }}
+              />
+            ))}
+          </View>
+        )}
       </View>
+
+      {/* Testing & Multi-User Switcher Section - Dev/Staff Only */}
+      {(Boolean(__DEV__) || currentUser.is_staff || currentUser.is_superuser) && (
+        <View style={styles.sectionCard}>
+          <View style={styles.switcherHeaderRow}>
+            <Text style={styles.sectionTitle}>👥 Multi-User Testing Bench</Text>
+            <Text style={styles.switcherCount}>{demoUsers.length} Students</Text>
+          </View>
+          <Text style={styles.switcherDescription}>
+            Tap any student to instantly switch sessions and test multi-person group chats, direct messaging, posts, and audio/video calling.
+          </Text>
+
+          <View style={styles.demoGrid}>
+            {demoUsers.map((user) => {
+              const isCurrent = user.email.toLowerCase() === currentUser.email.toLowerCase();
+              const userInitial = user.full_name[0] || 'U';
+              return (
+                <TouchableOpacity
+                  key={user.id}
+                  style={[styles.demoCard, isCurrent && styles.demoCardActive]}
+                  onPress={() => handleSwitchAccount(user.email)}
+                  disabled={switchingUser !== null}
+                >
+                  <View style={styles.demoAvatarCircle}>
+                    <Text style={styles.demoAvatarLetter}>{userInitial}</Text>
+                    {isCurrent && <View style={styles.activeCheck} />}
+                  </View>
+                  <View style={styles.demoInfoCol}>
+                    <View style={styles.demoNameRow}>
+                      <Text style={[styles.demoName, isCurrent && styles.demoNameActive]}>
+                        {user.full_name}
+                      </Text>
+                      {isCurrent && (
+                        <View style={styles.currentPill}>
+                          <Text style={styles.currentPillText}>YOU</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.demoMeta}>
+                      {user.course} {user.branch ? `• ${user.branch}` : ''}
+                    </Text>
+                    <Text style={styles.demoBio} numberOfLines={1}>
+                      {user.bio}
+                    </Text>
+                  </View>
+
+                  {/* Quick Call & View Profile Action Buttons for other users */}
+                  {!isCurrent && (
+                    <View style={styles.demoCallActions}>
+                      <TouchableOpacity
+                        style={styles.quickCallBtn}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          setViewingStudentId(user.id);
+                        }}
+                      >
+                        <Text style={styles.quickCallIcon}>👤</Text>
+                      </TouchableOpacity>
+                      {onStartCall && (
+                        <>
+                          <TouchableOpacity
+                            style={styles.quickCallBtn}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              onStartCall(user.id, user.full_name, 'AUDIO');
+                            }}
+                          >
+                            <Text style={styles.quickCallIcon}>📞</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.quickCallBtn}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              onStartCall(user.id, user.full_name, 'VIDEO');
+                            }}
+                          >
+                            <Text style={styles.quickCallIcon}>📹</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
 
       {/* Logout Action */}
       <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
@@ -1587,6 +1668,34 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: 14,
     letterSpacing: 0.3,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  sectionBadgeText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  emptyPostsBox: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+  },
+  emptyPostsTitle: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  emptyPostsSub: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
+    maxWidth: 280,
   },
   infoRow: {
     flexDirection: 'row',

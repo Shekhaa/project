@@ -11,7 +11,8 @@ from django.contrib.auth import get_user_model
 from colleges.models import College, CollegeDomain, Course, Branch, AcademicYear, Section
 from communities.models import CommunityMember
 from notifications.views import create_notification
-from .models import StudentProfile, Connection, Follow, UserBlock
+from .models import StudentProfile, Connection, Follow, UserBlock, CredibilityEndorsement
+from posts.models import Post
 from .serializers import StudentProfileSerializer, ConnectionSerializer, FollowSerializer
 from .ocr_service import IDCardOCRService
 
@@ -687,9 +688,16 @@ class UserProfileDetailView(APIView):
         is_private = prof.is_private_account if prof else False
         can_view_content = is_self or (not is_private) or (follow_status == "FOLLOWING")
 
+        has_endorsed = CredibilityEndorsement.objects.filter(
+            endorser=request.user, recipient=target_user
+        ).exists() if request.user.is_authenticated else False
+
+        credibility_count = CredibilityEndorsement.objects.filter(recipient=target_user).count()
+        posts_count = Post.objects.filter(author=target_user, is_deleted=False).count()
+
         base_data = {
             "id": target_user.id,
-            "email": target_user.email if (can_view_content or is_self) else "",
+            "email": target_user.email if is_self else "",
             "full_name": target_user.full_name or (prof.username if prof else ""),
             "username": prof.username if prof else "",
             "avatar": prof.profile_picture.url if (prof and prof.profile_picture) else None,
@@ -713,18 +721,73 @@ class UserProfileDetailView(APIView):
                 Q(user1=target_user) | Q(user2=target_user),
                 status="ACCEPTED"
             ).count(),
+            "credibility_score": credibility_count,
+            "has_endorsed": has_endorsed,
+            "posts_count": posts_count,
         }
 
         if can_view_content:
             base_data["bio"] = prof.bio if prof else ""
-            base_data["admission_number"] = prof.admission_number if prof else ""
-            base_data["gender"] = prof.gender if prof else ""
+            base_data["admission_number"] = prof.admission_number if (prof and is_self) else ""
+            base_data["gender"] = prof.gender if (prof and is_self) else ""
         else:
             base_data["bio"] = "This account is private."
             base_data["admission_number"] = ""
             base_data["gender"] = ""
 
         return Response(base_data)
+
+
+class EndorseStudentView(APIView):
+    """
+    POST /api/profile/<user_id>/endorse/
+    Allows a verified student to endorse another student's profile (Credibility upvote).
+    Toggles endorsement:
+    - If already endorsed: removes endorsement (decrementing count).
+    - If not endorsed: creates endorsement (incrementing count) and notifies recipient.
+    Enforces:
+    - No self-endorsement.
+    - Cannot endorse if blocked.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        if int(user_id) == request.user.id:
+            return Response({"error": "You cannot endorse your own credibility."}, status=status.HTTP_400_BAD_REQUEST)
+
+        target_user = get_object_or_404(User, id=user_id)
+
+        if UserBlock.is_blocked(request.user, target_user):
+            return Response({"error": "Cannot endorse this user."}, status=status.HTTP_403_FORBIDDEN)
+
+        existing = CredibilityEndorsement.objects.filter(endorser=request.user, recipient=target_user).first()
+        if existing:
+            existing.delete()
+            new_count = CredibilityEndorsement.objects.filter(recipient=target_user).count()
+            return Response({
+                "endorsed": False,
+                "credibility_score": new_count,
+                "message": f"Removed credibility endorsement for {target_user.full_name or target_user.username}."
+            }, status=status.HTTP_200_OK)
+
+        CredibilityEndorsement.objects.create(endorser=request.user, recipient=target_user)
+        new_count = CredibilityEndorsement.objects.filter(recipient=target_user).count()
+
+        sender_name = request.user.full_name or (request.user.profile.username if hasattr(request.user, "profile") else "A student")
+        create_notification(
+            recipient=target_user,
+            sender=request.user,
+            notification_type="CREDIBILITY_ENDORSEMENT",
+            title="Credibility Endorsement ⭐",
+            message=f"{sender_name} endorsed your campus credibility (+1)!",
+            data={"user_id": request.user.id}
+        )
+
+        return Response({
+            "endorsed": True,
+            "credibility_score": new_count,
+            "message": f"You endorsed {target_user.full_name or target_user.username}!"
+        }, status=status.HTTP_201_CREATED)
 
 
 class UpdatePrivacySettingsView(APIView):

@@ -18,6 +18,8 @@ class Notification(models.Model):
         ('FOLLOW_ACCEPTED', 'Accepted your follow request'),
         ('MESSAGE_REQUEST', 'Sent you a message request'),
         ('MESSAGE_REQUEST_ACCEPTED', 'Accepted your message request'),
+        ('CREDIBILITY_ENDORSEMENT', 'Endorsed your campus credibility'),
+        ('MENTION', 'Mentioned you in a conversation'),
     )
 
     recipient = models.ForeignKey(

@@ -60,31 +60,35 @@ class FeedView(generics.ListAPIView):
         scope_param = self.request.query_params.get("scope", "").upper()
         community_param = self.request.query_params.get("community")
 
+        # Base permitted visibility filter for current user
+        college_q = Q(visibility="COLLEGE", author__profile__college=user_college) if user_college else Q(visibility="COLLEGE")
+        base_permitted = (
+            Q(author=user) |
+            Q(visibility="GLOBAL") |
+            college_q |
+            Q(visibility="FOLLOWERS", author_id__in=followed_ids) |
+            Q(community_id__in=user_community_ids)
+        )
+
         if community_param:
-            qs_filter = Q(community_id=community_param)
+            qs_filter = Q(community_id=community_param) & base_permitted
         elif scope_param == "GLOBAL":
             qs_filter = Q(visibility="GLOBAL")
         elif scope_param == "COLLEGE":
-            if user_college:
-                qs_filter = Q(visibility="COLLEGE", author__profile__college=user_college)
-            else:
-                qs_filter = Q(visibility="COLLEGE")
-        elif scope_param == "FOLLOWERS":
+            qs_filter = college_q
+        elif scope_param in ["FOLLOWERS", "FOLLOWING", "CONNECTIONS"]:
             qs_filter = Q(visibility="FOLLOWERS", author_id__in=followed_ids) | Q(visibility="FOLLOWERS", author=user)
-        elif scope_param == "CONNECTIONS":
-            qs_filter = Q(visibility="CONNECTIONS", author_id__in=connected_ids) | Q(visibility="CONNECTIONS", author=user)
+        elif scope_param == "MEDIA":
+            media_q = Q(media_type__in=["IMAGE", "VIDEO"]) | Q(images__isnull=False) | Q(attachments__file_type="IMAGE")
+            qs_filter = base_permitted & media_q
+        elif scope_param == "RESOURCES":
+            resource_q = Q(media_type="DOCUMENT") | Q(document__isnull=False) | Q(attachments__file_type="DOCUMENT")
+            qs_filter = base_permitted & resource_q
         elif scope_param == "COMMUNITY":
             qs_filter = Q(visibility="COMMUNITY", community_id__in=user_community_ids)
         else:
-            college_q = Q(visibility="COLLEGE", author__profile__college=user_college) if user_college else Q(visibility="COLLEGE")
-            qs_filter = (
-                Q(author=user) |
-                Q(visibility="GLOBAL") |
-                college_q |
-                Q(visibility="FOLLOWERS", author_id__in=followed_ids) |
-                Q(visibility="CONNECTIONS", author_id__in=connected_ids) |
-                Q(community_id__in=user_community_ids)
-            )
+            # Default: Unified Global Timeline mixing all colleges + enrolled communities + followed peers
+            qs_filter = base_permitted
 
         qs = (
             Post.objects.filter(
@@ -471,3 +475,60 @@ class ArchivePostView(APIView):
         post.is_deleted = True
         post.save(update_fields=["is_deleted"])
         return Response({"message": "Post archived successfully.", "id": post_id, "archived": True})
+
+
+class UserPostsView(generics.ListAPIView):
+    """
+    GET /api/posts/user/<int:user_id>/
+    Fetches posts authored by a specific user with full privacy checks:
+    - If user_id == request.user.id: returns all own posts (including ONLY_ME).
+    - If user_id != request.user.id:
+        - Excludes if blocked.
+        - If target has a private account, requires approved follower status.
+        - Excludes ONLY_ME.
+        - If viewer is an approved follower: allows FOLLOWERS, GLOBAL, COLLEGE (if same college).
+        - If viewer is not a follower: allows only GLOBAL and COLLEGE (if same college).
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = PostSerializer
+    pagination_class = FeedPagination
+
+    def get_queryset(self):
+        target_user_id = self.kwargs.get("user_id")
+        target_user = get_object_or_404(User, id=target_user_id)
+        viewer = self.request.user
+        is_self = (viewer.id == target_user.id)
+
+        if not is_self and UserBlock.is_blocked(viewer, target_user):
+            return Post.objects.none()
+
+        target_prof = getattr(target_user, "profile", None)
+        is_private = target_prof.is_private_account if target_prof else False
+        is_follower = Follow.is_following(viewer, target_user)
+
+        if not is_self and is_private and not is_follower:
+            return Post.objects.none()
+
+        qs = Post.objects.filter(author=target_user, is_deleted=False)
+
+        if not is_self:
+            qs = qs.exclude(visibility="ONLY_ME")
+            viewer_college = getattr(getattr(viewer, "profile", None), "college", None)
+            target_college = getattr(target_prof, "college", None)
+            same_college = (viewer_college and target_college and viewer_college.id == target_college.id)
+
+            if not is_follower:
+                qs = qs.exclude(visibility="FOLLOWERS")
+
+            if not same_college:
+                qs = qs.exclude(visibility="COLLEGE")
+
+        return (
+            qs.select_related("author", "author__profile", "community")
+            .prefetch_related("images", "attachments", "comments")
+            .annotate(
+                likes_count=Count("likes", distinct=True),
+                comments_count=Count("comments", distinct=True)
+            )
+            .order_by("-created_at")
+        )

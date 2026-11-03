@@ -9,6 +9,8 @@ export interface User {
   profile_completed: boolean;
   verification_tier?: 'FULLY_VERIFIED' | 'SEMI_VERIFIED' | 'UNVERIFIED';
   badge_label?: string;
+  is_staff?: boolean;
+  is_superuser?: boolean;
 }
 
 export interface DemoUser {

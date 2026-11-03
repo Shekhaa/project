@@ -134,3 +134,61 @@ class SocialGraphAndPrivacyTests(TestCase):
         res = self.client_c.get(f"/api/posts/{post_followers.id}/")
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.data["content"], "Secret study notes for my followers")
+
+    def test_credibility_endorsement_flow(self):
+        # Alice endorses Bob
+        res = self.client_a.post(f"/api/profile/{self.user_b.id}/endorse/")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(res.data["endorsed"])
+        self.assertEqual(res.data["credibility_score"], 1)
+
+        # Alice toggles endorsement (removes it)
+        res = self.client_a.post(f"/api/profile/{self.user_b.id}/endorse/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(res.data["endorsed"])
+        self.assertEqual(res.data["credibility_score"], 0)
+
+        # Self endorsement is prevented
+        res = self.client_a.post(f"/api/profile/{self.user_a.id}/endorse/")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Blocked user cannot endorse
+        UserBlock.objects.create(blocker=self.user_b, blocked=self.user_a)
+        res = self.client_a.post(f"/api/profile/{self.user_b.id}/endorse/")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_user_posts_view_and_privacy(self):
+        # Alice creates a GLOBAL post and an ONLY_ME post
+        post_public = Post.objects.create(
+            author=self.user_a, content="Public campus tip", visibility="GLOBAL"
+        )
+        post_private = Post.objects.create(
+            author=self.user_a, content="Personal private note", visibility="ONLY_ME"
+        )
+
+        # Alice views her own posts: both are returned
+        res = self.client_a.get(f"/api/posts/user/{self.user_a.id}/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        post_ids = [p["id"] for p in res.data["results"]]
+        self.assertIn(post_public.id, post_ids)
+        self.assertIn(post_private.id, post_ids)
+
+        # Charlie views Alice's posts: ONLY_ME is excluded
+        res = self.client_c.get(f"/api/posts/user/{self.user_a.id}/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        charlie_seen_ids = [p["id"] for p in res.data["results"]]
+        self.assertIn(post_public.id, charlie_seen_ids)
+        self.assertNotIn(post_private.id, charlie_seen_ids)
+
+    def test_profile_detail_sensitive_data_protection(self):
+        # Charlie views Alice's profile: email and admission_number MUST be empty
+        res = self.client_c.get(f"/api/profile/{self.user_a.id}/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data.get("email"), "")
+        self.assertEqual(res.data.get("admission_number"), "")
+
+        # Alice views her own profile: email and admission_number are present
+        res = self.client_a.get(f"/api/profile/{self.user_a.id}/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data.get("email"), self.user_a.email)
+        self.assertEqual(res.data.get("admission_number"), self.prof_a.admission_number)

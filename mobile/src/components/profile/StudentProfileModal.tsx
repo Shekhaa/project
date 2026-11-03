@@ -27,6 +27,7 @@ import {
   Calendar,
   Users,
   AlertTriangle,
+  Sparkles,
 } from 'lucide-react-native';
 
 interface StudentProfileModalProps {
@@ -34,7 +35,7 @@ interface StudentProfileModalProps {
   userId: number | null;
   onClose: () => void;
   onOpenChat?: (conversation: any) => void;
-  onOpenSocialList?: (type: 'followers' | 'following' | 'connections', targetUserId: number) => void;
+  onOpenSocialList?: (type: 'followers' | 'following', targetUserId: number) => void;
 }
 
 export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
@@ -131,6 +132,29 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
       await loadProfile(profile.id);
     } catch (e: any) {
       Alert.alert('Action Failed', e.response?.data?.error || 'Could not update follow status.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Endorse Handler (+1 Credibility toggle)
+  const handleEndorseAction = async () => {
+    if (!profile) return;
+    try {
+      setActionLoading(true);
+      const res = await profileService.endorseStudent(profile.id);
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              has_endorsed: res.endorsed,
+              credibility_score: res.credibility_score,
+            }
+          : null
+      );
+      Alert.alert(res.endorsed ? 'Endorsed ⭐' : 'Endorsement Removed', res.message);
+    } catch (e: any) {
+      Alert.alert('Action Failed', e.response?.data?.error || 'Could not update endorsement.');
     } finally {
       setActionLoading(false);
     }
@@ -265,8 +289,15 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                   <Text style={styles.bioText}>{profile.bio}</Text>
                 ) : null}
 
-                {/* Stats Row */}
+                {/* Stats Row: Posts | Followers | Following | Credibility */}
                 <View style={styles.statsRow}>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statNumber}>{profile.posts_count ?? 0}</Text>
+                    <Text style={styles.statLabel}>Posts</Text>
+                  </View>
+
+                  <View style={styles.statDivider} />
+
                   <TouchableOpacity
                     style={styles.statBox}
                     onPress={() => onOpenSocialList && onOpenSocialList('followers', profile.id)}
@@ -289,14 +320,10 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
 
                   <View style={styles.statDivider} />
 
-                  <TouchableOpacity
-                    style={styles.statBox}
-                    onPress={() => onOpenSocialList && onOpenSocialList('connections', profile.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.statNumber}>{profile.connections_count ?? 0}</Text>
-                    <Text style={styles.statLabel}>Connections</Text>
-                  </TouchableOpacity>
+                  <View style={styles.statBox}>
+                    <Text style={[styles.statNumber, { color: '#fbbf24' }]}>⭐ {profile.credibility_score ?? 0}</Text>
+                    <Text style={styles.statLabel}>Credibility</Text>
+                  </View>
                 </View>
               </View>
 
@@ -335,42 +362,21 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                       )}
                     </TouchableOpacity>
 
-                    {/* Connect Action */}
+                    {/* Credibility Endorsement Action */}
                     <TouchableOpacity
                       style={[
                         styles.actionBtn,
-                        profile.connection_status === 'CONNECTED'
-                          ? styles.actionBtnConnected
-                          : profile.connection_status === 'REQUEST_SENT'
-                          ? styles.actionBtnMuted
-                          : profile.connection_status === 'REQUEST_RECEIVED'
-                          ? styles.actionBtnAccent
+                        profile.has_endorsed
+                          ? styles.actionBtnEndorsed
                           : styles.actionBtnSecondary,
                       ]}
-                      onPress={handleConnectionAction}
+                      onPress={handleEndorseAction}
                       disabled={actionLoading}
                     >
-                      {profile.connection_status === 'CONNECTED' ? (
-                        <>
-                          <Users size={16} color="#10b981" />
-                          <Text style={styles.actionBtnConnectedText}>Connected</Text>
-                        </>
-                      ) : profile.connection_status === 'REQUEST_SENT' ? (
-                        <>
-                          <Users size={16} color={colors.textSecondary} />
-                          <Text style={styles.actionBtnMutedText}>Pending ⏳</Text>
-                        </>
-                      ) : profile.connection_status === 'REQUEST_RECEIVED' ? (
-                        <>
-                          <Users size={16} color="#fff" />
-                          <Text style={styles.actionBtnAccentText}>Accept Connect</Text>
-                        </>
-                      ) : (
-                        <>
-                          <Users size={16} color="#38bdf8" />
-                          <Text style={styles.actionBtnSecondaryText}>Connect</Text>
-                        </>
-                      )}
+                      <Sparkles size={16} color={profile.has_endorsed ? '#fbbf24' : '#38bdf8'} />
+                      <Text style={profile.has_endorsed ? styles.actionBtnEndorsedText : styles.actionBtnSecondaryText}>
+                        {profile.has_endorsed ? '⭐ Endorsed' : '⭐ Endorse'}
+                      </Text>
                     </TouchableOpacity>
 
                     {/* Direct Message Action */}
@@ -688,6 +694,16 @@ const styles = StyleSheet.create({
   },
   actionBtnSecondaryText: {
     color: '#38bdf8',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  actionBtnEndorsed: {
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    borderWidth: 1,
+    borderColor: '#fbbf24',
+  },
+  actionBtnEndorsedText: {
+    color: '#fbbf24',
     fontSize: 13,
     fontWeight: '700',
   },

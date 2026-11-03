@@ -14,6 +14,9 @@ class StudentProfileSerializer(serializers.ModelSerializer):
     followers_count = serializers.SerializerMethodField()
     following_count = serializers.SerializerMethodField()
     connections_count = serializers.SerializerMethodField()
+    credibility_score = serializers.SerializerMethodField()
+    has_endorsed = serializers.SerializerMethodField()
+    posts_count = serializers.SerializerMethodField()
 
     class Meta:
         model = StudentProfile
@@ -29,6 +32,9 @@ class StudentProfileSerializer(serializers.ModelSerializer):
             "followers_count",
             "following_count",
             "connections_count",
+            "credibility_score",
+            "has_endorsed",
+            "posts_count",
             "admission_number",
             "college",
             "college_name",
@@ -125,6 +131,21 @@ class StudentProfileSerializer(serializers.ModelSerializer):
             Q(user1=obj.user) | Q(user2=obj.user),
             status="ACCEPTED"
         ).count()
+
+    def get_credibility_score(self, obj):
+        from .models import CredibilityEndorsement
+        return CredibilityEndorsement.objects.filter(recipient=obj.user).count()
+
+    def get_has_endorsed(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return False
+        from .models import CredibilityEndorsement
+        return CredibilityEndorsement.objects.filter(endorser=request.user, recipient=obj.user).exists()
+
+    def get_posts_count(self, obj):
+        from posts.models import Post
+        return Post.objects.filter(author=obj.user, is_deleted=False).count()
 
     def update(self, instance, validated_data):
         # Lock academic identity fields once completed

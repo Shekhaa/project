@@ -10,6 +10,7 @@ import {
   ScrollView,
   Alert,
   Platform,
+  Modal,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { postService, Post } from '../services/postService';
@@ -21,7 +22,7 @@ import { ShareModal } from '../components/feed/ShareModal';
 import { NotificationsModal } from '../components/notifications/NotificationsModal';
 import { notificationService, NotificationItem } from '../services/notificationService';
 import { api } from '../config/api';
-import { Plus, Bell, RefreshCw, Sparkles } from 'lucide-react-native';
+import { Plus, Bell, RefreshCw, Sparkles, SlidersHorizontal, Check, X } from 'lucide-react-native';
 
 interface FeedScreenProps {
   currentUser?: any;
@@ -37,7 +38,9 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const [posts, setPosts] = useState<Post[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [selectedCommunityId, setSelectedCommunityId] = useState<number | undefined>(undefined);
-  const [selectedScope, setSelectedScope] = useState<'ALL' | 'GLOBAL' | 'COLLEGE' | 'FOLLOWERS' | 'CONNECTIONS' | undefined>('ALL');
+  const [selectedScope, setSelectedScope] = useState<'ALL' | 'GLOBAL' | 'COLLEGE' | 'FOLLOWING' | 'MEDIA' | 'RESOURCES' | undefined>('ALL');
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -118,6 +121,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       setPage(1);
       const feedQuery = selectedCommunityId
         ? { communityId: selectedCommunityId }
@@ -132,8 +136,10 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       setPosts(feedData.results || []);
       setHasMore(Boolean(feedData.next));
       setCommunities(commsData || []);
-    } catch (e) {
+    } catch (e: any) {
       console.log('Error loading feed data', e);
+      const msg = e?.response?.data?.detail || e?.response?.data?.error || e?.message || 'Could not sync campus feed. Please check your connection.';
+      setError(msg);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -223,6 +229,29 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     }
   };
 
+  const isFiltered = (selectedScope && selectedScope !== 'ALL') || selectedCommunityId !== undefined;
+
+  const getActiveFilterLabel = () => {
+    if (selectedCommunityId) {
+      const comm = communities.find((c) => c.id === selectedCommunityId);
+      return comm ? `👥 ${comm.name}` : 'Hub Community';
+    }
+    switch (selectedScope) {
+      case 'COLLEGE':
+        return '🏛️ My College';
+      case 'FOLLOWING':
+        return '👤 Following';
+      case 'MEDIA':
+        return '🖼️ Photos & Media';
+      case 'RESOURCES':
+        return '📄 Study Resources';
+      case 'GLOBAL':
+        return '🌐 Global Campus';
+      default:
+        return '';
+    }
+  };
+
   const renderHeader = () => (
     <View style={styles.headerArea}>
       {/* Top Navbar */}
@@ -236,6 +265,15 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         </View>
 
         <View style={styles.navActions}>
+          <TouchableOpacity
+            style={[styles.iconBtn, isFiltered && styles.iconBtnActive]}
+            onPress={() => setFilterModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <SlidersHorizontal size={18} color={isFiltered ? colors.primary : colors.textPrimary} />
+            {isFiltered && <View style={styles.filterDot} />}
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.iconBtn}
             onPress={() => setNotificationsVisible(true)}
@@ -262,144 +300,24 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         </View>
       </View>
 
-      {/* Scope & Community Filters */}
-      <View style={styles.filterSection}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterScroll}
-        >
-          {/* All Combined Feed */}
+      {/* Active Filter Pill Bar if filtered */}
+      {isFiltered && (
+        <View style={styles.activeFilterBar}>
+          <Text style={styles.activeFilterText}>
+            Feed: <Text style={styles.activeFilterHighlight}>{getActiveFilterLabel()}</Text>
+          </Text>
           <TouchableOpacity
-            style={[
-              styles.filterPill,
-              selectedScope === 'ALL' && selectedCommunityId === undefined && styles.filterPillActive,
-            ]}
+            style={styles.clearFilterBtn}
             onPress={() => {
               setSelectedScope('ALL');
               setSelectedCommunityId(undefined);
             }}
           >
-            <Text
-              style={[
-                styles.filterPillText,
-                selectedScope === 'ALL' && selectedCommunityId === undefined && styles.filterPillTextActive,
-              ]}
-            >
-              🌟 All Feed
-            </Text>
+            <Text style={styles.clearFilterText}>Reset to Global</Text>
+            <X size={14} color="#38bdf8" />
           </TouchableOpacity>
-
-          {/* Global All Campuses */}
-          <TouchableOpacity
-            style={[
-              styles.filterPill,
-              selectedScope === 'GLOBAL' && styles.filterPillActive,
-            ]}
-            onPress={() => {
-              setSelectedScope('GLOBAL');
-              setSelectedCommunityId(undefined);
-            }}
-          >
-            <Text
-              style={[
-                styles.filterPillText,
-                selectedScope === 'GLOBAL' && styles.filterPillTextActive,
-              ]}
-            >
-              🌐 Global
-            </Text>
-          </TouchableOpacity>
-
-          {/* My College Only */}
-          <TouchableOpacity
-            style={[
-              styles.filterPill,
-              selectedScope === 'COLLEGE' && styles.filterPillActive,
-            ]}
-            onPress={() => {
-              setSelectedScope('COLLEGE');
-              setSelectedCommunityId(undefined);
-            }}
-          >
-            <Text
-              style={[
-                styles.filterPillText,
-                selectedScope === 'COLLEGE' && styles.filterPillTextActive,
-              ]}
-            >
-              🏛️ My College
-            </Text>
-          </TouchableOpacity>
-
-          {/* Followers Feed */}
-          <TouchableOpacity
-            style={[
-              styles.filterPill,
-              selectedScope === 'FOLLOWERS' && styles.filterPillActive,
-            ]}
-            onPress={() => {
-              setSelectedScope('FOLLOWERS');
-              setSelectedCommunityId(undefined);
-            }}
-          >
-            <Text
-              style={[
-                styles.filterPillText,
-                selectedScope === 'FOLLOWERS' && styles.filterPillTextActive,
-              ]}
-            >
-              👤 Following
-            </Text>
-          </TouchableOpacity>
-
-          {/* Connections Feed */}
-          <TouchableOpacity
-            style={[
-              styles.filterPill,
-              selectedScope === 'CONNECTIONS' && styles.filterPillActive,
-            ]}
-            onPress={() => {
-              setSelectedScope('CONNECTIONS');
-              setSelectedCommunityId(undefined);
-            }}
-          >
-            <Text
-              style={[
-                styles.filterPillText,
-                selectedScope === 'CONNECTIONS' && styles.filterPillTextActive,
-              ]}
-            >
-              🤝 Connections
-            </Text>
-          </TouchableOpacity>
-
-          {/* Individual Enrolled Communities */}
-          {communities.map((c) => {
-            const isSelected = selectedCommunityId === c.id;
-            return (
-              <TouchableOpacity
-                key={c.id}
-                style={[styles.filterPill, isSelected && styles.filterPillActive]}
-                onPress={() => {
-                  setSelectedCommunityId(c.id);
-                  setSelectedScope(undefined);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    isSelected && styles.filterPillTextActive,
-                  ]}
-                >
-                  {c.community_type === 'COLLEGE' ? '🎓 ' : c.community_type === 'COURSE' ? '📚 ' : '👥 '}
-                  {c.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
+        </View>
+      )}
     </View>
   );
 
@@ -451,6 +369,18 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Syncing campus updates...</Text>
         </View>
+      ) : error && posts.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={{ fontSize: 36, marginBottom: 8 }}>⚠️</Text>
+          <Text style={styles.emptyTitle}>Could not load campus updates</Text>
+          <Text style={styles.emptySub}>{error}</Text>
+          <TouchableOpacity
+            style={styles.emptyCta}
+            onPress={loadData}
+          >
+            <Text style={styles.emptyCtaText}>🔄 Retry Sync</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <FlatList
           data={posts}
@@ -485,6 +415,110 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           }
         />
       )}
+
+      {/* Clean Feed Filter Modal */}
+      <Modal
+        visible={filterModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFilterModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.filterModalOverlay}
+          activeOpacity={1}
+          onPress={() => setFilterModalVisible(false)}
+        >
+          <View style={styles.filterModalCard} onStartShouldSetResponder={() => true}>
+            <View style={styles.filterModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <SlidersHorizontal size={18} color={colors.primary} />
+                <Text style={styles.filterModalTitle}>Campus Feed Scope</Text>
+              </View>
+              <TouchableOpacity onPress={() => setFilterModalVisible(false)} style={styles.closeBtn}>
+                <X size={20} color="#94a3b8" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+              <Text style={styles.filterGroupTitle}>FEED VIEW</Text>
+
+              {[
+                { key: 'ALL', label: 'Global Campus Feed (Default)', desc: 'Cross-college feed with privacy safeguards', icon: '🌐' },
+                { key: 'COLLEGE', label: 'My College Only', desc: 'Updates & questions from your campus', icon: '🏛️' },
+                { key: 'FOLLOWING', label: 'Following Students', desc: 'Posts from creators and peers you follow', icon: '👤' },
+                { key: 'MEDIA', label: 'Photos & Campus Gallery', desc: 'Photos, events & campus lifestyle', icon: '🖼️' },
+                { key: 'RESOURCES', label: 'Study Resources & Notes', desc: 'PDFs, notes, documents & syllabus', icon: '📄' },
+              ].map((opt) => {
+                const isActive = selectedCommunityId === undefined && (selectedScope === opt.key || (opt.key === 'ALL' && selectedScope === 'ALL'));
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[styles.filterOptionRow, isActive && styles.filterOptionRowActive]}
+                    onPress={() => {
+                      setSelectedScope(opt.key as any);
+                      setSelectedCommunityId(undefined);
+                      setFilterModalVisible(false);
+                    }}
+                  >
+                    <Text style={{ fontSize: 20 }}>{opt.icon}</Text>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={[styles.filterOptionLabel, isActive && styles.filterOptionLabelActive]}>
+                        {opt.label}
+                      </Text>
+                      <Text style={styles.filterOptionDesc}>{opt.desc}</Text>
+                    </View>
+                    {isActive && <Check size={18} color={colors.primary} />}
+                  </TouchableOpacity>
+                );
+              })}
+
+              {communities.length > 0 && (
+                <>
+                  <Text style={[styles.filterGroupTitle, { marginTop: 16 }]}>FILTER BY HUB COMMUNITY</Text>
+                  {communities.map((comm) => {
+                    const isActive = selectedCommunityId === comm.id;
+                    return (
+                      <TouchableOpacity
+                        key={comm.id}
+                        style={[styles.filterOptionRow, isActive && styles.filterOptionRowActive]}
+                        onPress={() => {
+                          setSelectedCommunityId(comm.id);
+                          setSelectedScope(undefined);
+                          setFilterModalVisible(false);
+                        }}
+                      >
+                        <Text style={{ fontSize: 18 }}>
+                          {comm.community_type === 'COLLEGE' ? '🎓' : comm.community_type === 'COURSE' ? '📚' : '👥'}
+                        </Text>
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={[styles.filterOptionLabel, isActive && styles.filterOptionLabelActive]} numberOfLines={1}>
+                            {comm.name}
+                          </Text>
+                          <Text style={styles.filterOptionDesc}>
+                            {comm.community_type === 'COLLEGE' ? 'College Hub' : comm.community_type === 'COURSE' ? 'Course Hub' : 'Custom Community'}
+                          </Text>
+                        </View>
+                        {isActive && <Check size={18} color={colors.primary} />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.resetFilterBtn}
+              onPress={() => {
+                setSelectedScope('ALL');
+                setSelectedCommunityId(undefined);
+                setFilterModalVisible(false);
+              }}
+            >
+              <Text style={styles.resetFilterBtnText}>Reset to Global Campus Feed</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Dedicated Post Composer & Photo Editor / PDF Modal */}
       <PostComposerModal
@@ -581,6 +615,136 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
   },
+  iconBtnActive: {
+    backgroundColor: '#1e3a8a',
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  filterDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: colors.primary,
+  },
+  activeFilterBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#0f172a',
+    borderTopWidth: 1,
+    borderTopColor: '#1e293b',
+  },
+  activeFilterText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  activeFilterHighlight: {
+    color: '#38bdf8',
+    fontWeight: '700',
+  },
+  clearFilterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#1e293b',
+  },
+  clearFilterText: {
+    color: '#38bdf8',
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  filterModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  filterModalCard: {
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  filterModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.cardBorder,
+  },
+  filterModalTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  filterGroupTitle: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  filterOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 6,
+    backgroundColor: colors.surfaceLight,
+  },
+  filterOptionRowActive: {
+    backgroundColor: '#1e3a8a',
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  filterOptionLabel: {
+    color: colors.textPrimary,
+    fontSize: 13.5,
+    fontWeight: '600',
+  },
+  filterOptionLabelActive: {
+    color: '#93c5fd',
+    fontWeight: '700',
+  },
+  filterOptionDesc: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  resetFilterBtn: {
+    marginTop: 14,
+    backgroundColor: '#1e293b',
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  resetFilterBtnText: {
+    color: '#94a3b8',
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   bellBadge: {
     position: 'absolute',
     top: -3,
@@ -613,34 +777,6 @@ const styles = StyleSheet.create({
   createPostBtnText: {
     color: '#fff',
     fontSize: 13,
-    fontWeight: '700',
-  },
-  filterSection: {
-    paddingVertical: 10,
-  },
-  filterScroll: {
-    paddingHorizontal: 14,
-    gap: 8,
-  },
-  filterPill: {
-    backgroundColor: colors.surfaceLight,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-  },
-  filterPillActive: {
-    backgroundColor: '#1e3a8a',
-    borderColor: colors.primary,
-  },
-  filterPillText: {
-    color: colors.textSecondary,
-    fontSize: 12.5,
-    fontWeight: '600',
-  },
-  filterPillTextActive: {
-    color: '#93c5fd',
     fontWeight: '700',
   },
   loadingBox: {

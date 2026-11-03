@@ -8,12 +8,14 @@ from .views import (
     PostCommentsView,
     DeletePostView,
     ArchivePostView,
+    UserPostsView,
 )
 
 urlpatterns = [
     path("", FeedView.as_view(), name="post-list"),
     path("feed/", FeedView.as_view(), name="post-feed"),
     path("create/", CreatePostView.as_view(), name="post-create"),
+    path("user/<int:user_id>/", UserPostsView.as_view(), name="user-posts"),
     path("<int:pk>/", PostDetailView.as_view(), name="post-detail"),
     path("<int:post_id>/like/", ToggleLikeView.as_view(), name="post-toggle-like"),
     path("<int:post_id>/comments/", PostCommentsView.as_view(), name="post-comments"),

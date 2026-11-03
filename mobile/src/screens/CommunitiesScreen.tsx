@@ -13,6 +13,7 @@ import {
   Platform,
   ScrollView,
   Share,
+  Image,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import {
@@ -166,7 +167,6 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
     if (!activeCommunity) {
       setActiveConv(null);
       setMessages([]);
-      setDiscussions([]);
       return;
     }
 

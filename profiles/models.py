@@ -83,6 +83,10 @@ class StudentProfile(models.Model):
             models.Index(fields=["admission_number"], name="profile_admission_idx"),
         ]
 
+    @property
+    def credibility_score(self):
+        return CredibilityEndorsement.objects.filter(recipient=self.user).count()
+
     def __str__(self):
         return f"@{self.username} ({self.college.short_name} - {self.course.name})"
 
@@ -256,4 +260,35 @@ class UserBlock(models.Model):
         return cls.objects.filter(
             models.Q(blocker=u1, blocked=u2) | models.Q(blocker=u2, blocked=u1)
         ).exists()
+
+
+class CredibilityEndorsement(models.Model):
+    """
+    Student-to-student lightweight credibility endorsement / upvote.
+    A verified student can endorse another student (Snapchat-style simplicity).
+    One user can provide only one active endorsement to another.
+    """
+    endorser = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="given_endorsements"
+    )
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="received_endorsements"
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["endorser", "recipient"], name="unique_credibility_endorsement"),
+        ]
+        indexes = [
+            models.Index(fields=["recipient", "-created_at"], name="cred_recipient_idx"),
+            models.Index(fields=["endorser", "-created_at"], name="cred_endorser_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.endorser.email} endorsed {self.recipient.email} ({self.created_at:%Y-%m-%d})"
 

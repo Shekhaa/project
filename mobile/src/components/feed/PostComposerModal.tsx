@@ -32,7 +32,6 @@ import {
   Users,
   Search,
   UserCheck,
-  HeartHandshake,
   Lock,
 } from 'lucide-react-native';
 
@@ -41,7 +40,7 @@ interface CommunityOption {
   name: string;
 }
 
-export type PostScope = 'GLOBAL' | 'COLLEGE' | 'FOLLOWERS' | 'CONNECTIONS' | 'COMMUNITY' | 'ONLY_ME';
+export type PostScope = 'GLOBAL' | 'COLLEGE' | 'FOLLOWERS' | 'COMMUNITY' | 'ONLY_ME';
 
 interface PostComposerModalProps {
   visible: boolean;
@@ -453,17 +452,6 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                 <UserCheck size={14} color={postScope === 'FOLLOWERS' ? '#38bdf8' : '#94a3b8'} />
                 <Text style={[styles.scopePillText, postScope === 'FOLLOWERS' && styles.scopePillTextActive]}>
                   Followers Only
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.scopePill, postScope === 'CONNECTIONS' && styles.scopePillActive]}
-                onPress={() => setPostScope('CONNECTIONS')}
-                activeOpacity={0.8}
-              >
-                <HeartHandshake size={14} color={postScope === 'CONNECTIONS' ? '#38bdf8' : '#94a3b8'} />
-                <Text style={[styles.scopePillText, postScope === 'CONNECTIONS' && styles.scopePillTextActive]}>
-                  Connections Only
                 </Text>
               </TouchableOpacity>
 

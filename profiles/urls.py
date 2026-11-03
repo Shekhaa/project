@@ -17,6 +17,7 @@ from .views import (
     ListFollowersView,
     ListFollowingView,
     UserProfileDetailView,
+    EndorseStudentView,
     UpdatePrivacySettingsView,
     BlockUserView,
     UnblockUserView,
@@ -46,6 +47,7 @@ urlpatterns = [
 
     # Profile Privacy & Details
     path("<int:user_id>/", UserProfileDetailView.as_view(), name="profile-user-detail"),
+    path("<int:user_id>/endorse/", EndorseStudentView.as_view(), name="profile-endorse"),
     path("settings/privacy/", UpdatePrivacySettingsView.as_view(), name="profile-privacy-settings"),
     path("block/<int:user_id>/", BlockUserView.as_view(), name="profile-block-user"),
     path("unblock/<int:user_id>/", UnblockUserView.as_view(), name="profile-unblock-user"),

@@ -38,6 +38,9 @@ export interface PublicProfile {
   followers_count: number;
   following_count: number;
   connections_count: number;
+  posts_count: number;
+  credibility_score: number;
+  has_endorsed: boolean;
 }
 
 export interface ConnectionItem {
@@ -146,6 +149,12 @@ export const profileService = {
   // Follow User (Instagram style: immediate if public, request if private)
   async followUser(userId: number): Promise<{ follow_status: string; message: string; is_private?: boolean }> {
     const res = await api.post(`/profile/follow/${userId}/`);
+    return res.data;
+  },
+
+  // Credibility Endorsement (+1 upvote / toggle)
+  async endorseStudent(userId: number): Promise<{ endorsed: boolean; credibility_score: number; message: string }> {
+    const res = await api.post(`/profile/${userId}/endorse/`);
     return res.data;
   },
 
