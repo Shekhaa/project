@@ -19,12 +19,14 @@ interface CommentsModalProps {
   visible: boolean;
   post: Post | null;
   onClose: () => void;
+  onOpenProfile?: (userId: number) => void;
 }
 
 export const CommentsModal: React.FC<CommentsModalProps> = ({
   visible,
   post,
   onClose,
+  onOpenProfile,
 }) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
@@ -138,7 +140,10 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
   const renderReplyItem = (reply: Comment) => {
     return (
       <View key={reply.id} style={styles.replyRow}>
-        <View
+        <TouchableOpacity
+          disabled={reply.is_anonymous || !reply.author}
+          onPress={() => reply.author && onOpenProfile?.(reply.author)}
+          activeOpacity={0.7}
           style={[
             styles.avatarSmall,
             reply.is_anonymous && styles.anonAvatarSmall,
@@ -147,17 +152,22 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
           <Text style={styles.avatarSmallText}>
             {reply.is_anonymous ? '🎭' : (reply.author_name || 'S').charAt(0).toUpperCase()}
           </Text>
-        </View>
+        </TouchableOpacity>
 
         <View style={styles.commentBody}>
-          <View style={styles.commentHeader}>
+          <TouchableOpacity
+            disabled={reply.is_anonymous || !reply.author}
+            onPress={() => reply.author && onOpenProfile?.(reply.author)}
+            activeOpacity={0.7}
+            style={styles.commentHeader}
+          >
             <Text style={styles.commentAuthor}>{reply.author_name}</Text>
             {reply.is_anonymous && (
               <View style={styles.anonBadge}>
                 <Text style={styles.anonBadgeText}>Anon</Text>
               </View>
             )}
-          </View>
+          </TouchableOpacity>
           {renderFormattedText(reply.text)}
           <TouchableOpacity
             style={styles.replyBtn}
@@ -176,7 +186,10 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
     return (
       <View style={styles.commentContainer}>
         <View style={styles.commentRow}>
-          <View
+          <TouchableOpacity
+            disabled={item.is_anonymous || !item.author}
+            onPress={() => item.author && onOpenProfile?.(item.author)}
+            activeOpacity={0.7}
             style={[
               styles.avatar,
               item.is_anonymous && styles.anonAvatar,
@@ -185,17 +198,22 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
             <Text style={styles.avatarText}>
               {item.is_anonymous ? '🎭' : (item.author_name || 'S').charAt(0).toUpperCase()}
             </Text>
-          </View>
+          </TouchableOpacity>
 
           <View style={styles.commentBody}>
-            <View style={styles.commentHeader}>
+            <TouchableOpacity
+              disabled={item.is_anonymous || !item.author}
+              onPress={() => item.author && onOpenProfile?.(item.author)}
+              activeOpacity={0.7}
+              style={styles.commentHeader}
+            >
               <Text style={styles.commentAuthor}>{item.author_name}</Text>
               {item.is_anonymous && (
                 <View style={styles.anonBadge}>
                   <Text style={styles.anonBadgeText}>Anon</Text>
                 </View>
               )}
-            </View>
+            </TouchableOpacity>
             {renderFormattedText(item.text)}
             <TouchableOpacity
               style={styles.replyBtn}

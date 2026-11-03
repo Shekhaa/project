@@ -13,6 +13,7 @@ import {
 import { colors } from '../../theme/colors';
 import { profileService, PublicProfile } from '../../services/profileService';
 import { chatService } from '../../services/chatService';
+import { postService, Post } from '../../services/postService';
 import {
   X,
   Shield,
@@ -48,12 +49,15 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [postsLoading, setPostsLoading] = useState(false);
 
   useEffect(() => {
     if (visible && userId) {
       loadProfile(userId);
     } else {
       setProfile(null);
+      setPosts([]);
     }
   }, [visible, userId]);
 
@@ -62,6 +66,15 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
       setLoading(true);
       const data = await profileService.getPublicProfile(targetId);
       setProfile(data);
+      if (data.can_view_content) {
+        setPostsLoading(true);
+        postService.getUserPosts(targetId)
+          .then((res) => setPosts(res.results || []))
+          .catch(() => setPosts([]))
+          .finally(() => setPostsLoading(false));
+      } else {
+        setPosts([]);
+      }
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || 'Could not load student profile.');
       onClose();
@@ -416,58 +429,99 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                   </Text>
                 </View>
               ) : (
-                /* Academic Details */
-                <View style={styles.detailsCard}>
-                  <Text style={styles.detailsCardTitle}>Academic Information</Text>
+                <>
+                  {/* Academic Details */}
+                  <View style={styles.detailsCard}>
+                    <Text style={styles.detailsCardTitle}>Academic Information</Text>
 
-                  <View style={styles.detailRow}>
-                    <Building2 size={16} color="#38bdf8" style={styles.detailIcon} />
-                    <View style={styles.detailTextCol}>
-                      <Text style={styles.detailLabel}>College</Text>
-                      <Text style={styles.detailValue}>
-                        {profile.college_name} ({profile.college_short_name})
-                      </Text>
+                    <View style={styles.detailRow}>
+                      <Building2 size={16} color="#38bdf8" style={styles.detailIcon} />
+                      <View style={styles.detailTextCol}>
+                        <Text style={styles.detailLabel}>College</Text>
+                        <Text style={styles.detailValue}>
+                          {profile.college_name} ({profile.college_short_name})
+                        </Text>
+                      </View>
                     </View>
+
+                    <View style={styles.detailDivider} />
+
+                    <View style={styles.detailRow}>
+                      <GraduationCap size={16} color="#38bdf8" style={styles.detailIcon} />
+                      <View style={styles.detailTextCol}>
+                        <Text style={styles.detailLabel}>Course & Branch</Text>
+                        <Text style={styles.detailValue}>
+                          {profile.course_name} • {profile.branch_name}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {profile.academic_year_name ? (
+                      <>
+                        <View style={styles.detailDivider} />
+                        <View style={styles.detailRow}>
+                          <Calendar size={16} color="#38bdf8" style={styles.detailIcon} />
+                          <View style={styles.detailTextCol}>
+                            <Text style={styles.detailLabel}>Cohort</Text>
+                            <Text style={styles.detailValue}>{profile.academic_year_name}</Text>
+                          </View>
+                        </View>
+                      </>
+                    ) : null}
+
+                    {profile.admission_number ? (
+                      <>
+                        <View style={styles.detailDivider} />
+                        <View style={styles.detailRow}>
+                          <BookOpen size={16} color="#38bdf8" style={styles.detailIcon} />
+                          <View style={styles.detailTextCol}>
+                            <Text style={styles.detailLabel}>Admission / Roll No</Text>
+                            <Text style={styles.detailValue}>{profile.admission_number}</Text>
+                          </View>
+                        </View>
+                      </>
+                    ) : null}
                   </View>
 
-                  <View style={styles.detailDivider} />
-
-                  <View style={styles.detailRow}>
-                    <GraduationCap size={16} color="#38bdf8" style={styles.detailIcon} />
-                    <View style={styles.detailTextCol}>
-                      <Text style={styles.detailLabel}>Course & Branch</Text>
-                      <Text style={styles.detailValue}>
-                        {profile.course_name} • {profile.branch_name}
-                      </Text>
-                    </View>
+                  {/* Authorized Student Posts */}
+                  <View style={styles.postsCard}>
+                    <Text style={styles.detailsCardTitle}>Posts ({posts.length})</Text>
+                    {postsLoading ? (
+                      <ActivityIndicator size="small" color="#38bdf8" style={{ marginVertical: 14 }} />
+                    ) : posts.length === 0 ? (
+                      <Text style={styles.noPostsText}>No posts yet.</Text>
+                    ) : (
+                      posts.map((p) => (
+                        <View key={p.id} style={styles.miniPostCard}>
+                          <View style={styles.miniPostTopRow}>
+                            <Text style={styles.miniPostOrigin}>
+                              {p.community_name
+                                ? `👥 ${p.community_name}`
+                                : p.author_college_name
+                                ? `🏛️ ${p.author_college_name}`
+                                : '🏛️ Campus Feed'}
+                            </Text>
+                            <Text style={styles.miniPostTime}>
+                              {new Date(p.created_at).toLocaleDateString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                            </Text>
+                          </View>
+                          {p.content ? (
+                            <Text style={styles.miniPostContent} numberOfLines={3}>
+                              {p.content}
+                            </Text>
+                          ) : null}
+                          <View style={styles.miniPostStats}>
+                            <Text style={styles.miniPostStat}>❤️ {p.likes_count || 0}</Text>
+                            <Text style={styles.miniPostStat}>💬 {p.comments_count || 0}</Text>
+                          </View>
+                        </View>
+                      ))
+                    )}
                   </View>
-
-                  {profile.academic_year_name ? (
-                    <>
-                      <View style={styles.detailDivider} />
-                      <View style={styles.detailRow}>
-                        <Calendar size={16} color="#38bdf8" style={styles.detailIcon} />
-                        <View style={styles.detailTextCol}>
-                          <Text style={styles.detailLabel}>Cohort</Text>
-                          <Text style={styles.detailValue}>{profile.academic_year_name}</Text>
-                        </View>
-                      </View>
-                    </>
-                  ) : null}
-
-                  {profile.admission_number ? (
-                    <>
-                      <View style={styles.detailDivider} />
-                      <View style={styles.detailRow}>
-                        <BookOpen size={16} color="#38bdf8" style={styles.detailIcon} />
-                        <View style={styles.detailTextCol}>
-                          <Text style={styles.detailLabel}>Admission / Roll No</Text>
-                          <Text style={styles.detailValue}>{profile.admission_number}</Text>
-                        </View>
-                      </View>
-                    </>
-                  ) : null}
-                </View>
+                </>
               )}
             </ScrollView>
           )}
@@ -830,5 +884,57 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#334155',
     marginVertical: 10,
+  },
+  postsCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+    marginTop: 14,
+  },
+  noPostsText: {
+    color: '#94a3b8',
+    fontSize: 13,
+    fontStyle: 'italic',
+    paddingVertical: 8,
+  },
+  miniPostCard: {
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  miniPostTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  miniPostOrigin: {
+    color: '#38bdf8',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  miniPostTime: {
+    color: '#64748b',
+    fontSize: 11,
+  },
+  miniPostContent: {
+    color: '#e2e8f0',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  miniPostStats: {
+    flexDirection: 'row',
+    gap: 14,
+  },
+  miniPostStat: {
+    color: '#94a3b8',
+    fontSize: 11.5,
+    fontWeight: '600',
   },
 });

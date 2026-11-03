@@ -8,9 +8,10 @@ import { DiscussionDetail } from './DiscussionDetail';
 interface DiscussTabProps {
   community: Community;
   currentUser?: any;
+  onOpenProfile?: (userId: number) => void;
 }
 
-export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser }) => {
+export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser, onOpenProfile }) => {
   const [discussions, setDiscussions] = useState<Discussion[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -94,6 +95,7 @@ export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser }
         onSelectDiscussion={(d) => setSelectedDiscussion(d)}
         onVoteDiscussion={handleVote}
         onRefresh={fetchDiscussions}
+        onOpenProfile={onOpenProfile}
       />
 
       {/* Composer Modal */}
@@ -114,6 +116,7 @@ export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser }
           currentUser={currentUser}
           onClose={() => setSelectedDiscussion(null)}
           onVote={handleVote}
+          onOpenProfile={onOpenProfile}
         />
       )}
     </View>

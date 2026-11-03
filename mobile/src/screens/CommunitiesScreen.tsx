@@ -65,12 +65,14 @@ interface CommunitiesScreenProps {
   currentUser?: any;
   onOpenCommunityChat?: (conversation: any) => void;
   onOpenPostDetail?: (postId: number) => void;
+  onOpenProfile?: (userId: number) => void;
 }
 
 export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   currentUser,
   onOpenCommunityChat,
   onOpenPostDetail,
+  onOpenProfile,
 }) => {
   // Discovery State
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -616,9 +618,14 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                       ]}
                     >
                       {!isMe && (
-                        <View style={styles.senderAvatarMini}>
+                        <TouchableOpacity
+                          disabled={!item.sender}
+                          onPress={() => item.sender && onOpenProfile?.(item.sender)}
+                          activeOpacity={0.7}
+                          style={styles.senderAvatarMini}
+                        >
                           <Text style={styles.senderAvatarMiniText}>{initialLetter}</Text>
-                        </View>
+                        </TouchableOpacity>
                       )}
 
                       {/* Deliberate Long Press triggers context menu (NO single tap trigger!) */}
@@ -633,7 +640,13 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                         ]}
                       >
                         {!isMe && (
-                          <Text style={styles.senderNameLabel}>{senderName}</Text>
+                          <TouchableOpacity
+                            disabled={!item.sender}
+                            onPress={() => item.sender && onOpenProfile?.(item.sender)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.senderNameLabel}>{senderName}</Text>
+                          </TouchableOpacity>
                         )}
 
                         {/* Media Grid */}
@@ -764,6 +777,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
           <DiscussTab
             community={activeCommunity}
             currentUser={currentUser}
+            onOpenProfile={onOpenProfile}
           />
         )}
 
@@ -893,15 +907,25 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
                   return (
                     <View style={styles.memberRow}>
-                      <View style={styles.memberAvatar}>
-                        <Text style={styles.memberAvatarText}>
-                          {item.user.full_name.charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.memberName}>{item.user.full_name}</Text>
-                        <Text style={styles.memberCourse}>{item.user.course_branch || item.user.email}</Text>
-                      </View>
+                      <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+                        disabled={!item.user?.id}
+                        onPress={() => {
+                          setMembersModalVisible(false);
+                          item.user?.id && onOpenProfile?.(item.user.id);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.memberAvatar}>
+                          <Text style={styles.memberAvatarText}>
+                            {item.user.full_name.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.memberName}>{item.user.full_name}</Text>
+                          <Text style={styles.memberCourse}>{item.user.course_branch || item.user.email}</Text>
+                        </View>
+                      </TouchableOpacity>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <View style={styles.roleBadge}>
                           <Text style={styles.roleBadgeText}>{item.role}</Text>

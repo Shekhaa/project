@@ -39,6 +39,7 @@ interface DiscussionDetailProps {
   currentUser?: any;
   onClose: () => void;
   onVote: (discussion: Discussion) => void;
+  onOpenProfile?: (userId: number) => void;
 }
 
 export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
@@ -48,6 +49,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   currentUser,
   onClose,
   onVote,
+  onOpenProfile,
 }) => {
   const [detail, setDetail] = useState<Discussion | null>(discussion);
   const [loading, setLoading] = useState(false);
@@ -207,7 +209,12 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
             <Text style={styles.detailTitle}>{detail.title}</Text>
 
             {/* Author Row */}
-            <View style={styles.authorRow}>
+            <TouchableOpacity
+              disabled={!detail.author}
+              onPress={() => detail.author && onOpenProfile?.(detail.author)}
+              activeOpacity={0.7}
+              style={styles.authorRow}
+            >
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>{authorInitial}</Text>
               </View>
@@ -221,7 +228,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                   })}
                 </Text>
               </View>
-            </View>
+            </TouchableOpacity>
 
             {/* Body */}
             <Text style={styles.detailContent}>{detail.content}</Text>
@@ -287,6 +294,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                   setReplyingTo(r);
                   setReplyText((prev) => (prev ? prev : `@${r.author_name} `));
                 }}
+                onOpenProfile={onOpenProfile}
               />
             ) : (
               <View style={styles.emptyReplies}>

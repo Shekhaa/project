@@ -27,6 +27,7 @@ interface DiscussionFeedProps {
   onSelectDiscussion: (d: Discussion) => void;
   onVoteDiscussion: (d: Discussion) => void;
   onRefresh: () => void;
+  onOpenProfile?: (userId: number) => void;
 }
 
 export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
@@ -42,6 +43,7 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
   onSelectDiscussion,
   onVoteDiscussion,
   onRefresh,
+  onOpenProfile,
 }) => {
   return (
     <View style={styles.container}>
@@ -134,6 +136,7 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
               discussion={item}
               onPress={onSelectDiscussion}
               onVote={onVoteDiscussion}
+              onAuthorPress={onOpenProfile}
             />
           )}
           ListEmptyComponent={

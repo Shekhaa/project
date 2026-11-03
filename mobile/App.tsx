@@ -23,6 +23,7 @@ import { CommunitiesScreen } from './src/screens/CommunitiesScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { LostFoundScreen } from './src/screens/LostFoundScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
+import { StudentProfileModal } from './src/components/profile/StudentProfileModal';
 
 type TabType = 'FEED' | 'COMMUNITIES' | 'CHAT' | 'LOST_FOUND' | 'PROFILE';
 
@@ -32,6 +33,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('FEED');
   const [selectedCommunityConv, setSelectedCommunityConv] = useState<any | null>(null);
   const [composerTrigger, setComposerTrigger] = useState(0);
+  const [viewingProfileUserId, setViewingProfileUserId] = useState<number | null>(null);
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
@@ -178,16 +180,21 @@ export default function App() {
               }
               navigateToTab('CHAT');
             }}
+            onOpenProfile={(uid) => setViewingProfileUserId(uid)}
           />
         )}
         {activeTab === 'COMMUNITIES' && (
-          <CommunitiesScreen currentUser={currentUser} />
+          <CommunitiesScreen
+            currentUser={currentUser}
+            onOpenProfile={(uid) => setViewingProfileUserId(uid)}
+          />
         )}
         {activeTab === 'CHAT' && (
           <ChatScreen
             currentUser={currentUser}
             initialConversation={selectedCommunityConv}
             onClearInitialConversation={() => setSelectedCommunityConv(null)}
+            onOpenProfile={(uid) => setViewingProfileUserId(uid)}
           />
         )}
         {activeTab === 'LOST_FOUND' && <LostFoundScreen />}
@@ -277,6 +284,18 @@ export default function App() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Global Student Profile Modal */}
+      <StudentProfileModal
+        visible={!!viewingProfileUserId}
+        userId={viewingProfileUserId}
+        onClose={() => setViewingProfileUserId(null)}
+        onOpenChat={(conv) => {
+          setViewingProfileUserId(null);
+          setSelectedCommunityConv(conv);
+          navigateToTab('CHAT');
+        }}
+      />
     </SafeAreaView>
   );
 }

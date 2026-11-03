@@ -3,6 +3,7 @@ import { AttachmentItem } from './chatService';
 
 export interface Post {
   id: number;
+  author?: number;
   visibility?: 'GLOBAL' | 'COLLEGE' | 'FOLLOWERS' | 'CONNECTIONS' | 'COMMUNITY' | 'ONLY_ME';
   community?: number | null;
   community_name?: string;
@@ -50,6 +51,7 @@ export interface LockedPostResponse {
 
 export interface Comment {
   id: number;
+  author?: number;
   post: number;
   parent?: number | null;
   text: string;

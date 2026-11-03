@@ -16,6 +16,7 @@ class PostImageSerializer(serializers.ModelSerializer):
 
 
 class CommentSerializer(serializers.ModelSerializer):
+    author = serializers.SerializerMethodField()
     author_name = serializers.SerializerMethodField()
     author_username = serializers.SerializerMethodField()
     author_avatar = serializers.SerializerMethodField()
@@ -30,6 +31,7 @@ class CommentSerializer(serializers.ModelSerializer):
             "parent",
             "text",
             "is_anonymous",
+            "author",
             "author_name",
             "author_username",
             "author_avatar",
@@ -38,7 +40,12 @@ class CommentSerializer(serializers.ModelSerializer):
             "is_edited",
             "created_at",
         ]
-        read_only_fields = ["id", "author_name", "author_username", "author_avatar", "replies_count", "replies", "is_edited", "created_at"]
+        read_only_fields = ["id", "author", "author_name", "author_username", "author_avatar", "replies_count", "replies", "is_edited", "created_at"]
+
+    def get_author(self, obj):
+        if obj.is_anonymous:
+            return None
+        return obj.user_id
 
     def get_author_name(self, obj):
         if obj.is_anonymous:
@@ -69,6 +76,7 @@ class CommentSerializer(serializers.ModelSerializer):
 
 
 class PostSerializer(serializers.ModelSerializer):
+    author = serializers.SerializerMethodField()
     images = PostImageSerializer(many=True, read_only=True)
     attachments = MediaAttachmentSerializer(many=True, read_only=True)
     total_likes = serializers.SerializerMethodField()
@@ -90,6 +98,7 @@ class PostSerializer(serializers.ModelSerializer):
         model = Post
         fields = [
             "id",
+            "author",
             "visibility",
             "community",
             "community_name",
@@ -121,6 +130,7 @@ class PostSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            "author",
             "community_name",
             "community_slug",
             "author_college_name",
@@ -149,6 +159,11 @@ class PostSerializer(serializers.ModelSerializer):
                 if not CommunityMember.objects.filter(user=request.user, community=community).exists():
                     raise serializers.ValidationError("You must be an enrolled member of this community to post.")
         return community
+
+    def get_author(self, obj):
+        if obj.is_anonymous:
+            return None
+        return obj.author_id
 
     def get_author_name(self, obj):
         # Zero-leak sanitization

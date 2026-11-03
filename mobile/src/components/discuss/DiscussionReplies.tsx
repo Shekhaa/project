@@ -11,6 +11,7 @@ interface DiscussionRepliesProps {
   onVoteReply: (reply: DiscussionReply) => void;
   onAcceptReply?: (reply: DiscussionReply) => void;
   onReplyToReply: (reply: DiscussionReply) => void;
+  onOpenProfile?: (userId: number) => void;
 }
 
 export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
@@ -20,6 +21,7 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
   onVoteReply,
   onAcceptReply,
   onReplyToReply,
+  onOpenProfile,
 }) => {
   const formatTimeAgo = (dateStr: string) => {
     try {
@@ -47,7 +49,12 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
       >
         {/* Author Header */}
         <View style={styles.replyHeader}>
-          <View style={styles.authorRow}>
+          <TouchableOpacity
+            disabled={!item.author}
+            onPress={() => item.author && onOpenProfile?.(item.author)}
+            activeOpacity={0.7}
+            style={styles.authorRow}
+          >
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{initial}</Text>
             </View>
@@ -55,7 +62,7 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
               <Text style={styles.authorName}>{item.author_name}</Text>
               <Text style={styles.replyTime}>{formatTimeAgo(item.created_at)}</Text>
             </View>
-          </View>
+          </TouchableOpacity>
 
           {/* Accepted Solution Badge */}
           {item.is_accepted && (

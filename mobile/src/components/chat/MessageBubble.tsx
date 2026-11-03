@@ -30,6 +30,7 @@ interface MessageBubbleProps {
   onPress?: (msg: Message) => void;
   onLongPress?: (msg: Message) => void;
   onPostCardPress?: (cardData: SharedPostCardData) => void;
+  onSenderPress?: (senderId: number) => void;
 }
 
 export const parseSharedPostCard = (text: string): { cleanText: string; cardData: SharedPostCardData | null } => {
@@ -59,6 +60,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   onPress,
   onLongPress,
   onPostCardPress,
+  onSenderPress,
 }) => {
   const { cleanText, cardData } = parseSharedPostCard(message.text);
 
@@ -97,9 +99,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     <View style={[styles.row, isMe ? styles.rowMe : styles.rowThem]}>
       {/* Group Sender Avatar on Left */}
       {!isMe && isGroup && (
-        <View style={styles.groupAvatar}>
+        <TouchableOpacity
+          disabled={!message.sender}
+          onPress={() => message.sender && onSenderPress?.(message.sender)}
+          activeOpacity={0.7}
+          style={styles.groupAvatar}
+        >
           <Text style={styles.groupAvatarText}>{senderInitial}</Text>
-        </View>
+        </TouchableOpacity>
       )}
 
       <TouchableOpacity
@@ -114,7 +121,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
       >
         {/* Group Sender Name Header */}
         {!isMe && isGroup && message.sender_name && (
-          <Text style={styles.senderHeader}>{message.sender_name}</Text>
+          <TouchableOpacity
+            disabled={!message.sender}
+            onPress={() => message.sender && onSenderPress?.(message.sender)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.senderHeader}>{message.sender_name}</Text>
+          </TouchableOpacity>
         )}
 
         {/* Media Images Grid */}

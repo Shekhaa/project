@@ -28,12 +28,14 @@ interface FeedScreenProps {
   currentUser?: any;
   composerTrigger?: number;
   onNavigateToChat?: (conversationId?: string | number) => void;
+  onOpenProfile?: (userId: number) => void;
 }
 
 export const FeedScreen: React.FC<FeedScreenProps> = ({
   currentUser,
   composerTrigger,
   onNavigateToChat,
+  onOpenProfile,
 }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -394,6 +396,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
               onSharePress={(p) => setActiveSharePost(p)}
               onDeletePost={handleDeletePost}
               onArchivePost={handleArchivePost}
+              onAuthorPress={onOpenProfile}
             />
           )}
           ListEmptyComponent={renderEmpty}
@@ -534,6 +537,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         visible={!!activeCommentsPost}
         post={activeCommentsPost}
         onClose={() => setActiveCommentsPost(null)}
+        onOpenProfile={onOpenProfile}
       />
 
       {/* Share Modal */}

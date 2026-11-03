@@ -8,12 +8,14 @@ interface DiscussionCardProps {
   discussion: Discussion;
   onPress: (discussion: Discussion) => void;
   onVote: (discussion: Discussion) => void;
+  onAuthorPress?: (authorId: number) => void;
 }
 
 export const DiscussionCard: React.FC<DiscussionCardProps> = ({
   discussion,
   onPress,
   onVote,
+  onAuthorPress,
 }) => {
   const getTypeBadgeColor = (type: string) => {
     switch (type) {
@@ -106,14 +108,19 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
 
       {/* Footer Info: Author, Attachments, Upvotes & Replies */}
       <View style={styles.footerRow}>
-        <View style={styles.authorGroup}>
+        <TouchableOpacity
+          disabled={!discussion.author}
+          onPress={() => discussion.author && onAuthorPress?.(discussion.author)}
+          activeOpacity={0.7}
+          style={styles.authorGroup}
+        >
           <View style={styles.authorAvatar}>
             <Text style={styles.authorAvatarText}>{authorInitial}</Text>
           </View>
           <Text style={styles.authorName} numberOfLines={1}>
             {discussion.author_name}
           </Text>
-        </View>
+        </TouchableOpacity>
 
         <View style={styles.actionsGroup}>
           {hasAttachments && (

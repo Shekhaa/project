@@ -35,6 +35,7 @@ interface PostCardProps {
   onSharePress: (post: Post) => void;
   onDeletePost?: (postId: number) => void;
   onArchivePost?: (postId: number) => void;
+  onAuthorPress?: (authorId: number) => void;
 }
 
 export const PostCard: React.FC<PostCardProps> = ({
@@ -45,6 +46,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   onSharePress,
   onDeletePost,
   onArchivePost,
+  onAuthorPress,
 }) => {
   const [menuVisible, setMenuVisible] = useState(false);
 
@@ -94,7 +96,12 @@ export const PostCard: React.FC<PostCardProps> = ({
     <View style={styles.card}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.authorRow}>
+        <TouchableOpacity
+          style={styles.authorRow}
+          disabled={post.is_anonymous || !post.author}
+          onPress={() => post.author && onAuthorPress?.(post.author)}
+          activeOpacity={0.7}
+        >
           {post.is_anonymous ? (
             <View style={[styles.avatar, styles.anonAvatar]}>
               <Text style={styles.avatarText}>🎭</Text>
@@ -123,23 +130,18 @@ export const PostCard: React.FC<PostCardProps> = ({
             </View>
 
             <View style={styles.metaLine}>
-              {post.visibility === 'GLOBAL' ? (
-                <Text style={styles.communityTag}>🌐 Global • </Text>
-              ) : post.visibility === 'COLLEGE' ? (
-                <Text style={styles.communityTag}>🏛️ {post.author_college_name || post.community_name || 'College'} • </Text>
-              ) : post.visibility === 'FOLLOWERS' ? (
-                <Text style={styles.communityTag}>👤 Followers • </Text>
-              ) : post.visibility === 'CONNECTIONS' ? (
-                <Text style={styles.communityTag}>🤝 Connections • </Text>
-              ) : post.visibility === 'ONLY_ME' ? (
-                <Text style={styles.communityTag}>🔒 Only Me • </Text>
-              ) : post.community_name ? (
-                <Text style={styles.communityTag}>👥 {post.community_name} • </Text>
-              ) : null}
+              <Text style={styles.communityTag}>
+                {post.community_name
+                  ? `👥 ${post.community_name}`
+                  : post.author_college_name
+                  ? `🏛️ ${post.author_college_name}`
+                  : '🏛️ Campus Feed'}
+                {' • '}
+              </Text>
               <Text style={styles.timestamp}>{formatTimestamp(post.created_at)}</Text>
             </View>
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* 3-dots Menu */}
         <TouchableOpacity
@@ -260,6 +262,22 @@ export const PostCard: React.FC<PostCardProps> = ({
             <Share2 size={19} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
+
+        {/* Post Visibility / Audience Badge */}
+        {(() => {
+          let label = '🌐 All colleges';
+          if (post.visibility === 'COLLEGE') label = '🏛️ My college';
+          else if (post.visibility === 'FOLLOWERS') label = '👤 Followers only';
+          else if (post.visibility === 'CONNECTIONS') label = '🤝 Connections';
+          else if (post.visibility === 'COMMUNITY') label = '👥 Community';
+          else if (post.visibility === 'ONLY_ME') label = '🔒 Only me';
+
+          return (
+            <View style={styles.audienceBadge}>
+              <Text style={styles.audienceText}>{label}</Text>
+            </View>
+          );
+        })()}
       </View>
 
       {/* Options Menu Modal */}
@@ -521,6 +539,21 @@ const styles = StyleSheet.create({
   },
   menuItemText: {
     fontSize: 14,
+    fontWeight: '600',
+  },
+  audienceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(30, 41, 59, 0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  audienceText: {
+    color: '#94a3b8',
+    fontSize: 11,
     fontWeight: '600',
   },
 });

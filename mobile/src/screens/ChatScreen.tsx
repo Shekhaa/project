@@ -44,15 +44,18 @@ interface ChatScreenProps {
   currentUser?: any;
   initialConversation?: Conversation | null;
   onClearInitialConversation?: () => void;
+  onOpenProfile?: (userId: number) => void;
 }
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({
   currentUser,
   initialConversation,
   onClearInitialConversation,
+  onOpenProfile,
 }) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
+  const [actionConv, setActionConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingInbox, setLoadingInbox] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -236,6 +239,58 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     );
   };
 
+  const handleClearConversationFromSheet = (conv: Conversation) => {
+    setActionConv(null);
+    Alert.alert(
+      'Clear Conversation',
+      'Are you sure you want to clear message history? Messages will be removed from your view, but other participants will keep their copies.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await chatService.clearChatHistory(conv.id);
+              if (activeConv?.id === conv.id) {
+                setMessages([]);
+              }
+              await loadInbox();
+            } catch (e) {
+              Alert.alert('Error', 'Could not clear chat history.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteConversationFromSheet = (conv: Conversation) => {
+    setActionConv(null);
+    Alert.alert(
+      'Delete Conversation',
+      'Are you sure you want to remove this conversation from your inbox?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await chatService.deleteConversation(conv.id);
+              if (activeConv?.id === conv.id) {
+                setActiveConv(null);
+              }
+              setConversations((prev) => prev.filter((c) => c.id !== conv.id));
+            } catch (e) {
+              Alert.alert('Error', 'Could not delete conversation.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleUnsendMessage = async (msg: Message) => {
     setActionMessage(null);
     try {
@@ -298,22 +353,29 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             <ArrowLeft size={22} color={colors.textPrimary} />
           </TouchableOpacity>
 
-          <View style={styles.roomAvatar}>
-            <Text style={styles.roomAvatarText}>{roomTitle.charAt(0).toUpperCase()}</Text>
-          </View>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+            disabled={activeConv.is_group || !activeConv.recipient?.id}
+            onPress={() => activeConv.recipient?.id && onOpenProfile?.(activeConv.recipient.id)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.roomAvatar}>
+              <Text style={styles.roomAvatarText}>{roomTitle.charAt(0).toUpperCase()}</Text>
+            </View>
 
-          <View style={styles.roomMeta}>
-            <Text style={styles.roomTitle} numberOfLines={1}>
-              {roomTitle}
-            </Text>
-            <Text style={styles.roomSubtitle}>
-              {activeConv.is_ephemeral
-                ? `🔥 Self-destructing (${activeConv.duration || 24}h)`
-                : activeConv.is_group
-                ? '👥 Campus Group'
-                : '💬 Direct Message'}
-            </Text>
-          </View>
+            <View style={styles.roomMeta}>
+              <Text style={styles.roomTitle} numberOfLines={1}>
+                {roomTitle}
+              </Text>
+              <Text style={styles.roomSubtitle}>
+                {activeConv.is_ephemeral
+                  ? `🔥 Self-destructing (${activeConv.duration || 24}h)`
+                  : activeConv.is_group
+                  ? '👥 Campus Group'
+                  : '💬 Direct Message'}
+              </Text>
+            </View>
+          </TouchableOpacity>
 
           {/* Header Action Buttons (Instagram Style) */}
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -369,6 +431,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                   isGroup={activeConv.is_group}
                   onLongPress={(m) => setActionMessage(m)}
                   onPostCardPress={(card) => setSelectedPostCard(card)}
+                  onSenderPress={onOpenProfile}
                 />
               );
             }}
@@ -619,6 +682,15 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               <TouchableOpacity
                 style={styles.convCard}
                 onPress={() => setActiveConv(item)}
+                delayLongPress={450}
+                onLongPress={() => setActionConv(item)}
+                // @ts-ignore
+                onContextMenu={(e: any) => {
+                  if (Platform.OS === 'web') {
+                    e.preventDefault();
+                    setActionConv(item);
+                  }
+                }}
                 activeOpacity={0.7}
               >
                 <View
@@ -660,13 +732,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                     ) : null}
                   </View>
                 </View>
-
-                <TouchableOpacity
-                  style={styles.trashBtn}
-                  onPress={() => handleDeleteConversation(item.id)}
-                >
-                  <Trash2 size={16} color={colors.textSecondary} />
-                </TouchableOpacity>
               </TouchableOpacity>
             );
           }}
@@ -705,6 +770,78 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         onOpenConversation={(conv) => setActiveConv(conv)}
         onRequestCountChanged={(count) => setPendingRequestsCount(count)}
       />
+
+      {/* Contextual Conversation Options Modal (Clear / Delete / Cancel) */}
+      {actionConv && (
+        <Modal
+          transparent
+          animationType="fade"
+          visible={!!actionConv}
+          onRequestClose={() => setActionConv(null)}
+        >
+          <TouchableOpacity
+            style={styles.menuBackdrop}
+            activeOpacity={1}
+            onPress={() => setActionConv(null)}
+          >
+            <View style={styles.actionSheet}>
+              <Text
+                style={{
+                  paddingHorizontal: 18,
+                  paddingTop: 8,
+                  paddingBottom: 8,
+                  color: '#94a3b8',
+                  fontSize: 13,
+                  fontWeight: '700',
+                  borderBottomWidth: 1,
+                  borderBottomColor: 'rgba(255,255,255,0.06)',
+                  marginBottom: 4,
+                }}
+                numberOfLines={1}
+              >
+                {actionConv.name ||
+                  actionConv.recipient?.full_name ||
+                  actionConv.recipient?.username ||
+                  'Conversation Options'}
+              </Text>
+
+              {/* Clear Conversation */}
+              <TouchableOpacity
+                style={styles.actionSheetItem}
+                onPress={() => handleClearConversationFromSheet(actionConv)}
+              >
+                <Trash2 size={18} color="#f59e0b" />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.actionSheetText, { color: '#f59e0b' }]}>Clear Messages</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Delete Conversation */}
+              <TouchableOpacity
+                style={styles.actionSheetItem}
+                onPress={() => handleDeleteConversationFromSheet(actionConv)}
+              >
+                <Trash2 size={18} color="#ef4444" />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.actionSheetText, { color: '#ef4444' }]}>Delete Chat</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Cancel */}
+              <TouchableOpacity
+                style={[
+                  styles.actionSheetItem,
+                  { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', marginTop: 4 },
+                ]}
+                onPress={() => setActionConv(null)}
+              >
+                <X size={18} color="#94a3b8" />
+                <Text style={[styles.actionSheetText, { color: '#94a3b8' }]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </View>
   );
 };
