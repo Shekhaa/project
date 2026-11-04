@@ -37,8 +37,8 @@ export default function App() {
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      document.body.style.backgroundColor = '#0b0f19';
-      document.documentElement.style.backgroundColor = '#0b0f19';
+      document.body.style.backgroundColor = colors.background;
+      document.documentElement.style.backgroundColor = colors.background;
       document.body.style.margin = '0';
       document.body.style.padding = '0';
     }
