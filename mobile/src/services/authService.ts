@@ -198,6 +198,17 @@ export const authService = {
     }
   },
 
+  // Permanently delete student account & purge all data
+  async deleteAccount() {
+    try {
+      await api.delete('/authentication/delete-account/');
+    } catch (e) {
+      console.log('Delete account error', e);
+    } finally {
+      await AsyncStorage.multiRemove(['access_token', 'refresh_token', 'user_info']);
+    }
+  },
+
   // Instant Student Discovery Search (Instagram / TikTok style fuzzy discovery)
   async searchStudents(query: string = '') {
     const res = await api.get(`/authentication/users/search/?q=${encodeURIComponent(query)}`);

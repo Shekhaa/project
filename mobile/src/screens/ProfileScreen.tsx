@@ -20,7 +20,7 @@ import { postService, Post } from '../services/postService';
 import { PostCard } from '../components/feed/PostCard';
 import { StudentProfileModal } from '../components/profile/StudentProfileModal';
 import { SocialListModal, SocialModalType } from '../components/profile/SocialListModal';
-import { ShieldCheck, Settings, LogOut, AlertCircle } from 'lucide-react-native';
+import { ShieldCheck, Settings, LogOut, AlertCircle, Trash2 } from 'lucide-react-native';
 
 interface ProfileData {
   id: number;
@@ -367,6 +367,46 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     }
   };
 
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
+  const triggerDeleteAccount = () => {
+    const confirmMessage =
+      'Are you sure you want to PERMANENTLY DELETE your student ID & account?\n\nThis will instantly delete your student profile, posts, comments, connections, and verification status. This action CANNOT be undone.';
+
+    const executeDeletion = async () => {
+      setDeletingAccount(true);
+      try {
+        await authService.deleteAccount();
+        if (Platform.OS === 'web') {
+          window.alert('Your account and profile have been permanently deleted.');
+        } else {
+          Alert.alert('Account Deleted', 'Your student account has been completely wiped.');
+        }
+        onLogout();
+      } catch (e: any) {
+        Alert.alert('Deletion Failed', e?.response?.data?.message || 'Failed to delete account. Please try again.');
+      } finally {
+        setDeletingAccount(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed = typeof window !== 'undefined' ? window.confirm(confirmMessage) : true;
+      if (confirmed) {
+        executeDeletion();
+      }
+    } else {
+      Alert.alert(
+        'Delete Student ID ⚠️',
+        confirmMessage,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Permanently Delete', style: 'destructive', onPress: executeDeletion },
+        ]
+      );
+    }
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       {/* Top Header Card */}
@@ -398,6 +438,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           >
             <LogOut size={14} color={colors.danger} />
             <Text style={styles.heroLogoutText}>Sign Out</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.heroDeleteBtn}
+            onPress={triggerDeleteAccount}
+            disabled={deletingAccount}
+          >
+            <Trash2 size={14} color="#ef4444" />
+            <Text style={styles.heroDeleteText}>{deletingAccount ? 'Deleting...' : 'Delete ID'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -1133,8 +1181,26 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
                   <View style={styles.settingsDivider} />
 
+                  <Text style={styles.inputGroupTitle}>⚠️ Danger Zone</Text>
+                  <Text style={styles.subtext}>
+                    Log out from this device or permanently delete your student account and wipe all profile data.
+                  </Text>
+
                   <TouchableOpacity style={styles.dangerLogoutBtn} onPress={onLogout}>
                     <Text style={styles.dangerLogoutText}>Sign Out from this Device</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.dangerDeleteAccountBtn}
+                    onPress={() => {
+                      setSettingsModalVisible(false);
+                      triggerDeleteAccount();
+                    }}
+                    disabled={deletingAccount}
+                  >
+                    <Text style={styles.dangerDeleteAccountText}>
+                      {deletingAccount ? 'Purging Account...' : '🗑️ Permanently Delete Account & ID'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -2195,6 +2261,37 @@ const styles = StyleSheet.create({
     color: '#ef4444',
     fontSize: 12,
     fontWeight: '600',
+  },
+  heroDeleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(239, 68, 68, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  heroDeleteText: {
+    color: '#ef4444',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dangerDeleteAccountBtn: {
+    backgroundColor: 'rgba(239, 68, 68, 0.16)',
+    borderWidth: 1.5,
+    borderColor: '#ef4444',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  dangerDeleteAccountText: {
+    color: '#ef4444',
+    fontSize: 13,
+    fontWeight: '800',
   },
   auditHeaderRow: {
     flexDirection: 'row',

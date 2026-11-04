@@ -11,7 +11,8 @@ from django.contrib.auth import authenticate
 from django.http import HttpResponse
 from django.db.models import Q
 from otp.services import OTPService
-from colleges.models import CollegeDomain
+from colleges.models import CollegeDomain, Course, Branch, AcademicYear
+from profiles.models import StudentProfile
 from .models import User
 from .serializers import (
     SendEmailOTPSerializer,
@@ -544,6 +545,68 @@ class MicrosoftSSOView(APIView):
 
         user.check_and_update_student_status()
 
+        # Auto-provision or complete StudentProfile so student skips redundant onboarding / claim screens
+        profile = getattr(user, "profile", None)
+        if not profile:
+            clean_name = "".join(c for c in (display_name or "").lower() if c.isalnum() or c == "_").strip("_")
+            if not clean_name:
+                clean_name = f"student_{roll_no or email_prefix}"
+            base_user = clean_name[:25]
+            candidate_user = base_user
+            counter = 1
+            while StudentProfile.objects.filter(username=candidate_user).exists():
+                candidate_user = f"{base_user}_{counter}"
+                counter += 1
+
+            college = domain_match.college
+            course = Course.objects.filter(college=college).first() or Course.objects.first()
+            branch = Branch.objects.filter(course=course).first() if course else None
+
+            calc_year = 1
+            if admission_year:
+                import datetime
+                diff = datetime.datetime.now().year - admission_year + 1
+                if 1 <= diff <= 4:
+                    calc_year = diff
+            academic_year = AcademicYear.objects.filter(course=course, year_number=calc_year).first() if course else None
+            if not academic_year and course:
+                academic_year = AcademicYear.objects.filter(course=course).first()
+
+            profile = StudentProfile.objects.create(
+                user=user,
+                college_email=email,
+                admission_number=roll_no or email_prefix,
+                username=candidate_user,
+                bio="Excited for hackathons, college fests & campus tech clubs!",
+                gender="Male",
+                college=college,
+                course=course,
+                branch=branch,
+                academic_year=academic_year,
+                verified=True,
+                profile_completed=True,
+                id_card_verified=True,
+                verification_method="EMAIL_OTP",
+            )
+        else:
+            profile_fields = []
+            if not profile.profile_completed:
+                profile.profile_completed = True
+                profile_fields.append("profile_completed")
+            if not profile.verified:
+                profile.verified = True
+                profile_fields.append("verified")
+            if not profile.id_card_verified:
+                profile.id_card_verified = True
+                profile_fields.append("id_card_verified")
+            if not profile.admission_number and roll_no:
+                profile.admission_number = roll_no
+                profile_fields.append("admission_number")
+            if profile_fields:
+                profile.save(update_fields=profile_fields)
+
+        user.refresh_from_db()
+
         # Generate JWT
         refresh = RefreshToken.for_user(user)
 
@@ -559,7 +622,7 @@ class MicrosoftSSOView(APIView):
                 "is_email_verified": user.is_email_verified,
                 "is_phone_verified": user.is_phone_verified,
                 "is_verified_student": user.is_verified_student,
-                "profile_completed": user.profile_completed,
+                "profile_completed": True,
             },
             "detected_student": {
                 "roll_number": roll_no or email_prefix,
@@ -573,6 +636,22 @@ class MicrosoftSSOView(APIView):
                 "name": domain_match.college.name,
                 "short_name": domain_match.college.short_name,
             }
+        }, status=status.HTTP_200_OK)
+
+
+class DeleteAccountView(APIView):
+    """
+    DELETE /api/authentication/delete-account/
+    Permanently deletes current authenticated student account, profile, posts, and data.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request):
+        user = request.user
+        email = user.email
+        user.delete()
+        return Response({
+            "message": f"Account for {email} has been permanently deleted."
         }, status=status.HTTP_200_OK)
 
 

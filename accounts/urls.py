@@ -20,6 +20,7 @@ from .views import (
     VerifyPhoneLoginOTPView,
     IDCardLoginView,
     SearchUsersView,
+    DeleteAccountView,
 )
 
 urlpatterns = [
@@ -57,5 +58,6 @@ urlpatterns = [
     path("login/", LoginView.as_view(), name="auth-login"),
     path("logout/", LogoutView.as_view(), name="auth-logout"),
     path("me/", MeView.as_view(), name="auth-me"),
+    path("delete-account/", DeleteAccountView.as_view(), name="auth-delete-account"),
     path("token/refresh/", TokenRefreshView.as_view(), name="auth-token-refresh"),
 ]
