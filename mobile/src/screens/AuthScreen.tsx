@@ -424,7 +424,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     }
 
     const clientId = AZURE_CLIENT_ID;
-    const redirectUri = 'https://jwt.ms';
+    let redirectUri = 'https://jwt.ms';
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
+      if (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('project-mobile')) {
+        redirectUri = `${window.location.origin}/`;
+      }
+    }
     const scopes = encodeURIComponent('openid profile email');
 
     const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${clientId}&response_type=id_token&redirect_uri=${encodeURIComponent(
@@ -433,11 +438,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
 
     try {
       if (Platform.OS === 'web') {
-        window.open(authUrl, '_blank');
+        window.location.href = authUrl;
       } else {
         await Linking.openURL(authUrl);
+        setSsoTokenModal(true);
       }
-      setSsoTokenModal(true);
     } catch {
       setSsoTokenModal(true);
     }
@@ -1271,9 +1276,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
               <TouchableOpacity
                 style={styles.linearModalSecondaryBtn}
                 onPress={() => {
-                  const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${AZURE_CLIENT_ID}&response_type=id_token&redirect_uri=https://jwt.ms&scope=openid%20profile%20email&response_mode=fragment&nonce=${Date.now()}`;
+                  let redirectUri = 'https://jwt.ms';
+                  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
+                    if (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('project-mobile')) {
+                      redirectUri = `${window.location.origin}/`;
+                    }
+                  }
+                  const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${AZURE_CLIENT_ID}&response_type=id_token&redirect_uri=${encodeURIComponent(
+                    redirectUri
+                  )}&scope=openid%20profile%20email&response_mode=fragment&nonce=${Date.now()}`;
                   if (Platform.OS === 'web') {
-                    window.open(authUrl, '_blank');
+                    window.location.href = authUrl;
                   } else {
                     Linking.openURL(authUrl);
                   }
