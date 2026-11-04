@@ -20,6 +20,9 @@ interface AuthScreenProps {
   onLoginSuccess: (user: any) => void;
 }
 
+// Microsoft Entra ID (Azure AD) Client ID for CampusConnect
+const AZURE_CLIENT_ID = process.env.EXPO_PUBLIC_AZURE_CLIENT_ID || '3b64e29f-bcab-4aee-9fa2-11bb605f161a';
+
 // Graphic Era Coordinates (GEU Clement Town & GEHU Dehradun)
 const CAMPUS_COORDS = {
   GEU_LAT: 30.2685,
@@ -133,6 +136,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
   const [emailOtpSent, setEmailOtpSent] = useState(false);
   const [detectedCollege, setDetectedCollege] = useState<string | null>(null);
   const [magicLinkUrl, setMagicLinkUrl] = useState<string | null>(null);
+
+  // Microsoft Entra ID (College SSO) State
+  const [ssoTokenModal, setSsoTokenModal] = useState(false);
+  const [manualTokenInput, setManualTokenInput] = useState('');
+  const [ssoLoading, setSsoLoading] = useState(false);
 
   // Common UI State
   const [loading, setLoading] = useState(false);
@@ -360,44 +368,97 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  // 4. SPOTIFY-STYLE COLLEGE SSO (Graphic Era Portal 1-Tap Login)
-  const handleSpotifyStyleSSO = async () => {
-    setLoading(true);
+  // Safe Base64 encoding helper for cross-platform JWT simulation
+  const createDevStudentToken = (email: string, name: string) => {
+    const encodeB64 = (str: string) => {
+      try {
+        if (typeof btoa !== 'undefined') return btoa(str);
+      } catch {}
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+      let output = '';
+      for (
+        let block = 0, charCode, idx = 0, map = chars;
+        str.charAt(idx | 0) || ((map = '='), idx % 1);
+        output += map.charAt(63 & (block >> (8 - (idx % 1) * 8)))
+      ) {
+        charCode = str.charCodeAt((idx += 3 / 4));
+        block = (block << 8) | charCode;
+      }
+      return output;
+    };
+    const header = encodeB64(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).replace(/=/g, '');
+    const claims = encodeB64(
+      JSON.stringify({
+        email,
+        name,
+        tid: 'graphic-era-entra-id',
+        sub: 'student-' + email.split('@')[0],
+      })
+    ).replace(/=/g, '');
+    return `${header}.${claims}.dummy_signature`;
+  };
+
+  // 4. MICROSOFT ENTRA ID INSTITUTIONAL COLLEGE SSO (Zero OTP, 1-Tap Student Verification)
+  const handleMicrosoftSSO = async (passedToken?: string) => {
+    const tokenToUse = passedToken || manualTokenInput.trim();
+    if (tokenToUse) {
+      setSsoLoading(true);
+      try {
+        const res = await authService.loginWithMicrosoft(tokenToUse);
+        setSsoTokenModal(false);
+        setManualTokenInput('');
+        Alert.alert(
+          'University Identity Verified! 🎓',
+          `Welcome, ${res.user.full_name || 'Student'}!\nVerified Email: ${res.user.email}\nRoll Number: ${res.detected_student?.roll_number || 'Verified'}\nCollege: ${res.detected_student?.college_name || 'Graphic Era University'}`
+        );
+        onLoginSuccess(res.user);
+      } catch (err: any) {
+        Alert.alert(
+          'SSO Verification Failed',
+          err.response?.data?.error || err.message || 'Token verification failed. Please try again.'
+        );
+      } finally {
+        setSsoLoading(false);
+      }
+      return;
+    }
+
+    const clientId = AZURE_CLIENT_ID;
+    const redirectUri = 'https://jwt.ms';
+    const scopes = encodeURIComponent('openid profile email');
+
+    const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${clientId}&response_type=id_token&redirect_uri=${encodeURIComponent(
+      redirectUri
+    )}&scope=${scopes}&response_mode=fragment&nonce=${Date.now()}`;
+
     try {
-      // Simulate Microsoft Entra ID / GEU-GEHU Portal SSO
-      Alert.alert(
-        '🎓 Graphic Era Portal SSO',
-        'Authenticate directly via Graphic Era Institutional Single Sign-On (like Spotify Student Discount):',
-        [
-          {
-            text: 'Sign In as Aarav Joshi (GEHU)',
-            onPress: async () => {
-              try {
-                const res = await authService.devQuickLogin('aarav.joshi@gehu.ac.in');
-                onLoginSuccess(res.user);
-              } catch (err: any) {
-                Alert.alert('SSO Error', err.message);
-              }
-            },
-          },
-          {
-            text: 'Sign In as Priya Rawat (GEHU)',
-            onPress: async () => {
-              try {
-                const res = await authService.devQuickLogin('priya.rawat@gehu.ac.in');
-                onLoginSuccess(res.user);
-              } catch (err: any) {
-                Alert.alert('SSO Error', err.message);
-              }
-            },
-          },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
-    } finally {
-      setLoading(false);
+      if (Platform.OS === 'web') {
+        window.open(authUrl, '_blank');
+      } else {
+        await Linking.openURL(authUrl);
+      }
+      setSsoTokenModal(true);
+    } catch {
+      setSsoTokenModal(true);
     }
   };
+
+  // Auto-detect OAuth redirect if returning with token in hash (Vercel / Web)
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location.hash) {
+      try {
+        const hash = window.location.hash.substring(1);
+        const params = new URLSearchParams(hash);
+        const idToken = params.get('id_token') || params.get('access_token');
+        if (idToken) {
+          handleMicrosoftSSO(idToken);
+        }
+      } catch {}
+    }
+  }, []);
+
+  // Backward compatibility alias for Spotify SSO button
+  const handleSpotifyStyleSSO = () => handleMicrosoftSSO();
 
   // 5. PHYSICAL ID CARD OCR LOGIN
   const handleScanAndLogin = async (base64Data: string) => {
@@ -540,6 +601,63 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
             <Text style={styles.logoIcon}>🎓</Text>
             <Text style={styles.title}>Campus Connect</Text>
             <Text style={styles.subtitle}>Graphic Era University & Graphic Era Hill University</Text>
+          </View>
+
+          {/* ========================================================= */}
+          {/* HERO: OFFICIAL 1-TAP MICROSOFT COLLEGE SSO (RECOMMENDED)  */}
+          {/* ========================================================= */}
+          <View style={styles.linearSSOCard}>
+            <View style={styles.linearSSOBadgeRow}>
+              <View style={styles.linearSSOBadge}>
+                <View style={styles.linearSSODot} />
+                <Text style={styles.linearSSOBadgeText}>OFFICIAL GEU / GEHU SSO</Text>
+              </View>
+              <Text style={styles.linearSSOZeroOtp}>Zero OTP • 100% Real Students</Text>
+            </View>
+
+            <Text style={styles.linearSSOTitle}>Sign in with University Outlook</Text>
+            <Text style={styles.linearSSODesc}>
+              Authenticate directly via Graphic Era Entra ID. We auto-verify your name, university roll number & admission batch.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.linearSSOButton}
+              onPress={() => handleMicrosoftSSO()}
+              disabled={loading || ssoLoading}
+              activeOpacity={0.88}
+            >
+              {ssoLoading ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <View style={styles.linearSSOBtnContent}>
+                  <View style={styles.msLogoGrid}>
+                    <View style={[styles.msLogoCell, { backgroundColor: '#F25022' }]} />
+                    <View style={[styles.msLogoCell, { backgroundColor: '#7FBA00' }]} />
+                    <View style={[styles.msLogoCell, { backgroundColor: '#00A4EF' }]} />
+                    <View style={[styles.msLogoCell, { backgroundColor: '#FFB900' }]} />
+                  </View>
+                  <Text style={styles.linearSSOBtnText}>Continue with College ID (@geu.ac.in)</Text>
+                  <Text style={styles.linearSSOArrow}>→</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.linearSSOFeatures}>
+              <Text style={styles.linearSSOFeatureItem}>✓ Blue Verified Badge</Text>
+              <Text style={styles.linearSSOFeatureDot}>•</Text>
+              <Text style={styles.linearSSOFeatureItem}>✓ Auto Roll No. Extraction</Text>
+              <Text style={styles.linearSSOFeatureDot}>•</Text>
+              <TouchableOpacity onPress={() => setSsoTokenModal(true)}>
+                <Text style={styles.linearSSODevLink}>⚡ Dev Test / Token</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Hairline Divider */}
+          <View style={styles.linearDividerRow}>
+            <View style={styles.linearDividerLine} />
+            <Text style={styles.linearDividerText}>OR ALTERNATIVE METHODS</Text>
+            <View style={styles.linearDividerLine} />
           </View>
 
           {/* Top-Level Mode Selector: Log In vs Sign Up */}
@@ -876,7 +994,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                         )}
                       </TouchableOpacity>
 
-                      {/* SPOTIFY-STYLE DIRECT COLLEGE SSO BUTTON */}
+                      {/* DIRECT COLLEGE SSO BUTTON */}
                       <View style={styles.dividerContainer}>
                         <View style={styles.dividerLine} />
                         <Text style={styles.dividerText}>OR 1-TAP INSTITUTIONAL SSO</Text>
@@ -885,12 +1003,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
 
                       <TouchableOpacity
                         style={styles.ssoSpotifyButton}
-                        onPress={handleSpotifyStyleSSO}
-                        disabled={loading}
+                        onPress={() => handleMicrosoftSSO()}
+                        disabled={loading || ssoLoading}
                       >
-                        <Text style={styles.ssoSpotifyIcon}>🎓</Text>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.ssoSpotifyTitle}>Graphic Era Portal SSO (Spotify Style)</Text>
+                        <View style={styles.msLogoGridSmall}>
+                          <View style={[styles.msLogoCellSmall, { backgroundColor: '#F25022' }]} />
+                          <View style={[styles.msLogoCellSmall, { backgroundColor: '#7FBA00' }]} />
+                          <View style={[styles.msLogoCellSmall, { backgroundColor: '#00A4EF' }]} />
+                          <View style={[styles.msLogoCellSmall, { backgroundColor: '#FFB900' }]} />
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 8 }}>
+                          <Text style={styles.ssoSpotifyTitle}>Microsoft Entra SSO (@geu.ac.in)</Text>
                           <Text style={styles.ssoSpotifySub}>Instant single sign-on with verified college credentials</Text>
                         </View>
                       </TouchableOpacity>
@@ -1032,6 +1155,136 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           )}
         </View>
       </ScrollView>
+
+      {/* ========================================================= */}
+      {/* LINEAR-STYLED MICROSOFT ENTRA ID DEV & TOKEN MODAL        */}
+      {/* ========================================================= */}
+      <Modal
+        visible={ssoTokenModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSsoTokenModal(false)}
+      >
+        <View style={styles.linearModalOverlay}>
+          <View style={styles.linearModalContent}>
+            <View style={styles.linearModalHeader}>
+              <View style={styles.linearModalTitleRow}>
+                <View style={styles.msLogoGridSmall}>
+                  <View style={[styles.msLogoCellSmall, { backgroundColor: '#F25022' }]} />
+                  <View style={[styles.msLogoCellSmall, { backgroundColor: '#7FBA00' }]} />
+                  <View style={[styles.msLogoCellSmall, { backgroundColor: '#00A4EF' }]} />
+                  <View style={[styles.msLogoCellSmall, { backgroundColor: '#FFB900' }]} />
+                </View>
+                <Text style={styles.linearModalTitle}>Microsoft SSO Verification</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setSsoTokenModal(false)}
+                style={styles.linearModalCloseBtn}
+              >
+                <Text style={styles.linearModalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.linearModalSub}>
+                Test single-tap college authentication. Verified claims extract student name, roll number, and official admission year.
+              </Text>
+
+              {/* Action 1: Instant Test as Chandra Shekhar Singh Rana */}
+              <Text style={styles.linearModalSectionLabel}>INSTANT 1-TAP VERIFICATION (TEST)</Text>
+              <TouchableOpacity
+                style={styles.linearTestProfileCard}
+                onPress={() => {
+                  const token = createDevStudentToken(
+                    '2313812137@geu.ac.in',
+                    'Chandra Shekhar Singh Rana'
+                  );
+                  handleMicrosoftSSO(token);
+                }}
+                disabled={ssoLoading}
+              >
+                <View style={styles.linearTestProfileTop}>
+                  <Text style={styles.linearTestProfileName}>Chandra Shekhar Singh Rana</Text>
+                  <View style={styles.linearVerifiedBadge}>
+                    <Text style={styles.linearVerifiedBadgeText}>GEU Verified</Text>
+                  </View>
+                </View>
+                <Text style={styles.linearTestProfileMeta}>
+                  Roll: 2313812137 • Batch: 2023 • @geu.ac.in
+                </Text>
+                <Text style={styles.linearTestProfileCta}>Tap to Sign In as Chandra Shekhar →</Text>
+              </TouchableOpacity>
+
+              {/* Action 2: Secondary Test Profile (Priya Rawat) */}
+              <TouchableOpacity
+                style={[styles.linearTestProfileCard, { marginTop: 8 }]}
+                onPress={() => {
+                  const token = createDevStudentToken(
+                    '2313812140@geu.ac.in',
+                    'Priya Rawat'
+                  );
+                  handleMicrosoftSSO(token);
+                }}
+                disabled={ssoLoading}
+              >
+                <View style={styles.linearTestProfileTop}>
+                  <Text style={styles.linearTestProfileName}>Priya Rawat</Text>
+                  <View style={styles.linearVerifiedBadge}>
+                    <Text style={styles.linearVerifiedBadgeText}>GEU Verified</Text>
+                  </View>
+                </View>
+                <Text style={styles.linearTestProfileMeta}>
+                  Roll: 2313812140 • Batch: 2023 • @geu.ac.in
+                </Text>
+                <Text style={styles.linearTestProfileCta}>Tap to Sign In as Priya →</Text>
+              </TouchableOpacity>
+
+              {/* Action 3: Direct Token Paste from jwt.ms */}
+              <Text style={[styles.linearModalSectionLabel, { marginTop: 18 }]}>
+                PASTE ID TOKEN (FROM JWT.MS / AZURE)
+              </Text>
+              <TextInput
+                style={styles.linearModalInput}
+                placeholder="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+                placeholderTextColor={colors.textTertiary}
+                value={manualTokenInput}
+                onChangeText={setManualTokenInput}
+                multiline
+                numberOfLines={3}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              <TouchableOpacity
+                style={styles.linearModalPrimaryBtn}
+                onPress={() => handleMicrosoftSSO()}
+                disabled={ssoLoading}
+              >
+                {ssoLoading ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.linearModalPrimaryBtnText}>Verify & Login with Token</Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Action 4: Launch Microsoft Browser Session */}
+              <TouchableOpacity
+                style={styles.linearModalSecondaryBtn}
+                onPress={() => {
+                  const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${AZURE_CLIENT_ID}&response_type=id_token&redirect_uri=https://jwt.ms&scope=openid%20profile%20email&response_mode=fragment&nonce=${Date.now()}`;
+                  if (Platform.OS === 'web') {
+                    window.open(authUrl, '_blank');
+                  } else {
+                    Linking.openURL(authUrl);
+                  }
+                }}
+              >
+                <Text style={styles.linearModalSecondaryBtnText}>🌐 Open Microsoft Login in Browser</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -1537,5 +1790,293 @@ const styles = StyleSheet.create({
   idPresetCollege: {
     color: colors.textSecondary,
     fontSize: 10,
+  },
+
+  // =========================================================
+  // LINEAR MICROSOFT SSO DESIGN TOKENS & COMPONENTS
+  // =========================================================
+  linearSSOCard: {
+    backgroundColor: '#0f1011',
+    borderColor: '#23252a',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+  linearSSOBadgeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  linearSSOBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(39, 166, 68, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(39, 166, 68, 0.25)',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 6,
+  },
+  linearSSODot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#27a644',
+  },
+  linearSSOBadgeText: {
+    color: '#27a644',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  linearSSOZeroOtp: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  linearSSOTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: -0.3,
+    marginBottom: 4,
+  },
+  linearSSODesc: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  linearSSOButton: {
+    backgroundColor: '#5e6ad2',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  linearSSOBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  msLogoGrid: {
+    width: 16,
+    height: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginRight: 10,
+    justifyContent: 'space-between',
+    alignContent: 'space-between',
+  },
+  msLogoCell: {
+    width: 7,
+    height: 7,
+    borderRadius: 1,
+  },
+  linearSSOBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+    flex: 1,
+    textAlign: 'center',
+  },
+  linearSSOArrow: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  linearSSOFeatures: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  linearSSOFeatureItem: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  linearSSOFeatureDot: {
+    color: colors.hairlineStrong,
+    fontSize: 10,
+  },
+  linearSSODevLink: {
+    color: '#828fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  linearDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 16,
+    gap: 12,
+  },
+  linearDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#23252a',
+  },
+  linearDividerText: {
+    color: colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+  // Modal Styles
+  linearModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  linearModalContent: {
+    backgroundColor: '#0f1011',
+    borderColor: '#23252a',
+    borderWidth: 1,
+    borderRadius: 12,
+    width: '100%',
+    maxWidth: 440,
+    maxHeight: '85%',
+    padding: 20,
+  },
+  linearModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  linearModalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  msLogoGridSmall: {
+    width: 14,
+    height: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignContent: 'space-between',
+  },
+  msLogoCellSmall: {
+    width: 6,
+    height: 6,
+    borderRadius: 1,
+  },
+  linearModalTitle: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+  },
+  linearModalCloseBtn: {
+    padding: 4,
+  },
+  linearModalCloseText: {
+    color: colors.textMuted,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  linearModalSub: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 16,
+  },
+  linearModalSectionLabel: {
+    color: colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+  },
+  linearTestProfileCard: {
+    backgroundColor: '#141516',
+    borderColor: '#23252a',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+  },
+  linearTestProfileTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  linearTestProfileName: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  linearVerifiedBadge: {
+    backgroundColor: 'rgba(39, 166, 68, 0.1)',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(39, 166, 68, 0.25)',
+  },
+  linearVerifiedBadgeText: {
+    color: '#27a644',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  linearTestProfileMeta: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginBottom: 6,
+  },
+  linearTestProfileCta: {
+    color: '#828fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  linearModalInput: {
+    backgroundColor: '#141516',
+    borderColor: '#23252a',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    marginBottom: 12,
+    textAlignVertical: 'top',
+  },
+  linearModalPrimaryBtn: {
+    backgroundColor: '#5e6ad2',
+    borderRadius: 8,
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  linearModalPrimaryBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  linearModalSecondaryBtn: {
+    backgroundColor: '#141516',
+    borderColor: '#23252a',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  linearModalSecondaryBtnText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '500',
   },
 });

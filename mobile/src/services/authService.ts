@@ -32,9 +32,13 @@ export interface CollegeInfo {
 }
 
 export const authService = {
-  // 1-Tap Microsoft Entra SSO
-  async loginWithMicrosoft(accessToken: string) {
-    const res = await api.post('/authentication/microsoft/', { access_token: accessToken });
+  // 1-Tap Microsoft Entra SSO (Direct College Student Verification)
+  async loginWithMicrosoft(token: string) {
+    const res = await api.post('/authentication/microsoft/', {
+      token,
+      access_token: token,
+      id_token: token,
+    });
     await this.saveSession(res.data.access, res.data.refresh, res.data.user);
     return res.data;
   },

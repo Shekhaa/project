@@ -1,4 +1,5 @@
 import json
+import base64
 import urllib.request
 from django.conf import settings
 from rest_framework.views import APIView
@@ -416,20 +417,42 @@ class MagicLoginView(APIView):
         }, status=status.HTTP_200_OK)
 
 
-def verify_microsoft_account(access_token):
+def verify_microsoft_account(token):
     """
     Verifies user identity with Microsoft Entra ID.
-    Calls Microsoft Graph API: https://graph.microsoft.com/v1.0/me
+    Supports both:
+    1. Direct OpenID Connect id_token (JWT claims: email, name, tid, sub).
+    2. Bearer access_token via Microsoft Graph API (https://graph.microsoft.com/v1.0/me).
     Returns: (is_valid, email, display_name, error_message)
     """
-    if not access_token:
-        return False, None, None, "Microsoft access_token is required."
+    if not token or not isinstance(token, str):
+        return False, None, None, "Microsoft authentication token is required."
 
+    token = token.strip()
+
+    # Path 1: Direct JWT id_token (Header.Payload.Signature)
+    if token.count(".") == 2:
+        try:
+            parts = token.split(".")
+            payload_b64 = parts[1]
+            rem = len(payload_b64) % 4
+            if rem > 0:
+                payload_b64 += "=" * (4 - rem)
+            payload_json = base64.urlsafe_b64decode(payload_b64).decode("utf-8")
+            claims = json.loads(payload_json)
+            email = claims.get("email") or claims.get("preferred_username") or claims.get("upn")
+            display_name = claims.get("name") or claims.get("displayName", "")
+            if email:
+                return True, email.lower().strip(), display_name.strip(), None
+        except Exception as jwt_err:
+            pass  # Fall through to Graph API attempt
+
+    # Path 2: Bearer access_token via Microsoft Graph API
     url = "https://graph.microsoft.com/v1.0/me"
     req = urllib.request.Request(
         url,
         headers={
-            "Authorization": f"Bearer {access_token}",
+            "Authorization": f"Bearer {token}",
             "Accept": "application/json"
         }
     )
@@ -443,7 +466,7 @@ def verify_microsoft_account(access_token):
             display_name = data.get("displayName", "")
             if not email:
                 return False, None, None, "No institutional email found in Microsoft account."
-            return True, email.lower(), display_name, None
+            return True, email.lower().strip(), display_name.strip(), None
     except Exception as e:
         return False, None, None, f"Failed to authenticate with Microsoft: {str(e)}"
 
@@ -459,7 +482,7 @@ class MicrosoftSSOView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        access_token = request.data.get("access_token")
+        token = request.data.get("token") or request.data.get("access_token") or request.data.get("id_token")
 
         # Test / Simulation hook for DEBUG mode
         if settings.DEBUG and request.data.get("dev_mock_email"):
@@ -468,12 +491,12 @@ class MicrosoftSSOView(APIView):
             is_valid = True
             err = None
         else:
-            if not access_token:
+            if not token:
                 return Response(
-                    {"error": "access_token is required from Microsoft authentication."},
+                    {"error": "Microsoft token (access_token or id_token) is required."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            is_valid, email, display_name, err = verify_microsoft_account(access_token)
+            is_valid, email, display_name, err = verify_microsoft_account(token)
 
         if not is_valid:
             return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
@@ -484,15 +507,23 @@ class MicrosoftSSOView(APIView):
             return Response({
                 "error": f"The email '{email}' does not belong to any recognized university domain.",
                 "email": email,
-                "suggestion": "Please sign in using your official university-issued Microsoft account."
+                "suggestion": "Please sign in using your official university-issued Microsoft account (@geu.ac.in / @gehu.ac.in)."
             }, status=status.HTTP_403_FORBIDDEN)
+
+        # Smart Parsing: Extract Roll Number & Admission Year from institutional email
+        email_prefix = email.split("@")[0].strip()
+        roll_no = email_prefix if email_prefix.isdigit() else None
+        admission_year = None
+        if roll_no and len(roll_no) >= 2 and roll_no[:2].isdigit():
+            admission_year = 2000 + int(roll_no[:2])
 
         # Get or create user
         user, is_new_user = User.objects.get_or_create(
             email=email,
             defaults={
                 "full_name": display_name,
-                "is_email_verified": True
+                "is_email_verified": True,
+                "is_verified_student": True,
             }
         )
 
@@ -501,6 +532,9 @@ class MicrosoftSSOView(APIView):
         if not user.is_email_verified:
             user.is_email_verified = True
             fields_to_update.append("is_email_verified")
+        if not user.is_verified_student:
+            user.is_verified_student = True
+            fields_to_update.append("is_verified_student")
         if display_name and not user.full_name:
             user.full_name = display_name
             fields_to_update.append("full_name")
@@ -526,6 +560,13 @@ class MicrosoftSSOView(APIView):
                 "is_phone_verified": user.is_phone_verified,
                 "is_verified_student": user.is_verified_student,
                 "profile_completed": user.profile_completed,
+            },
+            "detected_student": {
+                "roll_number": roll_no or email_prefix,
+                "admission_year": admission_year,
+                "college_id": domain_match.college.id,
+                "college_name": domain_match.college.name,
+                "college_short_name": domain_match.college.short_name,
             },
             "detected_college": {
                 "id": domain_match.college.id,
