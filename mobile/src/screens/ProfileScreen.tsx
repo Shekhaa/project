@@ -117,6 +117,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [sendingResetOtp, setSendingResetOtp] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
 
+  // Account Deletion State
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
   const loadAuditList = async () => {
     setAuditLoading(true);
     try {
@@ -366,8 +369,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       ]);
     }
   };
-
-  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const triggerDeleteAccount = () => {
     const confirmMessage =
