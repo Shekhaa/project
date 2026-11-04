@@ -549,7 +549,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
               onPress={() => setAuthFlow('LOGIN')}
             >
               <Text style={[styles.mainFlowText, authFlow === 'LOGIN' && styles.mainFlowTextActive]}>
-                🔑 Existing Student Log In
+                Existing Student
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -557,7 +557,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
               onPress={() => setAuthFlow('SIGNUP')}
             >
               <Text style={[styles.mainFlowText, authFlow === 'SIGNUP' && styles.mainFlowTextActive]}>
-                🚀 New Student Sign Up
+                New Student
               </Text>
             </TouchableOpacity>
           </View>
@@ -595,7 +595,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   style={styles.eyeBtn}
                   onPress={() => setShowLoginPassword(!showLoginPassword)}
                 >
-                  <Text style={styles.eyeBtnText}>{showLoginPassword ? '🙈' : '👁️'}</Text>
+                  <Text style={styles.eyeBtnText}>{showLoginPassword ? 'Hide' : 'Show'}</Text>
                 </TouchableOpacity>
               </View>
 
@@ -607,15 +607,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 {loginLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.primaryButtonText}>Sign In to Campus Connect 🚀</Text>
+                  <Text style={styles.primaryButtonText}>Sign In</Text>
                 )}
               </TouchableOpacity>
 
               {/* 5 PRODUCTION TEST ACCOUNTS (GEHU) */}
               <View style={styles.testAccountsSection}>
                 <View style={styles.testAccountsHeader}>
-                  <Text style={styles.testAccountsTitle}>⚡ 5 PRODUCTION TEST ACCOUNTS (GEHU)</Text>
-                  <Text style={styles.testAccountsSub}>1-Tap login to test across multiple physical devices:</Text>
+                  <Text style={styles.testAccountsTitle}>TEST ACCOUNTS (GEHU)</Text>
+                  <Text style={styles.testAccountsSub}>Quick login to test across accounts:</Text>
                 </View>
 
                 {GEHU_TEST_CREDENTIALS.map((acc, idx) => (
@@ -632,10 +632,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                       <View>
                         <Text style={styles.testAccountName}>{acc.name}</Text>
                         <Text style={styles.testAccountRoll}>{acc.roll} • {acc.dept}</Text>
-                        <Text style={styles.testAccountEmail}>📧 {acc.email} | 📱 {acc.phone}</Text>
+                        <Text style={styles.testAccountEmail}>{acc.email} • {acc.phone}</Text>
                       </View>
                       <View style={styles.quickLoginBtn}>
-                        <Text style={styles.quickLoginBtnText}>1-Tap Login ⚡</Text>
+                        <Text style={styles.quickLoginBtnText}>Quick Login</Text>
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -656,7 +656,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   onPress={() => setSignupTab('PHONE_GEO')}
                 >
                   <Text style={[styles.tabToggleText, signupTab === 'PHONE_GEO' && styles.tabToggleTextActive]}>
-                    📍 Phone (Geo)
+                    Phone (Campus)
                   </Text>
                 </TouchableOpacity>
 
@@ -665,7 +665,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   onPress={() => setSignupTab('COLLEGE_EMAIL')}
                 >
                   <Text style={[styles.tabToggleText, signupTab === 'COLLEGE_EMAIL' && styles.tabToggleTextActive]}>
-                    ✉️ College Email
+                    College Email
                   </Text>
                 </TouchableOpacity>
 
@@ -674,7 +674,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   onPress={() => setSignupTab('ID_CARD')}
                 >
                   <Text style={[styles.tabToggleText, signupTab === 'ID_CARD' && styles.tabToggleTextActive]}>
-                    🪪 ID Card OCR
+                    ID Card OCR
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -749,7 +749,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                         {loading && selectedChannel === 'WHATSAPP' ? (
                           <ActivityIndicator color="#fff" />
                         ) : (
-                          <Text style={styles.whatsappButtonText}>💬 Get OTP on WhatsApp (Free & Instant)</Text>
+                          <Text style={styles.whatsappButtonText}>Get OTP via WhatsApp</Text>
                         )}
                       </TouchableOpacity>
 
@@ -758,14 +758,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                         onPress={() => handleSendPhoneOTP('SMS')}
                         disabled={loading}
                       >
-                        <Text style={styles.secondarySmsBtnText}>📱 Send Carrier SMS Code</Text>
+                        <Text style={styles.secondarySmsBtnText}>Send Carrier SMS Code</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
                     <View>
                       <View style={styles.smsNoticeCard}>
                         <Text style={styles.smsNoticeBadge}>
-                          {selectedChannel === 'WHATSAPP' ? '💬 WhatsApp Dispatched' : '📱 SMS Code'}
+                          {selectedChannel === 'WHATSAPP' ? 'WhatsApp Dispatched' : 'SMS Code'}
                         </Text>
                         <Text style={styles.smsNoticeText}>
                           Code [{devPhoneOtp || '500105'}] auto-filled below for instant testing!
@@ -798,11 +798,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                           style={styles.eyeBtn}
                           onPress={() => setShowSignupPassword(!showSignupPassword)}
                         >
-                          <Text style={styles.eyeBtnText}>{showSignupPassword ? '🙈' : '👁️'}</Text>
+                          <Text style={styles.eyeBtnText}>{showSignupPassword ? 'Hide' : 'Show'}</Text>
                         </TouchableOpacity>
                       </View>
                       <Text style={styles.helperText}>
-                        🔑 Setting a password lets you log in anytime from any phone without waiting for OTP!
+                        Setting a password lets you log in anytime from any phone without waiting for OTP!
                       </Text>
 
                       <TouchableOpacity
@@ -813,7 +813,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                         {loading ? (
                           <ActivityIndicator color="#fff" />
                         ) : (
-                          <Text style={styles.primaryButtonText}>Verify & Proceed to ID Card Scan 🪪</Text>
+                          <Text style={styles.primaryButtonText}>Verify & Proceed to ID Card Scan</Text>
                         )}
                       </TouchableOpacity>
 
@@ -828,7 +828,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                             }
                           }}
                         >
-                          <Text style={styles.whatsappButtonText}>💬 Re-open in WhatsApp</Text>
+                          <Text style={styles.whatsappButtonText}>Re-open in WhatsApp</Text>
                         </TouchableOpacity>
                       )}
 
@@ -872,7 +872,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                         {loading ? (
                           <ActivityIndicator color="#fff" />
                         ) : (
-                          <Text style={styles.primaryButtonText}>Send 6-Digit Code 📬</Text>
+                          <Text style={styles.primaryButtonText}>Send 6-Digit Code</Text>
                         )}
                       </TouchableOpacity>
 
@@ -923,11 +923,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                           style={styles.eyeBtn}
                           onPress={() => setShowSignupPassword(!showSignupPassword)}
                         >
-                          <Text style={styles.eyeBtnText}>{showSignupPassword ? '🙈' : '👁️'}</Text>
+                          <Text style={styles.eyeBtnText}>{showSignupPassword ? 'Hide' : 'Show'}</Text>
                         </TouchableOpacity>
                       </View>
                       <Text style={styles.helperText}>
-                        🔑 Setting a password lets you log in anytime from any device without needing email OTPs!
+                        Setting a password lets you log in anytime from any device without needing email OTPs!
                       </Text>
 
                       <TouchableOpacity
@@ -959,8 +959,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
               {signupTab === 'ID_CARD' && (
                 <View>
                   <View style={styles.idScanHeroCard}>
-                    <Text style={styles.idScanHeroIcon}>🪪</Text>
-                    <Text style={styles.idScanHeroTitle}>Spotify-Style Physical ID Verification</Text>
+                    <Text style={styles.idScanHeroTitle}>Physical ID Verification</Text>
                     <Text style={styles.idScanHeroSub}>
                       Snap or upload your physical Graphic Era Hill University ID Card. Local OCR automatically extracts Name, Roll No & Branch and joins you into GEHU community!
                     </Text>
@@ -981,11 +980,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                       style={styles.eyeBtn}
                       onPress={() => setShowSignupPassword(!showSignupPassword)}
                     >
-                      <Text style={styles.eyeBtnText}>{showSignupPassword ? '🙈' : '👁️'}</Text>
+                      <Text style={styles.eyeBtnText}>{showSignupPassword ? 'Hide' : 'Show'}</Text>
                     </TouchableOpacity>
                   </View>
                   <Text style={styles.helperText}>
-                    🔑 Enter your password here so your verified account is ready for instant future login!
+                    Enter your password here so your verified account is ready for instant future login.
                   </Text>
 
                   <TouchableOpacity
@@ -997,7 +996,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                       <ActivityIndicator color="#fff" />
                     ) : (
                       <View style={styles.uploadIdCardBtnContent}>
-                        <Text style={styles.uploadIdCardIcon}>📸</Text>
                         <Text style={styles.uploadIdCardText}>Upload Physical ID Card Photo</Text>
                       </View>
                     )}
@@ -1005,7 +1003,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
 
                   <View style={styles.dividerContainer}>
                     <View style={styles.dividerLine} />
-                    <Text style={styles.dividerText}>OR 1-TAP GEHU SAMPLE CARDS</Text>
+                    <Text style={styles.dividerText}>OR QUICK GEHU SAMPLE CARDS</Text>
                     <View style={styles.dividerLine} />
                   </View>
 
@@ -1024,7 +1022,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                           </View>
                         </View>
                         <Text style={styles.idPresetRoll}>{p.roll} • {p.dept}</Text>
-                        <Text style={styles.idPresetCollege}>🏫 {p.college}</Text>
+                        <Text style={styles.idPresetCollege}>{p.college}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>

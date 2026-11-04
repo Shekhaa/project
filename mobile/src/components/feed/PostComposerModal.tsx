@@ -766,9 +766,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   scopeHeaderLabel: {
-    color: '#38bdf8',
+    color: colors.textMuted,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     marginBottom: 8,
   },
   scopePillRow: {
@@ -788,8 +788,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   scopePillActive: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-    borderColor: '#38bdf8',
+    backgroundColor: 'rgba(94, 106, 210, 0.15)',
+    borderColor: colors.primary,
   },
   scopePillText: {
     color: colors.textSecondary,
@@ -797,7 +797,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   scopePillTextActive: {
-    color: '#38bdf8',
+    color: colors.primaryHover,
     fontWeight: '700',
   },
   commSearchContainer: {
@@ -809,7 +809,7 @@ const styles = StyleSheet.create({
   commSearchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0b0f19',
+    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
     borderColor: colors.cardBorder,
     borderRadius: 10,
@@ -836,8 +836,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   commPillSelected: {
-    backgroundColor: '#1e3a8a',
-    borderColor: '#38bdf8',
+    backgroundColor: 'rgba(94, 106, 210, 0.15)',
+    borderColor: colors.primary,
   },
   commPillText: {
     color: colors.textSecondary,
@@ -845,7 +845,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   commPillTextSelected: {
-    color: '#38bdf8',
+    color: colors.primaryHover,
     fontWeight: '700',
   },
   contentInput: {
@@ -873,16 +873,18 @@ const styles = StyleSheet.create({
   hdBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
     gap: 4,
   },
   hdBadgeText: {
-    color: '#38bdf8',
+    color: colors.textSecondary,
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   aspectRatioBar: {
     flexDirection: 'row',
@@ -894,10 +896,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 6,
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
   aspectRatioBtnActive: {
-    backgroundColor: '#0284c7',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   aspectRatioBtnText: {
     color: colors.textSecondary,
@@ -912,7 +917,7 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: '#0f172a',
+    backgroundColor: colors.surfaceLight,
   },
   imagePreview: {
     width: '100%',

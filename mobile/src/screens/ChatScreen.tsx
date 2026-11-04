@@ -369,10 +369,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               </Text>
               <Text style={styles.roomSubtitle}>
                 {activeConv.is_ephemeral
-                  ? `🔥 Self-destructing (${activeConv.duration || 24}h)`
+                  ? `Self-destructing (${activeConv.duration || 24}h)`
                   : activeConv.is_group
-                  ? '👥 Campus Group'
-                  : '💬 Direct Message'}
+                  ? 'Campus Group'
+                  : 'Direct Message'}
               </Text>
             </View>
           </TouchableOpacity>
@@ -385,7 +385,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 onPress={() => setInviteLinkModalVisible(true)}
                 accessibilityLabel="Group invite link"
               >
-                <Link2 size={19} color="#38bdf8" />
+                <Link2 size={19} color={colors.textSecondary} />
               </TouchableOpacity>
             )}
 
@@ -395,7 +395,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 onPress={() => setAddMembersModalVisible(true)}
                 accessibilityLabel="Add people"
               >
-                <UserPlus size={19} color="#38bdf8" />
+                <UserPlus size={19} color={colors.textSecondary} />
               </TouchableOpacity>
             )}
 
@@ -563,7 +563,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             onPress={() => setMessageRequestsVisible(true)}
             activeOpacity={0.8}
           >
-            <MessageSquare size={13} color={pendingRequestsCount > 0 ? '#fff' : '#38bdf8'} />
+            <MessageSquare size={13} color={pendingRequestsCount > 0 ? '#fff' : colors.textSecondary} />
             <Text style={pendingRequestsCount > 0 ? styles.requestsPillTextActive : styles.requestsPillText}>
               Requests{pendingRequestsCount > 0 ? ` (${pendingRequestsCount})` : ''}
             </Text>
@@ -574,7 +574,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             onPress={() => setJoinViaInviteModalVisible(true)}
             activeOpacity={0.8}
           >
-            <Link2 size={13} color="#38bdf8" />
+            <Link2 size={13} color={colors.textSecondary} />
             <Text style={styles.joinLinkPillText}>Join Link</Text>
           </TouchableOpacity>
 
@@ -583,7 +583,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             onPress={() => setEphemeralModalVisible(true)}
             activeOpacity={0.8}
           >
-            <Flame size={15} color="#fff" />
+            <Flame size={14} color={colors.ephemeralFire} />
             <Text style={styles.ephemeralPillText}>Ephemeral</Text>
           </TouchableOpacity>
 
@@ -617,7 +617,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       {/* Live Campus Directory search section */}
       {searchQuery.trim().length >= 2 && (
         <View style={styles.directorySection}>
-          <Text style={styles.sectionHeader}>🎓 Campus Directory Results</Text>
+          <Text style={styles.sectionHeader}>Campus Directory</Text>
           {searchingDirectory ? (
             <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 10 }} />
           ) : directoryResults.length === 0 ? (
@@ -640,7 +640,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                     <Text style={styles.directoryName}>{item.full_name || item.email}</Text>
                     <Text style={styles.directoryEmail}>{item.email}</Text>
                   </View>
-                  <Text style={styles.startChatLink}>Chat 💬</Text>
+                  <Text style={styles.startChatLink}>Chat</Text>
                 </TouchableOpacity>
               )}
             />
@@ -905,9 +905,9 @@ const styles = StyleSheet.create({
   joinLinkPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.3)',
+    borderColor: colors.cardBorder,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 16,
@@ -915,23 +915,25 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   joinLinkPillText: {
-    color: '#38bdf8',
+    color: colors.textSecondary,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   ephemeralPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ea580c',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
     gap: 4,
   },
   ephemeralPillText: {
-    color: '#fff',
+    color: colors.textSecondary,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   newChatBtn: {
     backgroundColor: colors.primary,
@@ -969,9 +971,9 @@ const styles = StyleSheet.create({
     maxHeight: 200,
   },
   sectionHeader: {
-    color: '#38bdf8',
+    color: colors.textMuted,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     marginBottom: 8,
   },
   noResultsText: {
@@ -990,13 +992,15 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#1e3a8a',
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
   },
   directoryAvatarText: {
-    color: '#93c5fd',
+    color: colors.textSecondary,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -1032,16 +1036,18 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#1e3a8a',
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   convAvatarEphemeral: {
-    backgroundColor: '#7c2d12',
+    borderColor: colors.ephemeralFire,
   },
   convAvatarText: {
-    color: '#fff',
+    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
   },

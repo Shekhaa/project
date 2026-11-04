@@ -64,7 +64,7 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
 
           <View style={[styles.typeBadge, { backgroundColor: `${badgeColor}1c`, borderColor: `${badgeColor}55` }]}>
             <Text style={[styles.typeBadgeText, { color: badgeColor }]}>
-              {discussion.discussion_type === 'QUESTION' ? '❓ Question' : discussion.discussion_type}
+              {discussion.discussion_type === 'QUESTION' ? 'Question' : discussion.discussion_type}
             </Text>
           </View>
 
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#1e293b',
+    borderTopColor: colors.hairline,
   },
   authorGroup: {
     flexDirection: 'row',
@@ -276,14 +276,14 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.hairline,
   },
   authorAvatarText: {
-    color: '#38bdf8',
+    color: colors.textSecondary,
     fontSize: 10,
     fontWeight: '700',
   },
@@ -311,16 +311,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surfaceLight,
     paddingHorizontal: 8,
     paddingVertical: 3.5,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.hairline,
   },
   voteBtnActive: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-    borderColor: '#38bdf8',
+    backgroundColor: 'rgba(94, 106, 210, 0.15)',
+    borderColor: colors.primary,
   },
   voteCount: {
     color: '#94a3b8',
@@ -328,6 +328,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   voteCountActive: {
-    color: '#38bdf8',
+    color: colors.primary,
   },
 });

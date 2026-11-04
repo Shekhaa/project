@@ -20,6 +20,7 @@ import { postService, Post } from '../services/postService';
 import { PostCard } from '../components/feed/PostCard';
 import { StudentProfileModal } from '../components/profile/StudentProfileModal';
 import { SocialListModal, SocialModalType } from '../components/profile/SocialListModal';
+import { ShieldCheck, Settings, LogOut, AlertCircle } from 'lucide-react-native';
 
 interface ProfileData {
   id: number;
@@ -380,20 +381,23 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 loadAuditList();
               }}
             >
-              <Text style={styles.auditIconText}>🛡️ Audit (100)</Text>
+              <ShieldCheck size={14} color={colors.primary} />
+              <Text style={styles.auditIconText}>Audit</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
             style={styles.settingsIconBtn}
             onPress={() => setSettingsModalVisible(true)}
           >
-            <Text style={styles.settingsIconText}>⚙️ Settings</Text>
+            <Settings size={14} color={colors.textSecondary} />
+            <Text style={styles.settingsIconText}>Settings</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.heroLogoutBtn}
             onPress={triggerLogout}
           >
-            <Text style={styles.heroLogoutText}>🚪 Logout</Text>
+            <LogOut size={14} color={colors.danger} />
+            <Text style={styles.heroLogoutText}>Sign Out</Text>
           </TouchableOpacity>
         </View>
 
@@ -407,11 +411,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               <Text style={styles.fullName}>{currentUser.full_name || 'Campus Student'}</Text>
               {currentUser.verification_tier === 'SEMI_VERIFIED' || !profile?.verified ? (
                 <View style={styles.semiVerifiedTag}>
-                  <Text style={styles.semiVerifiedTagText}>🔴 SEMI-VERIFIED</Text>
+                  <AlertCircle size={11} color="#f59e0b" />
+                  <Text style={styles.semiVerifiedTagText}>ID PENDING</Text>
                 </View>
               ) : (
                 <View style={styles.verifiedTag}>
-                  <Text style={styles.verifiedTagText}>🛡️ VERIFIED STUDENT</Text>
+                  <ShieldCheck size={12} color="#27a644" />
+                  <Text style={styles.verifiedTagText}>VERIFIED</Text>
                 </View>
               )}
             </View>
@@ -425,11 +431,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         {/* Semi-Verified Callout Banner */}
         {(currentUser.verification_tier === 'SEMI_VERIFIED' || !profile?.verified) && (
           <View style={styles.semiVerifiedBanner}>
-            <Text style={styles.semiVerifiedBannerIcon}>🔴</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.semiVerifiedBannerTitle}>Semi-Verified Account (ID Pending)</Text>
+              <Text style={styles.semiVerifiedBannerTitle}>Verification in Progress</Text>
               <Text style={styles.semiVerifiedBannerSub}>
-                Phone presence verified on Graphic Era campus. Scan your physical College ID card to earn the official 🛡️ Verified Student badge.
+                Phone presence verified on campus. Scan your physical College ID card to earn the Verified Student badge.
               </Text>
             </View>
           </View>
@@ -1370,14 +1375,14 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 8,
     width: '100%',
     justifyContent: 'space-around',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.cardBorder,
     marginBottom: 14,
   },
   statBox: {
@@ -1385,20 +1390,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statNumber: {
-    color: '#ffffff',
+    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '800',
     marginBottom: 2,
   },
   statLabel: {
-    color: '#94a3b8',
+    color: colors.textMuted,
     fontSize: 11,
     fontWeight: '600',
   },
   statDivider: {
     width: 1,
     height: 22,
-    backgroundColor: '#334155',
+    backgroundColor: colors.cardBorder,
   },
   privacyToggleBtn: {
     paddingHorizontal: 12,
@@ -1501,17 +1506,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   settingsIconBtn: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceLight,
+    paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 14,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.cardBorder,
   },
   settingsIconText: {
     color: colors.textSecondary,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   avatarRow: {
     flexDirection: 'row',
@@ -1560,54 +1568,58 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   verifiedTag: {
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    backgroundColor: 'rgba(39, 166, 68, 0.12)',
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.4)',
+    borderColor: 'rgba(39, 166, 68, 0.3)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   verifiedTagText: {
-    color: '#10b981',
+    color: '#27a644',
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   semiVerifiedTag: {
-    backgroundColor: 'rgba(239, 68, 68, 0.18)',
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.45)',
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   semiVerifiedTagText: {
-    color: '#ef4444',
+    color: '#f59e0b',
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   semiVerifiedBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.35)',
+    borderColor: 'rgba(245, 158, 11, 0.25)',
     borderRadius: 12,
     padding: 12,
     marginTop: 14,
     gap: 10,
   },
-  semiVerifiedBannerIcon: {
-    fontSize: 22,
-  },
   semiVerifiedBannerTitle: {
-    color: '#ef4444',
+    color: '#f59e0b',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   semiVerifiedBannerSub: {
-    color: '#fca5a5',
+    color: colors.textSecondary,
     fontSize: 11,
     marginTop: 2,
+    lineHeight: 16,
   },
   handleText: {
     color: colors.primary,
@@ -2151,32 +2163,38 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   auditIconBtn: {
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceLight,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
+    borderColor: colors.cardBorder,
     marginRight: 8,
   },
   auditIconText: {
-    color: '#818cf8',
+    color: colors.primaryHover,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   heroLogoutBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     marginLeft: 8,
   },
   heroLogoutText: {
-    color: '#f87171',
+    color: '#ef4444',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   auditHeaderRow: {
     flexDirection: 'row',

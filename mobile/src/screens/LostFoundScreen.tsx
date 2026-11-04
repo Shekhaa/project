@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { lostFoundService, LostFoundItem } from '../services/lostFoundService';
+import { MapPin, Plus } from 'lucide-react-native';
 
 export const LostFoundScreen = () => {
   const [items, setItems] = useState<LostFoundItem[]>([]);
@@ -110,7 +111,7 @@ export const LostFoundScreen = () => {
             onPress={() => setActiveTab(tab)}
           >
             <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-              {tab === 'ALL' ? 'All Notices' : tab === 'LOST' ? '🔍 Lost' : '🎁 Found'}
+              {tab === 'ALL' ? 'All Notices' : tab === 'LOST' ? 'Lost' : 'Found'}
             </Text>
           </TouchableOpacity>
         ))}
@@ -133,8 +134,8 @@ export const LostFoundScreen = () => {
                     item.item_type === 'LOST' ? styles.lostTag : styles.foundTag,
                   ]}
                 >
-                  <Text style={styles.typeTagText}>
-                    {item.item_type === 'LOST' ? '🔍 LOST' : '🎁 FOUND'}
+                  <Text style={[styles.typeTagText, item.item_type === 'LOST' ? styles.lostTagText : styles.foundTagText]}>
+                    {item.item_type === 'LOST' ? 'LOST' : 'FOUND'}
                   </Text>
                 </View>
                 <Text style={styles.reporterName}>Reported by {item.reporter_name}</Text>
@@ -143,7 +144,7 @@ export const LostFoundScreen = () => {
               <Text style={styles.itemDesc}>{item.description}</Text>
 
               <View style={styles.locationRow}>
-                <Text style={styles.locationIcon}>📍</Text>
+                <MapPin size={13} color={colors.textSecondary} style={{ marginRight: 4 }} />
                 <Text style={styles.locationText}>{item.location}</Text>
               </View>
 
@@ -152,7 +153,7 @@ export const LostFoundScreen = () => {
                 onPress={() => handleContact(item)}
               >
                 <Text style={styles.contactBtnText}>
-                  {item.item_type === 'LOST' ? 'I Found This! (Message)' : 'This is Mine! (Claim)'}
+                  {item.item_type === 'LOST' ? 'I Found This (Message)' : 'This is Mine (Claim)'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -174,14 +175,14 @@ export const LostFoundScreen = () => {
                 style={[styles.typeOption, reportType === 'LOST' && styles.typeOptionLost]}
                 onPress={() => setReportType('LOST')}
               >
-                <Text style={styles.typeOptionText}>🔍 I Lost Something</Text>
+                <Text style={styles.typeOptionText}>I Lost Something</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.typeOption, reportType === 'FOUND' && styles.typeOptionFound]}
                 onPress={() => setReportType('FOUND')}
               >
-                <Text style={styles.typeOptionText}>🎁 I Found Something</Text>
+                <Text style={styles.typeOptionText}>I Found Something</Text>
               </TouchableOpacity>
             </View>
 
@@ -257,14 +258,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   reportBtn: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.primary,
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 10,
+    borderRadius: 8,
   },
   reportBtnText: {
-    color: '#064e3b',
-    fontWeight: '800',
+    color: '#ffffff',
+    fontWeight: '700',
     fontSize: 13,
   },
   tabsRow: {
@@ -298,7 +299,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
@@ -316,15 +317,24 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   lostTag: {
-    backgroundColor: '#7f1d1d',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
   },
   foundTag: {
-    backgroundColor: '#064e3b',
+    backgroundColor: 'rgba(39, 166, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(39, 166, 68, 0.3)',
   },
   typeTagText: {
-    color: '#fff',
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
+  },
+  lostTagText: {
+    color: '#ef4444',
+  },
+  foundTagText: {
+    color: '#27a644',
   },
   reporterName: {
     color: colors.textMuted,

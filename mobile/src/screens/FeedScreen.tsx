@@ -236,19 +236,19 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const getActiveFilterLabel = () => {
     if (selectedCommunityId) {
       const comm = communities.find((c) => c.id === selectedCommunityId);
-      return comm ? `👥 ${comm.name}` : 'Hub Community';
+      return comm ? comm.name : 'Hub Community';
     }
     switch (selectedScope) {
       case 'COLLEGE':
-        return '🏛️ My College';
+        return 'My College';
       case 'FOLLOWING':
-        return '👤 Following';
+        return 'Following';
       case 'MEDIA':
-        return '🖼️ Photos & Media';
+        return 'Photos & Media';
       case 'RESOURCES':
-        return '📄 Study Resources';
+        return 'Study Resources';
       case 'GLOBAL':
-        return '🌐 Global Campus';
+        return 'Global Campus';
       default:
         return '';
     }
@@ -316,7 +316,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             }}
           >
             <Text style={styles.clearFilterText}>Reset to Global</Text>
-            <X size={14} color="#38bdf8" />
+            <X size={14} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
       )}
@@ -354,7 +354,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     if (!hasMore && posts.length > 2) {
       return (
         <View style={styles.caughtUpBox}>
-          <Text style={styles.caughtUpText}>✨ You're all caught up!</Text>
+          <Text style={styles.caughtUpText}>You're all caught up</Text>
           <Text style={styles.caughtUpSub}>Check back later for more campus updates</Text>
         </View>
       );
@@ -592,16 +592,16 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   campusBadge: {
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surfaceLight,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
     marginLeft: 8,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.cardBorder,
   },
   campusBadgeText: {
-    color: '#94a3b8',
+    color: colors.textMuted,
     fontSize: 10,
     fontWeight: '700',
   },
@@ -615,12 +615,14 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   iconBtnActive: {
-    backgroundColor: '#1e3a8a',
+    backgroundColor: 'rgba(94, 106, 210, 0.15)',
     borderWidth: 1,
     borderColor: colors.primary,
   },
@@ -639,16 +641,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: '#0f172a',
+    backgroundColor: colors.surfaceLight,
     borderTopWidth: 1,
-    borderTopColor: '#1e293b',
+    borderTopColor: colors.cardBorder,
   },
   activeFilterText: {
     color: colors.textSecondary,
     fontSize: 12,
   },
   activeFilterHighlight: {
-    color: '#38bdf8',
+    color: colors.primaryHover,
     fontWeight: '700',
   },
   clearFilterBtn: {
@@ -658,10 +660,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
   clearFilterText: {
-    color: '#38bdf8',
+    color: colors.textSecondary,
     fontSize: 11.5,
     fontWeight: '600',
   },

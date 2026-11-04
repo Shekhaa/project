@@ -131,11 +131,7 @@ export const PostCard: React.FC<PostCardProps> = ({
 
             <View style={styles.metaLine}>
               <Text style={styles.communityTag}>
-                {post.community_name
-                  ? `👥 ${post.community_name}`
-                  : post.author_college_name
-                  ? `🏛️ ${post.author_college_name}`
-                  : '🏛️ Campus Feed'}
+                {post.community_name || post.author_college_name || 'Campus Feed'}
                 {' • '}
               </Text>
               <Text style={styles.timestamp}>{formatTimestamp(post.created_at)}</Text>
@@ -265,12 +261,12 @@ export const PostCard: React.FC<PostCardProps> = ({
 
         {/* Post Visibility / Audience Badge */}
         {(() => {
-          let label = '🌐 All colleges';
-          if (post.visibility === 'COLLEGE') label = '🏛️ My college';
-          else if (post.visibility === 'FOLLOWERS') label = '👤 Followers only';
-          else if (post.visibility === 'CONNECTIONS') label = '🤝 Connections';
-          else if (post.visibility === 'COMMUNITY') label = '👥 Community';
-          else if (post.visibility === 'ONLY_ME') label = '🔒 Only me';
+          let label = 'All colleges';
+          if (post.visibility === 'COLLEGE') label = 'My college';
+          else if (post.visibility === 'FOLLOWERS') label = 'Followers only';
+          else if (post.visibility === 'CONNECTIONS') label = 'Connections';
+          else if (post.visibility === 'COMMUNITY') label = 'Community';
+          else if (post.visibility === 'ONLY_ME') label = 'Only me';
 
           return (
             <View style={styles.audienceBadge}>
@@ -374,8 +370,8 @@ const styles = StyleSheet.create({
     borderColor: colors.cardBorder,
   },
   anonAvatar: {
-    backgroundColor: '#3b0764',
-    borderColor: '#7e22ce',
+    backgroundColor: colors.surfaceLight,
+    borderColor: colors.cardBorder,
   },
   avatarText: {
     color: colors.textPrimary,
@@ -399,16 +395,18 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   anonPill: {
-    backgroundColor: '#581c87',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
     marginLeft: 6,
   },
   anonPillText: {
-    color: '#e9d5ff',
+    color: colors.textMuted,
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   metaLine: {
     flexDirection: 'row',
@@ -437,7 +435,7 @@ const styles = StyleSheet.create({
   imageContainer: {
     width: '100%',
     aspectRatio: 4 / 3,
-    backgroundColor: '#0a0f1d',
+    backgroundColor: colors.surfaceLight,
     marginTop: 6,
     overflow: 'hidden',
   },
@@ -448,9 +446,9 @@ const styles = StyleSheet.create({
   documentCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.cardBorder,
     borderRadius: 10,
     padding: 12,
     marginHorizontal: 14,
@@ -460,7 +458,9 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 8,
-    backgroundColor: '#450a0a',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -482,7 +482,9 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#1e3a8a',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,

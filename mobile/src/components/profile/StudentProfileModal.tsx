@@ -365,7 +365,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                       ) : profile.follow_status === 'REQUEST_SENT' ? (
                         <>
                           <UserPlus size={16} color={colors.textSecondary} />
-                          <Text style={styles.actionBtnMutedText}>Requested ⏳</Text>
+                          <Text style={styles.actionBtnMutedText}>Requested</Text>
                         </>
                       ) : (
                         <>
@@ -386,9 +386,9 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                       onPress={handleEndorseAction}
                       disabled={actionLoading}
                     >
-                      <Sparkles size={16} color={profile.has_endorsed ? '#fbbf24' : '#38bdf8'} />
+                      <Sparkles size={16} color={profile.has_endorsed ? '#fbbf24' : '#8a8f98'} />
                       <Text style={profile.has_endorsed ? styles.actionBtnEndorsedText : styles.actionBtnSecondaryText}>
-                        {profile.has_endorsed ? '⭐ Endorsed' : '⭐ Endorse'}
+                        {profile.has_endorsed ? 'Endorsed' : 'Endorse'}
                       </Text>
                     </TouchableOpacity>
 
@@ -421,7 +421,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
               {!profile.can_view_content ? (
                 <View style={styles.privateCard}>
                   <View style={styles.privateIconCircle}>
-                    <Lock size={32} color="#38bdf8" />
+                    <Lock size={28} color={colors.primary} />
                   </View>
                   <Text style={styles.privateTitle}>This Account is Private</Text>
                   <Text style={styles.privateSub}>
@@ -435,7 +435,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                     <Text style={styles.detailsCardTitle}>Academic Information</Text>
 
                     <View style={styles.detailRow}>
-                      <Building2 size={16} color="#38bdf8" style={styles.detailIcon} />
+                      <Building2 size={16} color={colors.textSecondary} style={styles.detailIcon} />
                       <View style={styles.detailTextCol}>
                         <Text style={styles.detailLabel}>College</Text>
                         <Text style={styles.detailValue}>
@@ -447,7 +447,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                     <View style={styles.detailDivider} />
 
                     <View style={styles.detailRow}>
-                      <GraduationCap size={16} color="#38bdf8" style={styles.detailIcon} />
+                      <GraduationCap size={16} color={colors.textSecondary} style={styles.detailIcon} />
                       <View style={styles.detailTextCol}>
                         <Text style={styles.detailLabel}>Course & Branch</Text>
                         <Text style={styles.detailValue}>
@@ -460,7 +460,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                       <>
                         <View style={styles.detailDivider} />
                         <View style={styles.detailRow}>
-                          <Calendar size={16} color="#38bdf8" style={styles.detailIcon} />
+                          <Calendar size={16} color={colors.textSecondary} style={styles.detailIcon} />
                           <View style={styles.detailTextCol}>
                             <Text style={styles.detailLabel}>Cohort</Text>
                             <Text style={styles.detailValue}>{profile.academic_year_name}</Text>
@@ -473,7 +473,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                       <>
                         <View style={styles.detailDivider} />
                         <View style={styles.detailRow}>
-                          <BookOpen size={16} color="#38bdf8" style={styles.detailIcon} />
+                          <BookOpen size={16} color={colors.textSecondary} style={styles.detailIcon} />
                           <View style={styles.detailTextCol}>
                             <Text style={styles.detailLabel}>Admission / Roll No</Text>
                             <Text style={styles.detailValue}>{profile.admission_number}</Text>
@@ -496,10 +496,10 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                           <View style={styles.miniPostTopRow}>
                             <Text style={styles.miniPostOrigin}>
                               {p.community_name
-                                ? `👥 ${p.community_name}`
+                                ? p.community_name
                                 : p.author_college_name
-                                ? `🏛️ ${p.author_college_name}`
-                                : '🏛️ Campus Feed'}
+                                ? p.author_college_name
+                                : 'Campus Feed'}
                             </Text>
                             <Text style={styles.miniPostTime}>
                               {new Date(p.created_at).toLocaleDateString(undefined, {
@@ -595,13 +595,13 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#0284c7',
+    backgroundColor: colors.surfaceLight,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
     position: 'relative',
-    borderWidth: 2,
-    borderColor: '#38bdf8',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
   avatarInitials: {
     color: '#fff',
@@ -612,11 +612,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: -2,
     right: -2,
-    backgroundColor: '#334155',
+    backgroundColor: colors.surfaceLight,
     padding: 5,
     borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: colors.hairline,
   },
   nameRow: {
     flexDirection: 'row',
@@ -634,26 +634,26 @@ const styles = StyleSheet.create({
   verifiedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    backgroundColor: 'rgba(94, 106, 210, 0.12)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 12,
     gap: 4,
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.3)',
+    borderColor: 'rgba(94, 106, 210, 0.25)',
   },
   verifiedText: {
-    color: '#38bdf8',
+    color: '#818cf8',
     fontSize: 10,
     fontWeight: '800',
   },
   semiVerifiedBadge: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderColor: 'rgba(239, 68, 68, 0.25)',
   },
   semiVerifiedText: {
     color: '#ef4444',
@@ -676,34 +676,34 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 16,
     width: '100%',
     justifyContent: 'space-around',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.hairline,
   },
   statBox: {
     alignItems: 'center',
     flex: 1,
   },
   statNumber: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '800',
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
     marginBottom: 2,
   },
   statLabel: {
-    color: '#94a3b8',
-    fontSize: 12,
-    fontWeight: '600',
+    color: colors.textMuted,
+    fontSize: 11.5,
+    fontWeight: '500',
   },
   statDivider: {
     width: 1,
     height: 24,
-    backgroundColor: '#334155',
+    backgroundColor: colors.hairline,
   },
   actionsContainer: {
     marginBottom: 20,
@@ -724,7 +724,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   actionBtnPrimary: {
-    backgroundColor: '#0284c7',
+    backgroundColor: colors.primary,
   },
   actionBtnPrimaryText: {
     color: '#fff',
@@ -732,29 +732,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   actionBtnOutline: {
-    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#38bdf8',
+    borderColor: colors.hairline,
   },
   actionBtnOutlineText: {
-    color: '#38bdf8',
+    color: colors.textPrimary,
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   actionBtnSecondary: {
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#38bdf8',
+    borderColor: colors.hairline,
   },
   actionBtnSecondaryText: {
-    color: '#38bdf8',
+    color: colors.textSecondary,
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   actionBtnEndorsed: {
-    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    backgroundColor: 'rgba(251, 191, 36, 0.1)',
     borderWidth: 1,
-    borderColor: '#fbbf24',
+    borderColor: 'rgba(251, 191, 36, 0.3)',
   },
   actionBtnEndorsedText: {
     color: '#fbbf24',
@@ -762,17 +762,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   actionBtnConnected: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
     borderWidth: 1,
-    borderColor: '#10b981',
+    borderColor: 'rgba(16, 185, 129, 0.3)',
   },
   actionBtnConnectedText: {
-    color: '#10b981',
+    color: '#4ade80',
     fontSize: 13,
     fontWeight: '700',
   },
   actionBtnAccent: {
-    backgroundColor: '#10b981',
+    backgroundColor: colors.primary,
   },
   actionBtnAccentText: {
     color: '#fff',
@@ -780,22 +780,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   actionBtnMuted: {
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.hairline,
   },
   actionBtnMutedText: {
-    color: colors.textSecondary,
+    color: colors.textMuted,
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   actionBtnMessage: {
-    backgroundColor: '#334155',
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.hairline,
   },
   actionBtnMessageText: {
-    color: '#fff',
+    color: colors.textPrimary,
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   blockRow: {
     flexDirection: 'row',
@@ -815,41 +817,41 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   privateCard: {
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 14,
     padding: 24,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.hairline,
     marginVertical: 10,
   },
   privateIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(94, 106, 210, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 14,
   },
   privateTitle: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '800',
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
     marginBottom: 8,
   },
   privateSub: {
-    color: '#94a3b8',
+    color: colors.textSecondary,
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 18,
   },
   detailsCard: {
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.hairline,
   },
   detailsCardTitle: {
     color: '#fff',

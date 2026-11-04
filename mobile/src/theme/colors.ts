@@ -25,6 +25,13 @@ export const colors = {
   textMuted: '#8a8f98',
   textTertiary: '#62666d',
 
+  // Chat Bubbles (Linear & Dark Mode Craft)
+  bubbleMe: '#282d46',
+  bubbleMeText: '#f7f8f8',
+  bubbleThem: '#141516',
+  bubbleThemBorder: '#23252a',
+  bubbleThemText: '#f7f8f8',
+
   // Mascots / Anonymous
   anonPurple: '#7170ff',
   anonBadge: '#1a1936',

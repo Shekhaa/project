@@ -418,16 +418,16 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.cardBorder,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 10,
   },
   anonAvatar: {
-    backgroundColor: '#3b0764',
-    borderColor: '#7e22ce',
+    backgroundColor: colors.surfaceLight,
+    borderColor: colors.cardBorder,
   },
   avatarText: {
     color: colors.textPrimary,
@@ -448,16 +448,18 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
   },
   anonBadge: {
-    backgroundColor: '#581c87',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
     paddingHorizontal: 5,
     paddingVertical: 2,
     borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
     marginLeft: 6,
   },
   anonBadgeText: {
-    color: '#e9d5ff',
+    color: colors.textMuted,
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   commentText: {
     color: colors.textPrimary,
@@ -465,7 +467,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   mentionTag: {
-    color: '#38bdf8',
+    color: colors.primaryHover,
     fontWeight: '700',
   },
   replyBtn: {
@@ -484,7 +486,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingLeft: 12,
     borderLeftWidth: 2,
-    borderLeftColor: '#334155',
+    borderLeftColor: colors.cardBorder,
   },
   replyRow: {
     flexDirection: 'row',
@@ -495,16 +497,16 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.cardBorder,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
   },
   anonAvatarSmall: {
-    backgroundColor: '#3b0764',
-    borderColor: '#7e22ce',
+    backgroundColor: colors.surfaceLight,
+    borderColor: colors.cardBorder,
   },
   avatarSmallText: {
     color: colors.textPrimary,
@@ -515,9 +517,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(30, 58, 138, 0.25)',
+    backgroundColor: 'rgba(94, 106, 210, 0.1)',
     borderLeftWidth: 3,
-    borderLeftColor: '#38bdf8',
+    borderLeftColor: colors.primary,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
@@ -531,7 +533,7 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
   },
   replyBannerHighlight: {
-    color: '#38bdf8',
+    color: colors.primaryHover,
     fontWeight: '700',
   },
   replyCancelBtn: {
@@ -553,7 +555,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceLight,
   },
   anonToggleActive: {
-    backgroundColor: '#581c87',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   anonToggleText: {
     fontSize: 15,
@@ -566,7 +568,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tagToggleActive: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    backgroundColor: 'rgba(94, 106, 210, 0.15)',
   },
   textInput: {
     flex: 1,

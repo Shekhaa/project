@@ -337,14 +337,14 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   tabLabel: {
-    color: colors.textSecondary,
+    color: colors.textMuted,
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
     marginTop: 4,
   },
   tabActiveText: {
-    color: colors.primary,
-    fontWeight: '800',
+    color: colors.textPrimary,
+    fontWeight: '700',
   },
 });
 
