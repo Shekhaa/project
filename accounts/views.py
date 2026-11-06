@@ -547,6 +547,10 @@ class MicrosoftSSOView(APIView):
 
         # Auto-provision or complete StudentProfile so student skips redundant onboarding / claim screens
         profile = getattr(user, "profile", None)
+        college = domain_match.college
+        course = getattr(profile, "course", None) or Course.objects.filter(college=college).first() or Course.objects.first()
+        branch = getattr(profile, "branch", None) or (Branch.objects.filter(course=course).first() if course else None)
+
         if not profile:
             clean_name = "".join(c for c in (display_name or "").lower() if c.isalnum() or c == "_").strip("_")
             if not clean_name:
@@ -557,10 +561,6 @@ class MicrosoftSSOView(APIView):
             while StudentProfile.objects.filter(username=candidate_user).exists():
                 candidate_user = f"{base_user}_{counter}"
                 counter += 1
-
-            college = domain_match.college
-            course = Course.objects.filter(college=college).first() or Course.objects.first()
-            branch = Branch.objects.filter(course=course).first() if course else None
 
             calc_year = 1
             if admission_year:
@@ -631,9 +631,9 @@ class MicrosoftSSOView(APIView):
                 "roll_number": roll_no or email_prefix,
                 "admission_year": admission_year,
                 "full_name": user.full_name or display_name,
-                "college_id": domain_match.college.id,
-                "college_name": domain_match.college.name,
-                "college_short_name": domain_match.college.short_name,
+                "college_id": college.id if college else 1,
+                "college_name": college.name if college else "Graphic Era University",
+                "college_short_name": college.short_name if college else "GEU",
                 "course_id": course.id if course else 1,
                 "course_name": course.name if course else "Engineering",
                 "branch_id": branch.id if branch else 1,
@@ -1074,6 +1074,7 @@ class IDCardLoginView(APIView):
         if existing_profile and existing_profile.user:
             user = existing_profile.user
             profile = existing_profile
+            clean_user = profile.username
         else:
             # Find or create user
             user = User.objects.filter(email__iexact=college_email).first()
@@ -1102,7 +1103,28 @@ class IDCardLoginView(APIView):
             # Resolve foreign keys safely
             from colleges.models import College, Course, Branch, AcademicYear, Section
             col_id = ext.get("college", {}).get("id")
-            college = College.objects.filter(id=col_id).first() or College.objects.first()
+            col_name = ext.get("college", {}).get("name")
+            col_short = ext.get("college", {}).get("short_name")
+            college = None
+            if col_id:
+                college = College.objects.filter(id=col_id).first()
+            if not college and col_short:
+                college = College.objects.filter(short_name__iexact=col_short).first()
+            if not college and col_name:
+                college = College.objects.filter(name__icontains=col_name).first()
+            if not college and col_name:
+                college, _ = College.objects.get_or_create(
+                    name=col_name,
+                    defaults={
+                        "short_name": col_short or col_name[:10].upper(),
+                        "city": "Dehradun",
+                        "state": "Uttarakhand",
+                        "is_active": True,
+                    }
+                )
+            if not college:
+                college = College.objects.first()
+
             crs_id = ext.get("course", {}).get("id")
             course = Course.objects.filter(id=crs_id).first() or Course.objects.filter(college=college).first() or Course.objects.first()
             brn_id = ext.get("branch", {}).get("id")
@@ -1134,7 +1156,12 @@ class IDCardLoginView(APIView):
                 )
 
         if image_bytes and not profile.id_card_image:
-            profile.id_card_image = ContentFile(image_bytes, name=file_name)
+            try:
+                from PIL import Image as PILImage
+                PILImage.open(io.BytesIO(image_bytes)).verify()
+                profile.id_card_image.save(file_name, ContentFile(image_bytes), save=False)
+            except Exception:
+                pass
             profile.id_card_verified = False
             profile.verification_method = "ID_CARD_OCR"
             profile.id_card_hash = img_hash

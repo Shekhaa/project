@@ -16,7 +16,7 @@ class CommunityEnrollmentService:
 
         enrolled = []
         try:
-            # 1. College Community (Graphic Era University / Graphic Era Hill University)
+            # 1. College Community (Graphic Era University, Graphic Era Hill University, or detected college)
             college = getattr(profile, "college", None)
             if college:
                 col_comm = Community.objects.filter(
@@ -24,14 +24,22 @@ class CommunityEnrollmentService:
                     name__icontains=college.short_name
                 ).first()
                 if not col_comm:
-                    col_comm = Community.objects.filter(community_type="COLLEGE").first()
-                if col_comm:
-                    CommunityMember.objects.get_or_create(
-                        community=col_comm,
-                        user=user,
-                        defaults={"role": "MEMBER"}
+                    col_comm = Community.objects.filter(
+                        community_type="COLLEGE",
+                        name__icontains=college.name
+                    ).first()
+                if not col_comm:
+                    col_comm, _ = Community.objects.get_or_create(
+                        name=f"{college.name} Community",
+                        community_type="COLLEGE",
+                        defaults={"description": f"Official campus community for {college.name}"}
                     )
-                    enrolled.append(col_comm)
+                CommunityMember.objects.get_or_create(
+                    community=col_comm,
+                    user=user,
+                    defaults={"role": "MEMBER"}
+                )
+                enrolled.append(col_comm)
 
             # 2. Course Community (e.g. GEU B.Tech, GEHU B.Tech)
             course = getattr(profile, "course", None)

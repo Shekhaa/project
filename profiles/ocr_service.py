@@ -134,8 +134,30 @@ class IDCardOCRService:
         if not matched_college:
             if "HILL" in normalized_text or "GEHU" in normalized_text:
                 matched_college = colleges.filter(name__icontains="Hill").first()
-            if not matched_college:
-                matched_college = colleges.filter(short_name__icontains="GEU").first() or colleges.first()
+            elif "GRAPHIC ERA" in normalized_text or "GEU" in normalized_text:
+                matched_college = colleges.filter(short_name__icontains="GEU").first()
+            else:
+                # Detect any other university / college mentioned on the ID card
+                for line in lines:
+                    upper_line = line.upper()
+                    if any(term in upper_line for term in ["UNIVERSITY", "INSTITUTE OF TECHNOLOGY", "COLLEGE OF", "COLLEGE"]):
+                        cleaned_col_name = re.sub(r"[^A-Za-z\s]", " ", line).strip()
+                        cleaned_col_name = " ".join(cleaned_col_name.split()).title()
+                        if 6 <= len(cleaned_col_name) <= 60 and not any(kw in cleaned_col_name.upper() for kw in ["STUDENT", "IDENTITY", "CARD", "NAME", "ROLL"]):
+                            words = cleaned_col_name.split()
+                            short_code = "".join(w[0] for w in words if w[0].isalnum())[:8].upper() or "COLLEGE"
+                            matched_college, _ = College.objects.get_or_create(
+                                name=cleaned_col_name,
+                                defaults={
+                                    "short_name": short_code,
+                                    "city": "Dehradun",
+                                    "state": "Uttarakhand",
+                                    "is_active": True,
+                                }
+                            )
+                            break
+        if not matched_college:
+            matched_college = colleges.filter(short_name__icontains="GEU").first() or colleges.first()
 
         extracted["college"] = matched_college
 
@@ -261,6 +283,28 @@ class IDCardOCRService:
                     pil_image = ImageOps.exif_transpose(pil_image)
                 except Exception:
                     pass
+                # Resolution check: real ID card photos are not tiny icons
+                width, height = pil_image.width, pil_image.height
+                if width < 120 or height < 120:
+                    return {
+                        "success": False,
+                        "error": "The uploaded photo is too small or low-resolution. Please provide a clear, readable photo of your student ID card.",
+                        "image_hash": img_hash,
+                        "extracted_data": {},
+                        "anti_fraud": {"is_flagged": False, "flag_reason": "Low resolution"},
+                    }
+
+                # Dimension / aspect ratio sanity check for ID cards (reject extreme banners)
+                ratio = max(width, height) / max(min(width, height), 1)
+                if ratio > 2.8:
+                    return {
+                        "success": False,
+                        "error": "The image dimensions do not match a student ID card. Please upload a clear photo of your physical card.",
+                        "image_hash": img_hash,
+                        "extracted_data": {},
+                        "anti_fraud": {"is_flagged": False, "flag_reason": "Extreme aspect ratio"},
+                    }
+
                 is_valid_image = True
                 raw_text = cls.perform_ocr(pil_image)
             except Exception as e:
@@ -270,6 +314,30 @@ class IDCardOCRService:
                     "image_hash": img_hash,
                     "extracted_data": {},
                     "anti_fraud": {"is_flagged": False, "flag_reason": ""},
+                }
+
+        # Check if text was parsed and whether it contains any collegiate / student keywords
+        CARD_KEYWORDS = [
+            "UNIVERSITY", "COLLEGE", "INSTITUTE", "ACADEMY", "CAMPUS", "SCHOOL", "VIDYAPEETH",
+            "GRAPHIC ERA", "GEU", "GEHU", "STUDENT", "IDENTITY", "CARD", "I-CARD",
+            "ROLL", "ADMISSION", "ENROLLMENT", "REGISTRATION", "COURSE", "BRANCH",
+            "SEMESTER", "DEPARTMENT", "VALID", "FATHER", "DOB", "YEAR", "BATCH",
+            "B.TECH", "BTECH", "BCA", "MCA", "MBA", "BBA", "B.SC", "BSC", "B.COM", "BCOM",
+            "B.PHARMA", "D.PHARMA", "M.TECH", "ENGINEERING", "FACULTY", "DEAN", "PRINCIPAL",
+            "DIRECTOR", "REGISTRAR", "EXAM", "LIBRARY", "DEHRADUN", "BHIMTAL", "HALDWANI"
+        ]
+
+        if raw_text.strip():
+            normalized_raw = raw_text.upper()
+            has_card_keyword = any(kw in normalized_raw for kw in CARD_KEYWORDS)
+            if not has_card_keyword and len(raw_text.strip()) > 15:
+                # OCR detected text, but it has zero resemblance to any college / student ID card
+                return {
+                    "success": False,
+                    "error": "Could not detect a valid college ID card in the photo. Please make sure your university name, roll number, or student name is clearly visible.",
+                    "image_hash": img_hash,
+                    "extracted_data": {},
+                    "anti_fraud": {"is_flagged": False, "flag_reason": "Non-collegiate text content"},
                 }
 
         # If OCR text is blank (e.g. Linux cloud environment without native OCR engine, or card in low lighting):
