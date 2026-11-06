@@ -16,6 +16,7 @@ import {
   Image,
 } from 'react-native';
 import { colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
 import {
   communityService,
   Community,
@@ -74,6 +75,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   onOpenPostDetail,
   onOpenProfile,
 }) => {
+  const { colors, isDark } = useTheme();
   // Discovery State
   const [communities, setCommunities] = useState<Community[]>([]);
   const [loading, setLoading] = useState(false);
@@ -485,12 +487,12 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   if (activeCommunity) {
     return (
       <KeyboardAvoidingView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {/* Community Top Header Bar */}
-        <View style={styles.communityHeader}>
+        <View style={[styles.communityHeader, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => setActiveCommunity(null)}
@@ -1130,9 +1132,9 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   // VIEW 2: CAMPUS DISCOVERY & HUBS LIST (REDESIGNED)
   // =========================================================================
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
         <View>
           <Text style={styles.headerTitle}>Campus Hubs</Text>
           <Text style={styles.headerSubtitle}>
@@ -1161,12 +1163,12 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       </View>
 
       {/* Search Bar */}
-      <View style={styles.searchContainer}>
+      <View style={[styles.searchContainer, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
         <Search size={16} color={colors.textSecondary} style={{ marginRight: 8 }} />
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, { color: colors.textPrimary }]}
           placeholder="Search official college, course, or custom hubs..."
-          placeholderTextColor={colors.textSecondary}
+          placeholderTextColor={colors.textMuted}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -1216,7 +1218,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
             const latestDisc = item.latest_discussion;
             return (
               <TouchableOpacity
-                style={styles.communityCard}
+                style={[styles.communityCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}
                 onPress={() => setActiveCommunity(item)}
                 activeOpacity={0.9}
               >

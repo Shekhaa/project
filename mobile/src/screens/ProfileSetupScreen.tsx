@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
 import { profileService } from '../services/profileService';
 import { authService, User } from '../services/authService';
 import { ShieldCheck, AlertCircle, Sparkles, Lock, Check } from 'lucide-react-native';
@@ -22,6 +23,7 @@ interface ProfileSetupScreenProps {
 }
 
 export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({ currentUser, onProfileComplete }) => {
+  const { colors, isDark } = useTheme();
   const [loadingInitial, setLoadingInitial] = useState(true);
 
   // Form State
@@ -130,7 +132,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({ currentU
   const isGreenVerified = verificationTier === 'FULLY_VERIFIED';
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <View style={styles.logoRow}>
           <Text style={styles.logoIcon}>🎓</Text>

@@ -11,10 +11,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
 import { lostFoundService, LostFoundItem } from '../services/lostFoundService';
 import { MapPin, Plus } from 'lucide-react-native';
 
 export const LostFoundScreen = () => {
+  const { colors, isDark } = useTheme();
   const [items, setItems] = useState<LostFoundItem[]>([]);
   const [activeTab, setActiveTab] = useState<'ALL' | 'LOST' | 'FOUND'>('ALL');
   const [loading, setLoading] = useState(false);
@@ -86,9 +88,9 @@ export const LostFoundScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
         <View>
           <Text style={styles.headerTitle}>Lost & Found</Text>
           <Text style={styles.headerSubtitle}>Frictionless 1-step campus recovery</Text>
@@ -126,7 +128,7 @@ export const LostFoundScreen = () => {
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           renderItem={({ item }) => (
-            <View style={styles.card}>
+            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
               <View style={styles.cardTop}>
                 <View
                   style={[

@@ -13,6 +13,7 @@ import {
   Modal,
 } from 'react-native';
 import { colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
 import { chatService, Conversation, Message } from '../services/chatService';
 import { api } from '../config/api';
 import { MessageBubble, SharedPostCardData } from '../components/chat/MessageBubble';
@@ -53,6 +54,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   onClearInitialConversation,
   onOpenProfile,
 }) => {
+  const { colors, isDark } = useTheme();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
   const [actionConv, setActionConv] = useState<Conversation | null>(null);
@@ -339,10 +341,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     return (
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.roomContainer}
+        style={[styles.roomContainer, { backgroundColor: colors.background }]}
       >
         {/* Room Header */}
-        <View style={styles.roomHeader}>
+        <View style={[styles.roomHeader, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => {
@@ -441,7 +443,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         )}
 
         {/* Bottom Message Input Bar */}
-        <View style={styles.inputArea}>
+        <View style={[styles.inputArea, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
           <TouchableOpacity
             style={styles.attachBtn}
             onPress={() => setAttachmentPickerVisible(true)}
@@ -452,9 +454,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           </TouchableOpacity>
 
           <TextInput
-            style={styles.messageInput}
+            style={[styles.messageInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
             placeholder="Type a message..."
-            placeholderTextColor={colors.textSecondary}
+            placeholderTextColor={colors.textMuted}
             value={inputMessage}
             onChangeText={setInputMessage}
             multiline
@@ -553,9 +555,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const filteredConvs = getFilteredConversations();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Top Header */}
-      <View style={styles.inboxHeader}>
+      <View style={[styles.inboxHeader, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
         <Text style={styles.inboxTitle}>Campus Messages</Text>
         <View style={styles.headerBtnGroup}>
           <TouchableOpacity
@@ -598,12 +600,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       </View>
 
       {/* Search Input Bar */}
-      <View style={styles.searchBar}>
+      <View style={[styles.searchBar, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
         <Search size={18} color={colors.textSecondary} style={{ marginRight: 8 }} />
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, { color: colors.textPrimary }]}
           placeholder="Search chats or find classmates..."
-          placeholderTextColor={colors.textSecondary}
+          placeholderTextColor={colors.textMuted}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -680,7 +682,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
             return (
               <TouchableOpacity
-                style={styles.convCard}
+                style={[styles.convCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}
                 onPress={() => setActiveConv(item)}
                 delayLongPress={450}
                 onLongPress={() => setActionConv(item)}

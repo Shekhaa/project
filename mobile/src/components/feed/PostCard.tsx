@@ -10,6 +10,7 @@ import {
   Platform,
   Linking,
 } from 'react-native';
+import { useTheme } from '../../theme/ThemeContext';
 import { colors } from '../../theme/colors';
 import { Post } from '../../services/postService';
 import { MediaGrid } from '../media/MediaGrid';
@@ -48,6 +49,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   onArchivePost,
   onAuthorPress,
 }) => {
+  const { colors, isDark } = useTheme();
   const [menuVisible, setMenuVisible] = useState(false);
 
   const isAuthor = currentUser && (
@@ -93,7 +95,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   const authorInitial = (post.author_name || 'S').charAt(0).toUpperCase();
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -109,22 +111,22 @@ export const PostCard: React.FC<PostCardProps> = ({
           ) : post.author_avatar ? (
             <Image source={{ uri: post.author_avatar }} style={styles.avatar} />
           ) : (
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{authorInitial}</Text>
+            <View style={[styles.avatar, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+              <Text style={[styles.avatarText, { color: colors.textPrimary }]}>{authorInitial}</Text>
             </View>
           )}
 
           <View style={styles.authorInfo}>
             <View style={styles.nameLine}>
-              <Text style={styles.authorName} numberOfLines={1}>
+              <Text style={[styles.authorName, { color: colors.textPrimary }]} numberOfLines={1}>
                 {post.author_name}
               </Text>
               {!post.is_anonymous && post.author_verification_tier === 'FULLY_VERIFIED' && (
                 <ShieldCheck size={14} color="#38bdf8" style={styles.badgeIcon} />
               )}
               {post.is_anonymous && (
-                <View style={styles.anonPill}>
-                  <Text style={styles.anonPillText}>Anonymous</Text>
+                <View style={[styles.anonPill, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                  <Text style={[styles.anonPillText, { color: colors.textMuted }]}>Anonymous</Text>
                 </View>
               )}
             </View>
@@ -134,7 +136,7 @@ export const PostCard: React.FC<PostCardProps> = ({
                 {post.community_name || post.author_college_name || 'Campus Feed'}
                 {' • '}
               </Text>
-              <Text style={styles.timestamp}>{formatTimestamp(post.created_at)}</Text>
+              <Text style={[styles.timestamp, { color: colors.textMuted }]}>{formatTimestamp(post.created_at)}</Text>
             </View>
           </View>
         </TouchableOpacity>
@@ -152,7 +154,7 @@ export const PostCard: React.FC<PostCardProps> = ({
       {/* Post Text Content */}
       {post.content ? (
         <TouchableOpacity onPress={() => onCommentPress(post)} activeOpacity={0.92}>
-          <Text style={styles.content}>{post.content}</Text>
+          <Text style={[styles.content, { color: colors.textPrimary }]}>{post.content}</Text>
         </TouchableOpacity>
       ) : null}
 
@@ -246,7 +248,7 @@ export const PostCard: React.FC<PostCardProps> = ({
             activeOpacity={0.7}
           >
             <MessageCircle size={20} color={colors.textSecondary} />
-            <Text style={styles.actionCount}>{post.comments_count || 0}</Text>
+            <Text style={[styles.actionCount, { color: colors.textSecondary }]}>{post.comments_count || 0}</Text>
           </TouchableOpacity>
 
           {/* Share */}
@@ -269,8 +271,8 @@ export const PostCard: React.FC<PostCardProps> = ({
           else if (post.visibility === 'ONLY_ME') label = 'Only me';
 
           return (
-            <View style={styles.audienceBadge}>
-              <Text style={styles.audienceText}>{label}</Text>
+            <View style={[styles.audienceBadge, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+              <Text style={[styles.audienceText, { color: colors.textMuted }]}>{label}</Text>
             </View>
           );
         })()}
@@ -289,7 +291,7 @@ export const PostCard: React.FC<PostCardProps> = ({
             activeOpacity={1}
             onPress={() => setMenuVisible(false)}
           >
-            <View style={styles.menuSheet}>
+            <View style={[styles.menuSheet, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
               {isAuthor && onDeletePost && (
                 <TouchableOpacity
                   style={styles.menuItem}

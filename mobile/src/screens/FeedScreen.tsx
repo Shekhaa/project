@@ -12,6 +12,7 @@ import {
   Platform,
   Modal,
 } from 'react-native';
+import { useTheme } from '../theme/ThemeContext';
 import { colors } from '../theme/colors';
 import { postService, Post } from '../services/postService';
 import { communityService, Community } from '../services/communityService';
@@ -22,7 +23,7 @@ import { ShareModal } from '../components/feed/ShareModal';
 import { NotificationsModal } from '../components/notifications/NotificationsModal';
 import { notificationService, NotificationItem } from '../services/notificationService';
 import { api } from '../config/api';
-import { Plus, Bell, RefreshCw, Sparkles, SlidersHorizontal, Check, X } from 'lucide-react-native';
+import { Plus, Bell, RefreshCw, Sparkles, SlidersHorizontal, Check, X, Sun, Moon } from 'lucide-react-native';
 
 interface FeedScreenProps {
   currentUser?: any;
@@ -37,6 +38,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   onNavigateToChat,
   onOpenProfile,
 }) => {
+  const { colors, isDark, toggleTheme } = useTheme();
   const [posts, setPosts] = useState<Post[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [selectedCommunityId, setSelectedCommunityId] = useState<number | undefined>(undefined);
@@ -255,20 +257,30 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   };
 
   const renderHeader = () => (
-    <View style={styles.headerArea}>
+    <View style={[styles.headerArea, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
       {/* Top Navbar */}
       <View style={styles.navBar}>
         <View style={styles.brandRow}>
-          <Text style={styles.brandTitle}>Campus</Text>
-          <Text style={styles.brandAccent}>Connect</Text>
-          <View style={styles.campusBadge}>
-            <Text style={styles.campusBadgeText}>GEU/GEHU</Text>
+          <Text style={[styles.brandTitle, { color: colors.textPrimary }]}>Campus</Text>
+          <Text style={[styles.brandAccent, { color: colors.primary }]}>Connect</Text>
+          <View style={[styles.campusBadge, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+            <Text style={[styles.campusBadgeText, { color: colors.textSecondary }]}>GEU/GEHU</Text>
           </View>
         </View>
 
         <View style={styles.navActions}>
+          {/* Quick 1-Tap Theme Toggle */}
           <TouchableOpacity
-            style={[styles.iconBtn, isFiltered && styles.iconBtnActive]}
+            style={[styles.iconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+            onPress={toggleTheme}
+            activeOpacity={0.7}
+            accessibilityLabel={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+          >
+            {isDark ? <Sun size={17} color="#fbbf24" /> : <Moon size={17} color="#4f46e5" />}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.iconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }, isFiltered && styles.iconBtnActive]}
             onPress={() => setFilterModalVisible(true)}
             activeOpacity={0.7}
           >
@@ -277,7 +289,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.iconBtn}
+            style={[styles.iconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
             onPress={() => setNotificationsVisible(true)}
             activeOpacity={0.7}
           >
@@ -304,8 +316,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
 
       {/* Active Filter Pill Bar if filtered */}
       {isFiltered && (
-        <View style={styles.activeFilterBar}>
-          <Text style={styles.activeFilterText}>
+        <View style={[styles.activeFilterBar, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+          <Text style={[styles.activeFilterText, { color: colors.textSecondary }]}>
             Feed: <Text style={styles.activeFilterHighlight}>{getActiveFilterLabel()}</Text>
           </Text>
           <TouchableOpacity
@@ -328,8 +340,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     return (
       <View style={styles.emptyContainer}>
         <Sparkles size={36} color={colors.primary} />
-        <Text style={styles.emptyTitle}>Campus feed is quiet right now</Text>
-        <Text style={styles.emptySub}>
+        <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>Campus feed is quiet right now</Text>
+        <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
           Be the first to share an announcement, ask a question, or upload study notes!
         </Text>
         <TouchableOpacity
@@ -347,15 +359,15 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       return (
         <View style={styles.footerLoader}>
           <ActivityIndicator size="small" color={colors.primary} />
-          <Text style={styles.footerLoaderText}>Loading more campus posts...</Text>
+          <Text style={[styles.footerLoaderText, { color: colors.textMuted }]}>Loading more campus posts...</Text>
         </View>
       );
     }
     if (!hasMore && posts.length > 2) {
       return (
-        <View style={styles.caughtUpBox}>
-          <Text style={styles.caughtUpText}>You're all caught up</Text>
-          <Text style={styles.caughtUpSub}>Check back later for more campus updates</Text>
+        <View style={[styles.caughtUpBox, { borderColor: colors.cardBorder, backgroundColor: colors.surface }]}>
+          <Text style={[styles.caughtUpText, { color: colors.textSecondary }]}>You're all caught up</Text>
+          <Text style={[styles.caughtUpSub, { color: colors.textMuted }]}>Check back later for more campus updates</Text>
         </View>
       );
     }
@@ -363,7 +375,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {renderHeader()}
 
       {loading && posts.length === 0 ? (

@@ -15,13 +15,14 @@ import {
   Switch,
 } from 'react-native';
 import { colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
 import { authService, User, DemoUser } from '../services/authService';
 import { profileService } from '../services/profileService';
 import { postService, Post } from '../services/postService';
 import { PostCard } from '../components/feed/PostCard';
 import { StudentProfileModal } from '../components/profile/StudentProfileModal';
 import { SocialListModal, SocialModalType } from '../components/profile/SocialListModal';
-import { ShieldCheck, Settings, LogOut, AlertCircle, Trash2 } from 'lucide-react-native';
+import { ShieldCheck, Settings, LogOut, AlertCircle, Trash2, Sun, Moon, Monitor } from 'lucide-react-native';
 
 interface ProfileData {
   id: number;
@@ -65,6 +66,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onLogout,
   onStartCall,
 }) => {
+  const { colors, themeMode, setThemeMode, isDark } = useTheme();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [demoUsers, setDemoUsers] = useState<DemoUser[]>([]);
@@ -414,9 +416,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={styles.scrollContent}>
       {/* Top Header Card */}
-      <View style={styles.heroCard}>
+      <View style={[styles.heroCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
         <View style={styles.heroTopActions}>
           {(currentUser.is_staff || currentUser.is_superuser) && (
             <TouchableOpacity
@@ -817,7 +819,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalBackdrop}
         >
-          <View style={styles.settingsSheet}>
+          <View style={[styles.settingsSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
             <View style={styles.modalHeaderRow}>
               <Text style={styles.modalTitle}>⚙️ Campus Settings</Text>
               <TouchableOpacity
@@ -877,7 +879,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     activeSettingsSection === 'PREFERENCES' && styles.settingsNavTextActive,
                   ]}
                 >
-                  🛡️ Safety
+                  🎨 Theme & Safety
                 </Text>
               </TouchableOpacity>
 
@@ -1109,6 +1111,62 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               {/* SECTION 3: SAFETY & PREFERENCES */}
               {activeSettingsSection === 'PREFERENCES' && (
                 <View style={styles.settingsSectionBody}>
+                  {/* Theme & Appearance */}
+                  <Text style={styles.inputGroupTitle}>Appearance & Theme</Text>
+                  <Text style={styles.prefSub}>
+                    Switch between Dark Mode, Studio Light Mode, or adapt automatically to your OS.
+                  </Text>
+
+                  <View style={styles.themeSelectorRow}>
+                    {(
+                      [
+                        { mode: 'dark' as const, label: 'Dark', icon: Moon, desc: 'Obsidian' },
+                        { mode: 'light' as const, label: 'Light', icon: Sun, desc: 'Daylight' },
+                        { mode: 'system' as const, label: 'System', icon: Monitor, desc: 'Auto OS' },
+                      ] as const
+                    ).map((t) => {
+                      const IconComp = t.icon;
+                      const isSelected = themeMode === t.mode;
+                      return (
+                        <TouchableOpacity
+                          key={t.mode}
+                          style={[
+                            styles.themeOptionCard,
+                            isSelected && styles.themeOptionCardActive,
+                            {
+                              backgroundColor: isSelected ? (isDark ? '#1a1c23' : '#eef2ff') : colors.surfaceLight,
+                              borderColor: isSelected ? colors.primary : colors.cardBorder,
+                            },
+                          ]}
+                          onPress={() => setThemeMode(t.mode)}
+                          activeOpacity={0.8}
+                        >
+                          <View
+                            style={[
+                              styles.themeOptionIconCircle,
+                              { backgroundColor: isSelected ? colors.primary : colors.surface },
+                            ]}
+                          >
+                            <IconComp size={15} color={isSelected ? '#ffffff' : colors.textSecondary} />
+                          </View>
+                          <Text
+                            style={[
+                              styles.themeOptionLabel,
+                              { color: isSelected ? colors.primary : colors.textPrimary },
+                            ]}
+                          >
+                            {t.label}
+                          </Text>
+                          <Text style={[styles.themeOptionDesc, { color: colors.textMuted }]}>
+                            {t.desc}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <View style={styles.settingsDivider} />
+
                   {/* Account Privacy Control */}
                   <Text style={styles.inputGroupTitle}>Account Privacy</Text>
 
@@ -2223,6 +2281,39 @@ const styles = StyleSheet.create({
   },
   resetOtpBlock: {
     marginTop: 10,
+  },
+  themeSelectorRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  themeOptionCard: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    gap: 6,
+  },
+  themeOptionCardActive: {
+    borderWidth: 1.5,
+  },
+  themeOptionIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  themeOptionLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  themeOptionDesc: {
+    fontSize: 10,
+    fontWeight: '500',
   },
   prefRow: {
     flexDirection: 'row',

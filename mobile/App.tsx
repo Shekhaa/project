@@ -12,6 +12,7 @@ import {
   Platform,
   BackHandler,
 } from 'react-native';
+import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { colors } from './src/theme/colors';
 import { Home, Building2, MessageSquare, User as UserIcon, Search } from 'lucide-react-native';
 import { authService, User } from './src/services/authService';
@@ -27,22 +28,14 @@ import { StudentProfileModal } from './src/components/profile/StudentProfileModa
 
 type TabType = 'FEED' | 'COMMUNITIES' | 'CHAT' | 'LOST_FOUND' | 'PROFILE';
 
-export default function App() {
+function AppMain() {
+  const { colors, isDark } = useTheme();
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('FEED');
   const [selectedCommunityConv, setSelectedCommunityConv] = useState<any | null>(null);
   const [composerTrigger, setComposerTrigger] = useState(0);
   const [viewingProfileUserId, setViewingProfileUserId] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      document.body.style.backgroundColor = colors.background;
-      document.documentElement.style.backgroundColor = colors.background;
-      document.body.style.margin = '0';
-      document.body.style.padding = '0';
-    }
-  }, []);
 
   // Instagram-style Back Button Support (Android Hardware + Web Browser history)
   useEffect(() => {
@@ -137,7 +130,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
@@ -146,8 +139,8 @@ export default function App() {
   // 1. Unauthenticated -> Auth Screen
   if (!currentUser) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
         <AuthScreen onLoginSuccess={handleLoginSuccess} />
       </SafeAreaView>
     );
@@ -156,8 +149,8 @@ export default function App() {
   // 2. Authenticated but Profile Incomplete -> Onboarding Screen
   if (!currentUser.profile_completed) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
         <ProfileSetupScreen
           currentUser={currentUser}
           onProfileComplete={handleProfileComplete}
@@ -168,8 +161,8 @@ export default function App() {
 
   // 3. Fully Onboarded Student -> Main App
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
 
       {/* Screen Content */}
       <View style={styles.mainContent}>
@@ -211,7 +204,7 @@ export default function App() {
       </View>
 
       {/* 4-Tab Bottom Navigation Bar (Feed, Hubs, Chats, Profile) */}
-      <View style={styles.tabBar}>
+      <View style={[styles.tabBar, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => navigateToTab('FEED')}
@@ -222,7 +215,7 @@ export default function App() {
             color={activeTab === 'FEED' ? colors.primary : colors.textSecondary}
             strokeWidth={activeTab === 'FEED' ? 2.5 : 1.8}
           />
-          <Text style={[styles.tabLabel, activeTab === 'FEED' && styles.tabActiveText]}>
+          <Text style={[styles.tabLabel, { color: activeTab === 'FEED' ? colors.primary : colors.textMuted }, activeTab === 'FEED' && styles.tabActiveText]}>
             Feed
           </Text>
         </TouchableOpacity>
@@ -237,7 +230,7 @@ export default function App() {
             color={activeTab === 'COMMUNITIES' ? colors.primary : colors.textSecondary}
             strokeWidth={activeTab === 'COMMUNITIES' ? 2.5 : 1.8}
           />
-          <Text style={[styles.tabLabel, activeTab === 'COMMUNITIES' && styles.tabActiveText]}>
+          <Text style={[styles.tabLabel, { color: activeTab === 'COMMUNITIES' ? colors.primary : colors.textMuted }, activeTab === 'COMMUNITIES' && styles.tabActiveText]}>
             Campus
           </Text>
         </TouchableOpacity>
@@ -252,7 +245,7 @@ export default function App() {
             color={activeTab === 'CHAT' ? colors.primary : colors.textSecondary}
             strokeWidth={activeTab === 'CHAT' ? 2.5 : 1.8}
           />
-          <Text style={[styles.tabLabel, activeTab === 'CHAT' && styles.tabActiveText]}>
+          <Text style={[styles.tabLabel, { color: activeTab === 'CHAT' ? colors.primary : colors.textMuted }, activeTab === 'CHAT' && styles.tabActiveText]}>
             Chats
           </Text>
         </TouchableOpacity>
@@ -267,7 +260,7 @@ export default function App() {
             color={activeTab === 'LOST_FOUND' ? colors.primary : colors.textSecondary}
             strokeWidth={activeTab === 'LOST_FOUND' ? 2.5 : 1.8}
           />
-          <Text style={[styles.tabLabel, activeTab === 'LOST_FOUND' && styles.tabActiveText]}>
+          <Text style={[styles.tabLabel, { color: activeTab === 'LOST_FOUND' ? colors.primary : colors.textMuted }, activeTab === 'LOST_FOUND' && styles.tabActiveText]}>
             Lost/Found
           </Text>
         </TouchableOpacity>
@@ -282,7 +275,7 @@ export default function App() {
             color={activeTab === 'PROFILE' ? colors.primary : colors.textSecondary}
             strokeWidth={activeTab === 'PROFILE' ? 2.5 : 1.8}
           />
-          <Text style={[styles.tabLabel, activeTab === 'PROFILE' && styles.tabActiveText]}>
+          <Text style={[styles.tabLabel, { color: activeTab === 'PROFILE' ? colors.primary : colors.textMuted }, activeTab === 'PROFILE' && styles.tabActiveText]}>
             Profile
           </Text>
         </TouchableOpacity>
@@ -300,6 +293,14 @@ export default function App() {
         }}
       />
     </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppMain />
+    </ThemeProvider>
   );
 }
 
