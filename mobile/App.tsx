@@ -11,9 +11,29 @@ import {
   Alert,
   Platform,
   BackHandler,
+  LogBox,
 } from 'react-native';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { colors } from './src/theme/colors';
+
+// Suppress React Native Web synthetic responder warnings during DevTools touch emulation & file pickers
+LogBox.ignoreLogs([
+  'Cannot record touch end without a touch start',
+  'Touch Bank',
+]);
+
+if (Platform.OS === 'web' && typeof console !== 'undefined') {
+  const originalWarn = console.warn;
+  console.warn = (...args: any[]) => {
+    if (
+      typeof args[0] === 'string' &&
+      args[0].includes('Cannot record touch end without a touch start')
+    ) {
+      return;
+    }
+    originalWarn.apply(console, args);
+  };
+}
 import { Home, Building2, MessageSquare, User as UserIcon, Search } from 'lucide-react-native';
 import { authService, User } from './src/services/authService';
 import { setAuthExpiredListener } from './src/config/api';

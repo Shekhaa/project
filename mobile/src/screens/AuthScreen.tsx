@@ -13,7 +13,21 @@ import {
   ScrollView,
   Linking,
 } from 'react-native';
-import { colors } from '../theme/colors';
+import {
+  GraduationCap,
+  ShieldCheck,
+  Camera,
+  UploadCloud,
+  Sun,
+  Moon,
+  ArrowRight,
+  Sparkles,
+  CheckCircle2,
+  Lock,
+  ChevronDown,
+  ChevronUp,
+  Flame,
+} from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { authService } from '../services/authService';
 
@@ -25,15 +39,16 @@ interface AuthScreenProps {
 const AZURE_CLIENT_ID = process.env.EXPO_PUBLIC_AZURE_CLIENT_ID || '3b64e29f-bcab-4aee-9fa2-11bb605f161a';
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, toggleTheme } = useTheme();
+
   // Microsoft Entra ID (College SSO) State
   const [ssoTokenModal, setSsoTokenModal] = useState(false);
   const [manualTokenInput, setManualTokenInput] = useState('');
   const [ssoLoading, setSsoLoading] = useState(false);
 
-  // Common UI & ID Card Scan State
-  const [loading, setLoading] = useState(false);
+  // ID Card Scan State
   const [idScanLoading, setIdScanLoading] = useState(false);
+  const [showDevPresets, setShowDevPresets] = useState(false);
 
   // Safe Base64 encoding helper for cross-platform JWT simulation
   const createDevStudentToken = (email: string, name: string) => {
@@ -65,7 +80,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     return `${header}.${claims}.dummy_signature`;
   };
 
-  // 4. MICROSOFT ENTRA ID INSTITUTIONAL COLLEGE SSO (Zero OTP, 1-Tap Student Verification)
+  // 1. MICROSOFT ENTRA ID INSTITUTIONAL COLLEGE SSO (Zero OTP, 1-Tap Student Verification)
   const handleMicrosoftSSO = async (passedToken?: string) => {
     const tokenToUse = passedToken || manualTokenInput.trim();
     if (tokenToUse) {
@@ -93,7 +108,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     const clientId = AZURE_CLIENT_ID;
     let redirectUri = 'https://jwt.ms';
     if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
-      if (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('project-mobile')) {
+      if (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('project-mobile') || window.location.hostname.includes('localhost')) {
         redirectUri = `${window.location.origin}/`;
       }
     }
@@ -129,10 +144,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     }
   }, []);
 
-  // Backward compatibility alias for Spotify SSO button
-  const handleSpotifyStyleSSO = () => handleMicrosoftSSO();
-
-  // 5. PHYSICAL ID CARD OCR LOGIN
+  // 2. PHYSICAL ID CARD OCR LOGIN
   const handleScanAndLogin = async (base64Data: string) => {
     setIdScanLoading(true);
     try {
@@ -150,6 +162,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     }
   };
 
+  // Safe client-side image downscaling for web uploads
   const optimizeAndSendWebImage = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -191,19 +204,37 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     reader.readAsDataURL(file);
   };
 
+  // Web file input helper deferred to prevent touch responder desync
+  const triggerWebFileInput = (capture: boolean) => {
+    setTimeout(() => {
+      try {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/jpeg,image/png,image/webp';
+        if (capture) {
+          input.capture = 'environment';
+        }
+        input.style.display = 'none';
+        document.body.appendChild(input);
+        input.onchange = (e: any) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            optimizeAndSendWebImage(file);
+          }
+          try {
+            document.body.removeChild(input);
+          } catch {}
+        };
+        input.click();
+      } catch (err) {
+        console.warn('Web file input error', err);
+      }
+    }, 60);
+  };
+
   const handleScanWithCamera = async () => {
     if (Platform.OS === 'web') {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*';
-      input.capture = 'environment';
-      input.onchange = (e: any) => {
-        const file = e.target.files?.[0];
-        if (file) {
-          optimizeAndSendWebImage(file);
-        }
-      };
-      input.click();
+      triggerWebFileInput(true);
     } else {
       try {
         const ImagePicker = require('expo-image-picker');
@@ -231,16 +262,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
 
   const handlePickFromGallery = async () => {
     if (Platform.OS === 'web') {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*';
-      input.onchange = (e: any) => {
-        const file = e.target.files?.[0];
-        if (file) {
-          optimizeAndSendWebImage(file);
-        }
-      };
-      input.click();
+      triggerWebFileInput(false);
     } else {
       try {
         const ImagePicker = require('expo-image-picker');
@@ -267,14 +289,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const handlePickCustomIDCard = handleScanWithCamera;
-
   const SAMPLE_ID_PRESETS = [
     {
       name: 'Aarav Joshi',
       roll: 'GEHU2024CSE01',
       dept: 'B.Tech CSE • 2nd Year',
-      badge: 'GEHU Student',
       college: 'Graphic Era Hill University',
       rawText: 'GRAPHIC ERA HILL UNIVERSITY\nNAME: AARAV JOSHI\nROLL NO: GEHU2024CSE01\nCOURSE: B.TECH COMPUTER SCIENCE\nYEAR: 2ND YEAR',
     },
@@ -282,7 +301,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       name: 'Priya Rawat',
       roll: 'GEHU2024AIML02',
       dept: 'B.Tech AI/ML • 2nd Year',
-      badge: 'GEHU Student',
       college: 'Graphic Era Hill University',
       rawText: 'GRAPHIC ERA HILL UNIVERSITY\nNAME: PRIYA RAWAT\nROLL NO: GEHU2024AIML02\nCOURSE: B.TECH AI MACHINE LEARNING\nYEAR: 2ND YEAR',
     },
@@ -290,7 +308,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       name: 'Rohan Bisht',
       roll: 'GEHU2024BCA03',
       dept: 'BCA Core • 1st Year',
-      badge: 'GEHU Student',
       college: 'Graphic Era Hill University',
       rawText: 'GRAPHIC ERA HILL UNIVERSITY\nNAME: ROHAN BISHT\nROLL NO: GEHU2024BCA03\nCOURSE: BCA CORE\nYEAR: 1ST YEAR',
     },
@@ -301,154 +318,314 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={[styles.container, { backgroundColor: colors.background }]}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Top Navbar: Campus Identity + Quick Theme Switcher */}
+        <View style={styles.topNavRow}>
+          <View style={styles.topBrandPill}>
+            <View style={styles.activeDot} />
+            <Text style={[styles.topBrandText, { color: colors.textSecondary }]}>
+              GEU & GEHU Campus Network
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.themeToggleBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+            onPress={toggleTheme}
+            activeOpacity={0.8}
+            accessibilityLabel="Toggle theme"
+          >
+            {isDark ? (
+              <Sun size={15} color="#fbbf24" />
+            ) : (
+              <Moon size={15} color={colors.textPrimary} />
+            )}
+            <Text style={[styles.themeToggleText, { color: colors.textSecondary }]}>
+              {isDark ? 'Light' : 'Dark'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Main Card Container */}
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.logoIcon}>🎓</Text>
-            <Text style={styles.title}>Campus Connect</Text>
-            <Text style={styles.subtitle}>Graphic Era University & Graphic Era Hill University</Text>
+          {/* Hero Branding */}
+          <View style={styles.brandHero}>
+            <View style={[styles.logoShield, { backgroundColor: isDark ? 'rgba(94, 106, 210, 0.15)' : 'rgba(94, 106, 210, 0.1)', borderColor: isDark ? 'rgba(94, 106, 210, 0.35)' : 'rgba(94, 106, 210, 0.25)' }]}>
+              <GraduationCap size={32} color={colors.primary} />
+            </View>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>CampusConnect</Text>
+            <Text style={[styles.subtitle, { color: colors.textMuted }]}>
+              The Exclusive Social & Academic Hub for Graphic Era Students
+            </Text>
+
+            {/* Campus Pulse Indicator */}
+            <View style={[styles.pulsePill, { backgroundColor: isDark ? 'rgba(39, 166, 68, 0.1)' : 'rgba(39, 166, 68, 0.08)', borderColor: isDark ? 'rgba(39, 166, 68, 0.3)' : 'rgba(39, 166, 68, 0.2)' }]}>
+              <View style={styles.pulseDot} />
+              <Text style={styles.pulseText}>10,000+ Verified Students Active</Text>
+            </View>
+          </View>
+
+          {/* Social Proof Tags */}
+          <View style={styles.tagChipsRow}>
+            <View style={[styles.tagChip, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+              <Text style={[styles.tagChipText, { color: colors.textSecondary }]}>#CampusConfessions</Text>
+            </View>
+            <View style={[styles.tagChip, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+              <Text style={[styles.tagChipText, { color: colors.textSecondary }]}>#Placements2026</Text>
+            </View>
+            <View style={[styles.tagChip, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+              <Text style={[styles.tagChipText, { color: colors.textSecondary }]}>#Grafest</Text>
+            </View>
           </View>
 
           {/* ========================================================= */}
-          {/* HERO: OFFICIAL 1-TAP MICROSOFT COLLEGE SSO (RECOMMENDED)  */}
+          {/* PRIMARY HERO LOGIN: OFFICIAL 1-TAP MICROSOFT COLLEGE SSO */}
           {/* ========================================================= */}
-          <View style={styles.linearSSOCard}>
-            <View style={styles.linearSSOBadgeRow}>
-              <View style={styles.linearSSOBadge}>
-                <View style={styles.linearSSODot} />
-                <Text style={styles.linearSSOBadgeText}>OFFICIAL GEU / GEHU SSO</Text>
+          <View style={[styles.ssoCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+            <View style={styles.ssoCardHeader}>
+              <View style={styles.badgeRow}>
+                <View style={styles.verifiedGreenBadge}>
+                  <ShieldCheck size={13} color="#27a644" />
+                  <Text style={styles.verifiedGreenBadgeText}>OFFICIAL GEU / GEHU SSO</Text>
+                </View>
+                <Text style={[styles.zeroOtpLabel, { color: colors.textMuted }]}>Zero OTP • 100% Real Students</Text>
               </View>
-              <Text style={styles.linearSSOZeroOtp}>Zero OTP • 100% Real Students</Text>
+
+              <Text style={[styles.ssoTitle, { color: colors.textPrimary }]}>Sign in with College Account</Text>
+              <Text style={[styles.ssoDesc, { color: colors.textSecondary }]}>
+                One tap connects your Graphic Era Outlook identity. Instantly verifies your course, branch, and roll number.
+              </Text>
             </View>
 
-            <Text style={styles.linearSSOTitle}>Sign in with University Outlook</Text>
-            <Text style={styles.linearSSODesc}>
-              Authenticate directly via Graphic Era Entra ID. We auto-verify your name, university roll number & admission batch.
-            </Text>
-
+            {/* Microsoft Action Button */}
             <TouchableOpacity
-              style={styles.linearSSOButton}
+              style={styles.msButton}
               onPress={() => handleMicrosoftSSO()}
-              disabled={loading || ssoLoading}
+              disabled={ssoLoading}
               activeOpacity={0.88}
             >
               {ssoLoading ? (
                 <ActivityIndicator color="#ffffff" size="small" />
               ) : (
-                <View style={styles.linearSSOBtnContent}>
+                <View style={styles.msButtonContent}>
                   <View style={styles.msLogoGrid}>
                     <View style={[styles.msLogoCell, { backgroundColor: '#F25022' }]} />
                     <View style={[styles.msLogoCell, { backgroundColor: '#7FBA00' }]} />
                     <View style={[styles.msLogoCell, { backgroundColor: '#00A4EF' }]} />
                     <View style={[styles.msLogoCell, { backgroundColor: '#FFB900' }]} />
                   </View>
-                  <Text style={styles.linearSSOBtnText}>Continue with College ID (@geu.ac.in)</Text>
-                  <Text style={styles.linearSSOArrow}>→</Text>
+                  <Text style={styles.msButtonText}>Continue with College ID (@geu.ac.in)</Text>
+                  <ArrowRight size={17} color="#ffffff" />
                 </View>
               )}
             </TouchableOpacity>
 
-            <View style={styles.linearSSOFeatures}>
-              <Text style={styles.linearSSOFeatureItem}>✓ 🛡️ Green Verified Badge</Text>
-              <Text style={styles.linearSSOFeatureDot}>•</Text>
-              <Text style={styles.linearSSOFeatureItem}>✓ Auto Roll No. Extraction</Text>
-              <Text style={styles.linearSSOFeatureDot}>•</Text>
-              <TouchableOpacity onPress={() => setSsoTokenModal(true)}>
-                <Text style={styles.linearSSODevLink}>⚡ Dev Test / Token</Text>
+            {/* Benefit Bullets */}
+            <View style={styles.featurePillsRow}>
+              <View style={styles.featurePill}>
+                <CheckCircle2 size={12} color="#27a644" />
+                <Text style={[styles.featurePillText, { color: colors.textSecondary }]}>Instant Green Badge</Text>
+              </View>
+              <View style={styles.featurePill}>
+                <CheckCircle2 size={12} color="#27a644" />
+                <Text style={[styles.featurePillText, { color: colors.textSecondary }]}>Auto Roll No.</Text>
+              </View>
+              <TouchableOpacity onPress={() => setSsoTokenModal(true)} style={styles.devLinkPill}>
+                <Text style={styles.devLinkText}>⚡ Token Login</Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Hairline Divider */}
-          <View style={styles.linearDividerRow}>
-            <View style={styles.linearDividerLine} />
-            <Text style={styles.linearDividerText}>OR OPTION 2: PHYSICAL ID VERIFICATION</Text>
-            <View style={styles.linearDividerLine} />
+          {/* Elegant Divider */}
+          <View style={styles.dividerRow}>
+            <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
+            <Text style={[styles.dividerLabel, { color: colors.textTertiary }]}>OR VERIFY WITH PHYSICAL ID</Text>
+            <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
           </View>
 
-          {/* OPTION 2: PHYSICAL COLLEGE ID CARD SCAN (YELLOW BADGE / SEMI-VERIFIED) */}
-          <View style={styles.idCardScanCard}>
-            <View style={styles.idCardBadgeRow}>
-              <View style={styles.idCardYellowBadge}>
-                <View style={styles.idCardYellowDot} />
-                <Text style={styles.idCardYellowBadgeText}>SEMI-VERIFIED (YELLOW BADGE)</Text>
+          {/* ========================================================= */}
+          {/* SECONDARY LOGIN: PHYSICAL ID CARD PHOTO SCAN (OCR)       */}
+          {/* ========================================================= */}
+          <View style={[styles.idScanSection, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+            <View style={styles.idScanHeader}>
+              <View style={styles.idScanBadgeRow}>
+                <View style={styles.semiBadge}>
+                  <View style={styles.semiBadgeDot} />
+                  <Text style={styles.semiBadgeText}>SEMI-VERIFIED (YELLOW BADGE)</Text>
+                </View>
+                <Text style={[styles.semiBadgeSub, { color: colors.textMuted }]}>Instant Entry</Text>
               </View>
-              <Text style={styles.idCardYellowSub}>Under Review</Text>
+
+              <Text style={[styles.idScanTitle, { color: colors.textPrimary }]}>
+                Scan Physical Student ID Card
+              </Text>
+              <Text style={[styles.idScanDesc, { color: colors.textSecondary }]}>
+                Freshman or haven't received college Outlook email yet? Snap a clear photo of your Graphic Era ID card. Our local scanner extracts your identity.
+              </Text>
             </View>
 
-            <Text style={styles.idCardTitle}>Scan Physical College ID Card</Text>
-            <Text style={styles.idCardDesc}>
-              Upload your Graphic Era student ID card photo. Our local OCR extracts your name, roll number, and department. Once onboarded, complete your campus handle and profile.
-            </Text>
-
-            {/* 2 Dedicated Action Buttons: Direct Camera Scan & Upload from Files */}
-            <View style={styles.idCardActionRow}>
+            {/* Action Buttons: Camera vs File Upload */}
+            <View style={styles.idActionGrid}>
               <TouchableOpacity
-                style={[styles.idCardActionBtn, styles.idCardCameraBtn]}
+                style={[styles.idActionBtn, styles.idCameraBtn]}
                 onPress={handleScanWithCamera}
                 disabled={idScanLoading}
                 activeOpacity={0.85}
               >
                 {idScanLoading ? (
-                  <ActivityIndicator color="#fbbf24" size="small" />
+                  <ActivityIndicator color="#f59e0b" size="small" />
                 ) : (
-                  <View style={styles.idCardBtnContent}>
-                    <Text style={styles.idCardBtnIcon}>📸</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.idCardPrimaryBtnText}>Direct Camera Scan</Text>
-                      <Text style={styles.idCardBtnSub}>Point & photograph physical ID card</Text>
+                  <View style={styles.idActionBtnContent}>
+                    <View style={styles.idActionIconWrapYellow}>
+                      <Camera size={18} color="#d97706" />
                     </View>
-                    <Text style={styles.linearSSOArrow}>→</Text>
+                    <View style={styles.idActionTextWrap}>
+                      <Text style={styles.idActionTitleYellow}>Direct Camera Scan</Text>
+                      <Text style={[styles.idActionSub, { color: colors.textMuted }]}>
+                        Photograph physical ID card
+                      </Text>
+                    </View>
+                    <ArrowRight size={15} color="#d97706" />
                   </View>
                 )}
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.idCardActionBtn, styles.idCardGalleryBtn]}
+                style={[styles.idActionBtn, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}
                 onPress={handlePickFromGallery}
                 disabled={idScanLoading}
                 activeOpacity={0.85}
               >
-                <View style={styles.idCardBtnContent}>
-                  <Text style={styles.idCardBtnIcon}>📁</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.idCardSecondaryBtnText}>Upload from Gallery / Files</Text>
-                    <Text style={styles.idCardBtnSub}>Select clear JPG or PNG picture</Text>
+                <View style={styles.idActionBtnContent}>
+                  <View style={[styles.idActionIconWrapMuted, { backgroundColor: colors.surfaceLight }]}>
+                    <UploadCloud size={18} color={colors.textSecondary} />
                   </View>
-                  <Text style={styles.linearSSOArrow}>→</Text>
+                  <View style={styles.idActionTextWrap}>
+                    <Text style={[styles.idActionTitleStandard, { color: colors.textPrimary }]}>
+                      Upload from Gallery / Files
+                    </Text>
+                    <Text style={[styles.idActionSub, { color: colors.textMuted }]}>
+                      Select clear JPG or PNG
+                    </Text>
+                  </View>
+                  <ArrowRight size={15} color={colors.textMuted} />
                 </View>
               </TouchableOpacity>
             </View>
+          </View>
 
-            {/* Quick Sample ID Presets for Instant Testing */}
-            <View style={styles.testPresetsBox}>
-              <Text style={styles.testPresetsHeading}>INSTANT TEST ID CARDS (ONE-TAP DEMO)</Text>
-              <View style={styles.testPresetsGrid}>
-                {SAMPLE_ID_PRESETS.map((p, idx) => (
+          {/* ========================================================= */}
+          {/* DEVELOPER / DEMO 1-TAP SWITCHER ACCORDION                 */}
+          {/* ========================================================= */}
+          <View style={[styles.devAccordionBox, { borderColor: colors.cardBorder }]}>
+            <TouchableOpacity
+              style={styles.devAccordionHeader}
+              onPress={() => setShowDevPresets(!showDevPresets)}
+              activeOpacity={0.75}
+            >
+              <View style={styles.devAccordionTitleRow}>
+                <Sparkles size={14} color={colors.primary} />
+                <Text style={[styles.devAccordionTitle, { color: colors.textSecondary }]}>
+                  Instant 1-Tap Demo Student Profiles
+                </Text>
+              </View>
+              {showDevPresets ? (
+                <ChevronUp size={16} color={colors.textMuted} />
+              ) : (
+                <ChevronDown size={16} color={colors.textMuted} />
+              )}
+            </TouchableOpacity>
+
+            {showDevPresets && (
+              <View style={styles.devPresetsContent}>
+                <Text style={[styles.devPresetsSub, { color: colors.textMuted }]}>
+                  Test complete student onboarding without scanning physical cards:
+                </Text>
+
+                {/* Instant Test Profiles */}
+                <View style={styles.presetsGrid}>
                   <TouchableOpacity
-                    key={idx}
-                    style={styles.presetPillCard}
-                    onPress={() => handleScanAndLogin('data:image/jpeg;base64,' + btoa(p.rawText))}
-                    disabled={idScanLoading}
+                    style={[styles.presetCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                    onPress={() => {
+                      const token = createDevStudentToken(
+                        '2313812137@geu.ac.in',
+                        'Chandra Shekhar Singh Rana'
+                      );
+                      handleMicrosoftSSO(token);
+                    }}
+                    disabled={ssoLoading}
                   >
-                    <View style={styles.presetPillTop}>
-                      <Text style={styles.presetPillName}>{p.name}</Text>
-                      <View style={styles.presetYellowTag}>
-                        <Text style={styles.presetYellowTagText}>🟡 Review</Text>
+                    <View style={styles.presetTop}>
+                      <Text style={[styles.presetName, { color: colors.textPrimary }]}>Chandra Shekhar Rana</Text>
+                      <View style={styles.presetBadgeGreen}>
+                        <Text style={styles.presetBadgeGreenText}>🟢 GEU Verified</Text>
                       </View>
                     </View>
-                    <Text style={styles.presetPillMeta}>{p.roll} • {p.dept}</Text>
+                    <Text style={[styles.presetMeta, { color: colors.textMuted }]}>
+                      Roll: 2313812137 • B.Tech CSE • @geu.ac.in
+                    </Text>
                   </TouchableOpacity>
-                ))}
+
+                  <TouchableOpacity
+                    style={[styles.presetCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                    onPress={() => {
+                      const token = createDevStudentToken(
+                        '2313812140@geu.ac.in',
+                        'Priya Rawat'
+                      );
+                      handleMicrosoftSSO(token);
+                    }}
+                    disabled={ssoLoading}
+                  >
+                    <View style={styles.presetTop}>
+                      <Text style={[styles.presetName, { color: colors.textPrimary }]}>Priya Rawat</Text>
+                      <View style={styles.presetBadgeGreen}>
+                        <Text style={styles.presetBadgeGreenText}>🟢 GEU Verified</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.presetMeta, { color: colors.textMuted }]}>
+                      Roll: 2313812140 • B.Tech AI/ML • @geu.ac.in
+                    </Text>
+                  </TouchableOpacity>
+
+                  {SAMPLE_ID_PRESETS.map((p, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={[styles.presetCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                      onPress={() => handleScanAndLogin('data:image/jpeg;base64,' + btoa(p.rawText))}
+                      disabled={idScanLoading}
+                    >
+                      <View style={styles.presetTop}>
+                        <Text style={[styles.presetName, { color: colors.textPrimary }]}>{p.name}</Text>
+                        <View style={styles.presetBadgeYellow}>
+                          <Text style={styles.presetBadgeYellowText}>🟡 ID Card</Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.presetMeta, { color: colors.textMuted }]}>
+                        {p.roll} • {p.dept}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
-            </View>
+            )}
+          </View>
+
+          {/* Student Privacy & Integrity Footer */}
+          <View style={styles.footerNote}>
+            <Lock size={12} color={colors.textTertiary} />
+            <Text style={[styles.footerText, { color: colors.textTertiary }]}>
+              Encrypted end-to-end. Official Graphic Era institutional verification.
+            </Text>
           </View>
         </View>
       </ScrollView>
 
       {/* ========================================================= */}
-      {/* LINEAR-STYLED MICROSOFT ENTRA ID DEV & TOKEN MODAL        */}
+      {/* MICROSOFT SSO TOKEN & DEV MODAL                           */}
       {/* ========================================================= */}
       <Modal
         visible={ssoTokenModal}
@@ -456,86 +633,37 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
         animationType="fade"
         onRequestClose={() => setSsoTokenModal(false)}
       >
-        <View style={styles.linearModalOverlay}>
-          <View style={styles.linearModalContent}>
-            <View style={styles.linearModalHeader}>
-              <View style={styles.linearModalTitleRow}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
                 <View style={styles.msLogoGridSmall}>
                   <View style={[styles.msLogoCellSmall, { backgroundColor: '#F25022' }]} />
                   <View style={[styles.msLogoCellSmall, { backgroundColor: '#7FBA00' }]} />
                   <View style={[styles.msLogoCellSmall, { backgroundColor: '#00A4EF' }]} />
                   <View style={[styles.msLogoCellSmall, { backgroundColor: '#FFB900' }]} />
                 </View>
-                <Text style={styles.linearModalTitle}>Microsoft SSO Verification</Text>
+                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Microsoft SSO Verification</Text>
               </View>
               <TouchableOpacity
                 onPress={() => setSsoTokenModal(false)}
-                style={styles.linearModalCloseBtn}
+                style={styles.modalCloseBtn}
               >
-                <Text style={styles.linearModalCloseText}>✕</Text>
+                <Text style={[styles.modalCloseText, { color: colors.textMuted }]}>✕</Text>
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.linearModalSub}>
-                Test single-tap college authentication. Verified claims extract student name, roll number, and official admission year.
+              <Text style={[styles.modalSub, { color: colors.textSecondary }]}>
+                Directly paste an ID token or test single-tap login as a verified Graphic Era student.
               </Text>
 
-              {/* Action 1: Instant Test as Chandra Shekhar Singh Rana */}
-              <Text style={styles.linearModalSectionLabel}>INSTANT 1-TAP VERIFICATION (TEST)</Text>
-              <TouchableOpacity
-                style={styles.linearTestProfileCard}
-                onPress={() => {
-                  const token = createDevStudentToken(
-                    '2313812137@geu.ac.in',
-                    'Chandra Shekhar Singh Rana'
-                  );
-                  handleMicrosoftSSO(token);
-                }}
-                disabled={ssoLoading}
-              >
-                <View style={styles.linearTestProfileTop}>
-                  <Text style={styles.linearTestProfileName}>Chandra Shekhar Singh Rana</Text>
-                  <View style={styles.linearVerifiedBadge}>
-                    <Text style={styles.linearVerifiedBadgeText}>GEU Verified</Text>
-                  </View>
-                </View>
-                <Text style={styles.linearTestProfileMeta}>
-                  Roll: 2313812137 • Batch: 2023 • @geu.ac.in
-                </Text>
-                <Text style={styles.linearTestProfileCta}>Tap to Sign In as Chandra Shekhar →</Text>
-              </TouchableOpacity>
-
-              {/* Action 2: Secondary Test Profile (Priya Rawat) */}
-              <TouchableOpacity
-                style={[styles.linearTestProfileCard, { marginTop: 8 }]}
-                onPress={() => {
-                  const token = createDevStudentToken(
-                    '2313812140@geu.ac.in',
-                    'Priya Rawat'
-                  );
-                  handleMicrosoftSSO(token);
-                }}
-                disabled={ssoLoading}
-              >
-                <View style={styles.linearTestProfileTop}>
-                  <Text style={styles.linearTestProfileName}>Priya Rawat</Text>
-                  <View style={styles.linearVerifiedBadge}>
-                    <Text style={styles.linearVerifiedBadgeText}>GEU Verified</Text>
-                  </View>
-                </View>
-                <Text style={styles.linearTestProfileMeta}>
-                  Roll: 2313812140 • Batch: 2023 • @geu.ac.in
-                </Text>
-                <Text style={styles.linearTestProfileCta}>Tap to Sign In as Priya →</Text>
-              </TouchableOpacity>
-
-              {/* Action 3: Direct Token Paste from jwt.ms */}
-              <Text style={[styles.linearModalSectionLabel, { marginTop: 18 }]}>
+              {/* Paste ID Token */}
+              <Text style={[styles.modalSectionLabel, { color: colors.textTertiary }]}>
                 PASTE ID TOKEN (FROM JWT.MS / AZURE)
               </Text>
               <TextInput
-                style={styles.linearModalInput}
+                style={[styles.modalInput, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder, color: colors.textPrimary }]}
                 placeholder="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
                 placeholderTextColor={colors.textTertiary}
                 value={manualTokenInput}
@@ -547,24 +675,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
               />
 
               <TouchableOpacity
-                style={styles.linearModalPrimaryBtn}
+                style={styles.modalPrimaryBtn}
                 onPress={() => handleMicrosoftSSO()}
                 disabled={ssoLoading}
               >
                 {ssoLoading ? (
                   <ActivityIndicator color="#ffffff" size="small" />
                 ) : (
-                  <Text style={styles.linearModalPrimaryBtnText}>Verify & Login with Token</Text>
+                  <Text style={styles.modalPrimaryBtnText}>Verify & Login with Token</Text>
                 )}
               </TouchableOpacity>
 
-              {/* Action 4: Launch Microsoft Browser Session */}
+              {/* Open in Browser */}
               <TouchableOpacity
-                style={styles.linearModalSecondaryBtn}
+                style={[styles.modalSecondaryBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
                 onPress={() => {
                   let redirectUri = 'https://jwt.ms';
                   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
-                    if (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('project-mobile')) {
+                    if (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('project-mobile') || window.location.hostname.includes('localhost')) {
                       redirectUri = `${window.location.origin}/`;
                     }
                   }
@@ -578,7 +706,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   }
                 }}
               >
-                <Text style={styles.linearModalSecondaryBtnText}>🌐 Open Microsoft Login in Browser</Text>
+                <Text style={[styles.modalSecondaryBtnText, { color: colors.textSecondary }]}>
+                  🌐 Open Microsoft Login in Browser
+                </Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -591,576 +721,192 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
     minHeight: (Platform.OS === 'web' ? '100vh' : undefined) as any,
   },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    padding: 16,
-    paddingVertical: 32,
-    backgroundColor: colors.background,
-    minHeight: (Platform.OS === 'web' ? '100vh' : undefined) as any,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 28,
+  },
+  topNavRow: {
+    width: '100%',
+    maxWidth: 480,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  topBrandPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  activeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#22c55e',
+  },
+  topBrandText: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+  },
+  themeToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  themeToggleText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: 22,
+    borderRadius: 22,
+    padding: 24,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 8,
     maxWidth: 480,
     width: '100%',
-    alignSelf: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 8,
   },
-  header: {
+  brandHero: {
     alignItems: 'center',
-    marginBottom: 18,
+    marginBottom: 16,
   },
-  logoIcon: {
-    fontSize: 42,
-    marginBottom: 6,
+  logoShield: {
+    width: 64,
+    height: 64,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   title: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '800',
-    color: colors.textPrimary,
+    letterSpacing: -0.6,
   },
   subtitle: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  mainFlowToggle: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  mainFlowBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 10,
-  },
-  mainFlowBtnActive: {
-    backgroundColor: colors.primary,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  mainFlowText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textSecondary,
-  },
-  mainFlowTextActive: {
-    color: '#ffffff',
-  },
-  sectionContainer: {
-    marginTop: 2,
-  },
-  sectionHeading: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  sectionSub: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    marginBottom: 6,
-    marginTop: 10,
-  },
-  input: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: colors.textPrimary,
-    fontSize: 14,
-  },
-  passwordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  passwordInputFlex: {
-    flex: 1,
-  },
-  eyeBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  eyeBtnText: {
-    fontSize: 16,
-  },
-  phoneInputRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  countryCodeBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    justifyContent: 'center',
-  },
-  countryCodeText: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  phoneInput: {
-    flex: 1,
-  },
-  otpInput: {
-    letterSpacing: 10,
-    fontSize: 22,
-    textAlign: 'center',
-    fontWeight: '800',
-  },
-  helperText: {
-    fontSize: 11,
-    color: colors.textMuted,
-    marginTop: 6,
-    marginBottom: 12,
-  },
-  primaryButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 14,
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  whatsappButton: {
-    backgroundColor: '#22c55e',
-    borderRadius: 12,
-    paddingVertical: 13,
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  whatsappButtonText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  secondarySmsBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 12,
-    paddingVertical: 11,
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  secondarySmsBtnText: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  smsNoticeCard: {
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-    borderColor: 'rgba(99, 102, 241, 0.3)',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 14,
-  },
-  smsNoticeBadge: {
-    color: '#818cf8',
-    fontSize: 12,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  smsNoticeText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  changeEmailButton: {
-    alignItems: 'center',
-    marginTop: 14,
-  },
-  changeEmailText: {
-    color: colors.textMuted,
-    fontSize: 12,
-    textDecorationLine: 'underline',
-  },
-  testAccountsSection: {
-    marginTop: 24,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
-    paddingTop: 16,
-  },
-  testAccountsHeader: {
-    marginBottom: 12,
-  },
-  testAccountsTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#818cf8',
-    letterSpacing: 0.8,
-  },
-  testAccountsSub: {
-    fontSize: 11,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  testAccountCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-  },
-  testAccountTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  testAccountName: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  testAccountRoll: {
-    color: '#a5b4fc',
-    fontSize: 11,
-    marginTop: 1,
-  },
-  testAccountEmail: {
-    color: colors.textMuted,
-    fontSize: 10,
-    marginTop: 2,
-  },
-  quickLoginBtn: {
-    backgroundColor: 'rgba(99, 102, 241, 0.2)',
-    borderColor: 'rgba(99, 102, 241, 0.5)',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
-  quickLoginBtnText: {
-    color: '#818cf8',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  tabToggleRow: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 16,
-    gap: 4,
-  },
-  tabToggleBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  tabToggleBtnActive: {
-    backgroundColor: colors.primary,
-  },
-  tabToggleText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.textMuted,
-  },
-  tabToggleTextActive: {
-    color: '#ffffff',
-  },
-  geoStatusCard: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 16,
-  },
-  geoStatusCardInside: {
-    backgroundColor: 'rgba(34, 197, 94, 0.08)',
-    borderColor: 'rgba(34, 197, 94, 0.3)',
-  },
-  geoStatusCardOutside: {
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-  },
-  geoStatusHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  geoStatusIcon: {
-    fontSize: 22,
-  },
-  geoStatusTitle: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  geoStatusSub: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  geoActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  geoToggleBtn: {
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  geoToggleBtnText: {
-    color: '#818cf8',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  geoDetectBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  geoDetectBtnText: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 16,
-    gap: 8,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  dividerText: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  ssoSpotifyButton: {
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    borderWidth: 1.5,
-    borderColor: '#6366f1',
-    borderRadius: 14,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  ssoSpotifyIcon: {
-    fontSize: 24,
-  },
-  ssoSpotifyTitle: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  ssoSpotifySub: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  idScanHeroCard: {
-    backgroundColor: 'rgba(99, 102, 241, 0.08)',
-    borderColor: 'rgba(99, 102, 241, 0.25)',
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  idScanHeroIcon: {
-    fontSize: 30,
-    marginBottom: 4,
-  },
-  idScanHeroTitle: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  idScanHeroSub: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    lineHeight: 16,
-    textAlign: 'center',
+    fontSize: 12.5,
     marginTop: 4,
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 12,
   },
-  uploadIdCardBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 13,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  uploadIdCardBtnContent: {
+  pulsePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  uploadIdCardIcon: {
-    fontSize: 16,
-  },
-  uploadIdCardText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  presetCardsCol: {
-    gap: 8,
-  },
-  idPresetCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    gap: 7,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 20,
     borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
   },
-  idPresetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 3,
-  },
-  idPresetName: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  idPresetBadge: {
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  idPresetBadgeText: {
-    color: '#4ade80',
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  idPresetRoll: {
-    color: colors.textMuted,
-    fontSize: 11,
-    marginBottom: 2,
-  },
-  idPresetCollege: {
-    color: colors.textSecondary,
-    fontSize: 10,
-  },
-
-  // =========================================================
-  // LINEAR MICROSOFT SSO DESIGN TOKENS & COMPONENTS
-  // =========================================================
-  linearSSOCard: {
-    backgroundColor: '#0f1011',
-    borderColor: '#23252a',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
-  },
-  linearSSOBadgeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  linearSSOBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(39, 166, 68, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(39, 166, 68, 0.25)',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    gap: 6,
-  },
-  linearSSODot: {
+  pulseDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: '#27a644',
   },
-  linearSSOBadgeText: {
+  pulseText: {
     color: '#27a644',
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 0.2,
   },
-  linearSSOZeroOtp: {
-    color: colors.textMuted,
+  tagChipsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+    marginBottom: 20,
+  },
+  tagChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  tagChipText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+  },
+  ssoCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 18,
+    marginBottom: 16,
+  },
+  ssoCardHeader: {
+    marginBottom: 14,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  verifiedGreenBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(39, 166, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(39, 166, 68, 0.3)',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  verifiedGreenBadgeText: {
+    color: '#27a644',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  zeroOtpLabel: {
     fontSize: 11,
     fontWeight: '500',
   },
-  linearSSOTitle: {
-    color: colors.textPrimary,
+  ssoTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     letterSpacing: -0.3,
     marginBottom: 4,
   },
-  linearSSODesc: {
-    color: colors.textSecondary,
+  ssoDesc: {
     fontSize: 12,
     lineHeight: 18,
-    marginBottom: 14,
   },
-  linearSSOButton: {
+  msButton: {
     backgroundColor: '#5e6ad2',
-    borderRadius: 8,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingVertical: 13,
     paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#5e6ad2',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  linearSSOBtnContent: {
+  msButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     width: '100%',
   },
   msLogoGrid: {
@@ -1168,7 +914,6 @@ const styles = StyleSheet.create({
     height: 16,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginRight: 10,
     justifyContent: 'space-between',
     alignContent: 'space-between',
   },
@@ -1177,233 +922,265 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 1,
   },
-  linearSSOBtnText: {
+  msButtonText: {
     color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 13.5,
+    fontWeight: '700',
     letterSpacing: -0.2,
     flex: 1,
     textAlign: 'center',
+    marginHorizontal: 8,
   },
-  linearSSOArrow: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  linearSSOFeatures: {
+  featurePillsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     marginTop: 12,
-    gap: 8,
-    flexWrap: 'wrap',
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
   },
-  linearSSOFeatureItem: {
-    color: colors.textMuted,
+  featurePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  featurePillText: {
     fontSize: 11,
     fontWeight: '500',
   },
-  linearSSOFeatureDot: {
-    color: colors.hairlineStrong,
-    fontSize: 10,
+  devLinkPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
-  linearSSODevLink: {
+  devLinkText: {
     color: '#828fff',
     fontSize: 11,
     fontWeight: '600',
   },
-  linearDividerRow: {
+  dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 16,
-    gap: 12,
+    gap: 10,
+    marginVertical: 14,
   },
-  linearDividerLine: {
+  dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#23252a',
   },
-  linearDividerText: {
-    color: colors.textTertiary,
-    fontSize: 10,
+  dividerLabel: {
+    fontSize: 9.5,
     fontWeight: '700',
     letterSpacing: 0.8,
   },
-  // Option 2 ID Card Scan Styles
-  idCardScanCard: {
-    backgroundColor: '#0f1011',
-    borderColor: '#23252a',
+  idScanSection: {
+    borderRadius: 16,
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 18,
-    marginBottom: 20,
+    padding: 16,
+    marginBottom: 16,
   },
-  idCardBadgeRow: {
+  idScanHeader: {
+    marginBottom: 12,
+  },
+  idScanBadgeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  idCardYellowBadge: {
+  semiBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderColor: 'rgba(245, 158, 11, 0.3)',
+    gap: 5,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderColor: 'rgba(245, 158, 11, 0.35)',
     borderWidth: 1,
-    borderRadius: 9999,
+    borderRadius: 20,
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    gap: 6,
+    paddingVertical: 2.5,
   },
-  idCardYellowDot: {
+  semiBadgeDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: '#f59e0b',
   },
-  idCardYellowBadgeText: {
+  semiBadgeText: {
     color: '#f59e0b',
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
-  idCardYellowSub: {
-    color: colors.textMuted,
+  semiBadgeSub: {
     fontSize: 11,
     fontWeight: '500',
   },
-  idCardTitle: {
-    color: colors.textPrimary,
-    fontSize: 17,
+  idScanTitle: {
+    fontSize: 15,
     fontWeight: '700',
-    letterSpacing: -0.3,
-    marginBottom: 6,
-  },
-  idCardDesc: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  idCardActionRow: {
-    gap: 10,
-    marginBottom: 16,
-  },
-  idCardActionBtn: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  idCardCameraBtn: {
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-    borderColor: 'rgba(245, 158, 11, 0.28)',
-  },
-  idCardGalleryBtn: {
-    backgroundColor: '#16171a',
-    borderColor: '#27292f',
-  },
-  idCardBtnContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-  },
-  idCardBtnIcon: {
-    fontSize: 18,
-    marginRight: 10,
-  },
-  idCardPrimaryBtnText: {
-    color: '#fbbf24',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  idCardSecondaryBtnText: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  idCardBtnSub: {
-    color: colors.textMuted,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  testPresetsBox: {
-    marginTop: 18,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#1c1d20',
-  },
-  testPresetsHeading: {
-    color: colors.textTertiary,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    marginBottom: 10,
-  },
-  testPresetsGrid: {
-    gap: 8,
-  },
-  presetPillCard: {
-    backgroundColor: '#141516',
-    borderColor: '#23252a',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-  },
-  presetPillTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    letterSpacing: -0.2,
     marginBottom: 4,
   },
-  presetPillName: {
-    color: colors.textPrimary,
+  idScanDesc: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  idActionGrid: {
+    gap: 9,
+  },
+  idActionBtn: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+  },
+  idCameraBtn: {
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+  },
+  idActionBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    gap: 10,
+  },
+  idActionIconWrapYellow: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  idActionIconWrapMuted: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  idActionTextWrap: {
+    flex: 1,
+  },
+  idActionTitleYellow: {
+    color: '#d97706',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  idActionTitleStandard: {
     fontSize: 13,
     fontWeight: '600',
   },
-  presetYellowTag: {
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+  idActionSub: {
+    fontSize: 10.5,
+    marginTop: 1,
+  },
+  devAccordionBox: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  devAccordionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  devAccordionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  devAccordionTitle: {
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  devPresetsContent: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  devPresetsSub: {
+    fontSize: 11,
+    marginBottom: 8,
+  },
+  presetsGrid: {
+    gap: 8,
+  },
+  presetCard: {
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 10,
+  },
+  presetTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  presetName: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  presetBadgeGreen: {
+    backgroundColor: 'rgba(39, 166, 68, 0.12)',
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 1.5,
     borderRadius: 4,
   },
-  presetYellowTagText: {
+  presetBadgeGreenText: {
+    color: '#27a644',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  presetBadgeYellow: {
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+  },
+  presetBadgeYellowText: {
     color: '#f59e0b',
     fontSize: 9,
     fontWeight: '700',
   },
-  presetPillMeta: {
-    color: colors.textMuted,
-    fontSize: 11,
+  presetMeta: {
+    fontSize: 10.5,
   },
-  // Modal Styles
-  linearModalOverlay: {
+  footerNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  footerText: {
+    fontSize: 10.5,
+    textAlign: 'center',
+  },
+  modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
   },
-  linearModalContent: {
-    backgroundColor: '#0f1011',
-    borderColor: '#23252a',
+  modalContent: {
+    borderRadius: 16,
     borderWidth: 1,
-    borderRadius: 12,
     width: '100%',
     maxWidth: 440,
     maxHeight: '85%',
     padding: 20,
   },
-  linearModalHeader: {
+  modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
   },
-  linearModalTitleRow: {
+  modalTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -1421,111 +1198,60 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 1,
   },
-  linearModalTitle: {
-    color: colors.textPrimary,
+  modalTitle: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
     letterSpacing: -0.2,
   },
-  linearModalCloseBtn: {
+  modalCloseBtn: {
     padding: 4,
   },
-  linearModalCloseText: {
-    color: colors.textMuted,
+  modalCloseText: {
     fontSize: 16,
     fontWeight: '600',
   },
-  linearModalSub: {
-    color: colors.textSecondary,
+  modalSub: {
     fontSize: 12,
     lineHeight: 17,
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  linearModalSectionLabel: {
-    color: colors.textTertiary,
+  modalSectionLabel: {
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.6,
     marginBottom: 8,
   },
-  linearTestProfileCard: {
-    backgroundColor: '#141516',
-    borderColor: '#23252a',
-    borderWidth: 1,
+  modalInput: {
     borderRadius: 8,
-    padding: 12,
-  },
-  linearTestProfileTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  linearTestProfileName: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  linearVerifiedBadge: {
-    backgroundColor: 'rgba(39, 166, 68, 0.1)',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
     borderWidth: 1,
-    borderColor: 'rgba(39, 166, 68, 0.25)',
-  },
-  linearVerifiedBadgeText: {
-    color: '#27a644',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  linearTestProfileMeta: {
-    color: colors.textMuted,
-    fontSize: 11,
-    marginBottom: 6,
-  },
-  linearTestProfileCta: {
-    color: '#828fff',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  linearModalInput: {
-    backgroundColor: '#141516',
-    borderColor: '#23252a',
-    borderWidth: 1,
-    borderRadius: 8,
     padding: 10,
-    color: colors.textPrimary,
     fontSize: 12,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     marginBottom: 12,
     textAlignVertical: 'top',
   },
-  linearModalPrimaryBtn: {
+  modalPrimaryBtn: {
     backgroundColor: '#5e6ad2',
     borderRadius: 8,
-    paddingVertical: 11,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
   },
-  linearModalPrimaryBtnText: {
+  modalPrimaryBtnText: {
     color: '#ffffff',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  linearModalSecondaryBtn: {
-    backgroundColor: '#141516',
-    borderColor: '#23252a',
-    borderWidth: 1,
+  modalSecondaryBtn: {
     borderRadius: 8,
-    paddingVertical: 10,
+    borderWidth: 1,
+    paddingVertical: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  linearModalSecondaryBtnText: {
-    color: colors.textSecondary,
+  modalSecondaryBtnText: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 });
