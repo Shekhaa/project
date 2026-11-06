@@ -139,17 +139,97 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       const res = await authService.loginWithIDCard(base64Data);
       Alert.alert(
         'Physical ID Verified! 🎓',
-        `Welcome, ${res.user.full_name || 'Student'}!\nRoll No: ${res.extracted_data?.admission_number || 'GEHU'}\nJoined Graphic Era Hill University community.`
+        `Welcome, ${res.user.full_name || 'Student'}!\nRoll No: ${res.extracted_data?.admission_number || 'GEU'}\nStatus: Semi-Verified (Yellow Badge)`
       );
       onLoginSuccess(res.user);
     } catch (e: any) {
-      Alert.alert('ID Verification Failed', e.response?.data?.error || 'Could not verify ID card image.');
+      const errMsg = e.response?.data?.error || e.message || 'Could not verify ID card image. Please ensure photo is clear.';
+      Alert.alert('ID Verification Notice', errMsg);
     } finally {
       setIdScanLoading(false);
     }
   };
 
-  const handlePickCustomIDCard = async () => {
+  const optimizeAndSendWebImage = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const img = new (window as any).Image();
+        img.onload = () => {
+          const maxDim = 1600;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.85);
+            handleScanAndLogin(compressed);
+          } else {
+            handleScanAndLogin(reader.result as string);
+          }
+        };
+        img.onerror = () => {
+          handleScanAndLogin(reader.result as string);
+        };
+        img.src = reader.result as string;
+      } catch {
+        handleScanAndLogin(reader.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleScanWithCamera = async () => {
+    if (Platform.OS === 'web') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.capture = 'environment';
+      input.onchange = (e: any) => {
+        const file = e.target.files?.[0];
+        if (file) {
+          optimizeAndSendWebImage(file);
+        }
+      };
+      input.click();
+    } else {
+      try {
+        const ImagePicker = require('expo-image-picker');
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Needed', 'Camera permission is required to photograph your ID card.');
+          return;
+        }
+        const result = await ImagePicker.launchCameraAsync({
+          quality: 0.85,
+          base64: true,
+          allowsEditing: true,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          const asset = result.assets[0];
+          if (asset.base64) {
+            handleScanAndLogin(`data:image/jpeg;base64,${asset.base64}`);
+          }
+        }
+      } catch (err: any) {
+        Alert.alert('Error', err.message || 'Could not access camera.');
+      }
+    }
+  };
+
+  const handlePickFromGallery = async () => {
     if (Platform.OS === 'web') {
       const input = document.createElement('input');
       input.type = 'file';
@@ -157,78 +237,37 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       input.onchange = (e: any) => {
         const file = e.target.files?.[0];
         if (file) {
-          const reader = new FileReader();
-          reader.onload = async () => {
-            const base64 = reader.result as string;
-            handleScanAndLogin(base64);
-          };
-          reader.readAsDataURL(file);
+          optimizeAndSendWebImage(file);
         }
       };
       input.click();
     } else {
-      const ImagePicker = require('expo-image-picker');
-      Alert.alert(
-        'Upload Physical ID Card',
-        'Choose how to scan your College ID Card:',
-        [
-          {
-            text: '📸 Take Photo with Camera',
-            onPress: async () => {
-              try {
-                const { status } = await ImagePicker.requestCameraPermissionsAsync();
-                if (status !== 'granted') {
-                  Alert.alert('Permission Needed', 'Camera permission is required to photograph your ID card.');
-                  return;
-                }
-                const result = await ImagePicker.launchCameraAsync({
-                  quality: 0.9,
-                  base64: true,
-                });
-                if (!result.canceled && result.assets && result.assets.length > 0) {
-                  const asset = result.assets[0];
-                  if (asset.base64) {
-                    handleScanAndLogin(`data:image/jpeg;base64,${asset.base64}`);
-                  }
-                }
-              } catch (err: any) {
-                Alert.alert('Error', err.message || 'Could not access camera.');
-              }
-            },
-          },
-          {
-            text: '🖼️ Choose from Gallery',
-            onPress: async () => {
-              try {
-                const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-                if (status !== 'granted') {
-                  Alert.alert('Permission Needed', 'Photo gallery permission is required.');
-                  return;
-                }
-                const result = await ImagePicker.launchImageLibraryAsync({
-                  mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                  quality: 0.9,
-                  base64: true,
-                });
-                if (!result.canceled && result.assets && result.assets.length > 0) {
-                  const asset = result.assets[0];
-                  if (asset.base64) {
-                    handleScanAndLogin(`data:image/jpeg;base64,${asset.base64}`);
-                  }
-                }
-              } catch (err: any) {
-                Alert.alert('Error', err.message || 'Could not pick image from gallery.');
-              }
-            },
-          },
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-        ]
-      );
+      try {
+        const ImagePicker = require('expo-image-picker');
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Needed', 'Photo gallery permission is required.');
+          return;
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.85,
+          base64: true,
+          allowsEditing: true,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          const asset = result.assets[0];
+          if (asset.base64) {
+            handleScanAndLogin(`data:image/jpeg;base64,${asset.base64}`);
+          }
+        }
+      } catch (err: any) {
+        Alert.alert('Error', err.message || 'Could not pick image from gallery.');
+      }
     }
   };
+
+  const handlePickCustomIDCard = handleScanWithCamera;
 
   const SAMPLE_ID_PRESETS = [
     {
@@ -343,22 +382,44 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
               Upload your Graphic Era student ID card photo. Our local OCR extracts your name, roll number, and department. Once onboarded, complete your campus handle and profile.
             </Text>
 
-            <TouchableOpacity
-              style={styles.idCardUploadBtn}
-              onPress={handlePickCustomIDCard}
-              disabled={idScanLoading}
-              activeOpacity={0.88}
-            >
-              {idScanLoading ? (
-                <ActivityIndicator color="#ffffff" size="small" />
-              ) : (
+            {/* 2 Dedicated Action Buttons: Direct Camera Scan & Upload from Files */}
+            <View style={styles.idCardActionRow}>
+              <TouchableOpacity
+                style={[styles.idCardActionBtn, styles.idCardCameraBtn]}
+                onPress={handleScanWithCamera}
+                disabled={idScanLoading}
+                activeOpacity={0.85}
+              >
+                {idScanLoading ? (
+                  <ActivityIndicator color="#fbbf24" size="small" />
+                ) : (
+                  <View style={styles.idCardBtnContent}>
+                    <Text style={styles.idCardBtnIcon}>📸</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.idCardPrimaryBtnText}>Direct Camera Scan</Text>
+                      <Text style={styles.idCardBtnSub}>Point & photograph physical ID card</Text>
+                    </View>
+                    <Text style={styles.linearSSOArrow}>→</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.idCardActionBtn, styles.idCardGalleryBtn]}
+                onPress={handlePickFromGallery}
+                disabled={idScanLoading}
+                activeOpacity={0.85}
+              >
                 <View style={styles.idCardBtnContent}>
-                  <Text style={styles.idCardBtnIcon}>📷</Text>
-                  <Text style={styles.idCardBtnText}>Upload Student ID Card Photo</Text>
+                  <Text style={styles.idCardBtnIcon}>📁</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.idCardSecondaryBtnText}>Upload from Gallery / Files</Text>
+                    <Text style={styles.idCardBtnSub}>Select clear JPG or PNG picture</Text>
+                  </View>
                   <Text style={styles.linearSSOArrow}>→</Text>
                 </View>
-              )}
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </View>
 
             {/* Quick Sample ID Presets for Instant Testing */}
             <View style={styles.testPresetsBox}>
@@ -1224,15 +1285,25 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 16,
   },
-  idCardUploadBtn: {
-    backgroundColor: '#1b1c1e',
-    borderColor: '#2f3136',
+  idCardActionRow: {
+    gap: 10,
+    marginBottom: 16,
+  },
+  idCardActionBtn: {
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingVertical: 12,
     paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  idCardCameraBtn: {
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderColor: 'rgba(245, 158, 11, 0.28)',
+  },
+  idCardGalleryBtn: {
+    backgroundColor: '#16171a',
+    borderColor: '#27292f',
   },
   idCardBtnContent: {
     flexDirection: 'row',
@@ -1241,14 +1312,23 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   idCardBtnIcon: {
-    fontSize: 16,
-    marginRight: 8,
+    fontSize: 18,
+    marginRight: 10,
   },
-  idCardBtnText: {
-    flex: 1,
+  idCardPrimaryBtnText: {
+    color: '#fbbf24',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  idCardSecondaryBtnText: {
     color: colors.textPrimary,
     fontSize: 13,
     fontWeight: '600',
+  },
+  idCardBtnSub: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: 2,
   },
   testPresetsBox: {
     marginTop: 18,

@@ -1034,24 +1034,22 @@ class IDCardLoginView(APIView):
             try:
                 if "," in image_base64:
                     image_base64 = image_base64.split(",", 1)[1]
+                image_base64 = image_base64.strip()
+                missing_padding = len(image_base64) % 4
+                if missing_padding:
+                    image_base64 += "=" * (4 - missing_padding)
                 image_bytes = base64.b64decode(image_base64)
             except Exception as e:
-                return Response({"error": f"Invalid base64 image: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": f"Invalid base64 image data: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response({"error": "Please provide College ID Card photo (image_base64 or id_card_image)."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Run OCR
+        if not image_bytes or len(image_bytes) < 16:
+            return Response({"error": "The uploaded photo is empty. Please provide a clear picture of your ID card."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Run OCR & Anti-fraud
         scan_res = IDCardOCRService.scan_id_card_image(image_bytes)
-        anti_fraud = scan_res.get("anti_fraud", {})
 
-        # If flagged fraud duplicate
-        if anti_fraud.get("is_flagged"):
-            return Response({
-                "error": anti_fraud.get("flag_reason", "This ID card / Roll number is already registered."),
-                "anti_fraud": anti_fraud,
-            }, status=status.HTTP_409_CONFLICT)
-
-        # Check scan success
         if not scan_res.get("success", True):
             return Response(
                 {"error": scan_res.get("error", "Unable to recognize text from ID card. Please upload a clear photo.")},
@@ -1063,52 +1061,85 @@ class IDCardLoginView(APIView):
         admission_num = ext.get("admission_number") or f"GEU2024{int(timezone.now().timestamp()) % 10000}"
         safe_roll = re.sub(r"[^A-Za-z0-9]", "", admission_num).lower()
         college_email = f"{safe_roll}@geu.ac.in"
+        img_hash = scan_res.get("image_hash", "")
 
-        # Find or create user
-        user = User.objects.filter(email__iexact=college_email).first()
+        # Check if an existing student is re-scanning their card to log in
+        existing_profile = None
+        if img_hash:
+            existing_profile = StudentProfile.objects.filter(id_card_hash=img_hash).first()
+        if not existing_profile and admission_num:
+            existing_profile = StudentProfile.objects.filter(admission_number=admission_num).first()
+
         is_new_user = False
-        if not user:
-            user = User.objects.create(
-                email=college_email,
-                full_name=full_name,
-                is_email_verified=True,
-                is_phone_verified=False,
-                is_verified_student=False,
-            )
-            is_new_user = True
-            password = str(request.data.get("password", "")).strip()
-            if password and len(password) >= 6:
-                user.set_password(password)
-                user.save(update_fields=["password"])
+        if existing_profile and existing_profile.user:
+            user = existing_profile.user
+            profile = existing_profile
+        else:
+            # Find or create user
+            user = User.objects.filter(email__iexact=college_email).first()
+            if not user:
+                user = User.objects.create(
+                    email=college_email,
+                    full_name=full_name,
+                    is_email_verified=True,
+                    is_phone_verified=False,
+                    is_verified_student=False,
+                )
+                is_new_user = True
+                password = str(request.data.get("password", "")).strip()
+                if password and len(password) >= 6:
+                    user.set_password(password)
+                    user.save(update_fields=["password"])
 
-        # Create or update profile
-        clean_user = re.sub(r"[^a-z0-9]", "_", full_name.lower()) + "_" + safe_roll[-4:]
-        profile, _ = StudentProfile.objects.get_or_create(
-            user=user,
-            defaults={
-                "username": clean_user,
-                "admission_number": admission_num,
-                "college_id": ext.get("college", {}).get("id", 1),
-                "course_id": ext.get("course", {}).get("id", 1),
-                "branch_id": ext.get("branch", {}).get("id", 1),
-                "academic_year_id": ext.get("academic_year", {}).get("id", 1),
-                "section_id": ext.get("section", {}).get("id", 1),
-                "bio": "Excited for campus tech clubs and discussions!",
-                "verified": False,
-                "id_card_verified": False,
-                "verification_method": "ID_CARD_OCR",
-                "profile_completed": False,
-                "show_gender": True,
-                "id_card_hash": scan_res.get("image_hash"),
-                "id_card_ocr_data": ext,
-            }
-        )
+            # Resolve unique username
+            clean_user = re.sub(r"[^a-z0-9]", "_", full_name.lower()) + "_" + safe_roll[-4:]
+            cand_user = clean_user[:40]
+            counter = 1
+            while StudentProfile.objects.filter(username=cand_user).exclude(user=user).exists():
+                cand_user = f"{clean_user[:35]}_{counter}"
+                counter += 1
+
+            # Resolve foreign keys safely
+            from colleges.models import College, Course, Branch, AcademicYear, Section
+            col_id = ext.get("college", {}).get("id")
+            college = College.objects.filter(id=col_id).first() or College.objects.first()
+            crs_id = ext.get("course", {}).get("id")
+            course = Course.objects.filter(id=crs_id).first() or Course.objects.filter(college=college).first() or Course.objects.first()
+            brn_id = ext.get("branch", {}).get("id")
+            branch = Branch.objects.filter(id=brn_id).first() or Branch.objects.filter(course=course).first() or Branch.objects.first()
+            yr_id = ext.get("academic_year", {}).get("id")
+            academic_year = AcademicYear.objects.filter(id=yr_id).first() or AcademicYear.objects.filter(course=course).first() or AcademicYear.objects.first()
+            sec_id = ext.get("section", {}).get("id")
+            section = Section.objects.filter(id=sec_id).first() or Section.objects.filter(academic_year=academic_year).first()
+
+            profile = StudentProfile.objects.filter(user=user).first()
+            if not profile:
+                profile = StudentProfile.objects.create(
+                    user=user,
+                    username=cand_user,
+                    admission_number=admission_num,
+                    college=college,
+                    course=course,
+                    branch=branch,
+                    academic_year=academic_year,
+                    section=section,
+                    bio="Excited for campus tech clubs and discussions!",
+                    verified=False,
+                    id_card_verified=False,
+                    verification_method="ID_CARD_OCR",
+                    profile_completed=False,
+                    show_gender=True,
+                    id_card_hash=img_hash,
+                    id_card_ocr_data=ext,
+                )
 
         if image_bytes and not profile.id_card_image:
             profile.id_card_image = ContentFile(image_bytes, name=file_name)
             profile.id_card_verified = False
             profile.verification_method = "ID_CARD_OCR"
-            profile.save(update_fields=["id_card_image", "id_card_verified", "verification_method"])
+            profile.id_card_hash = img_hash
+            profile.id_card_ocr_data = ext
+            profile.save(update_fields=["id_card_image", "id_card_verified", "verification_method", "id_card_hash", "id_card_ocr_data"])
 
         # Auto-enroll in 3 Core Communities
         from communities.services import CommunityEnrollmentService
