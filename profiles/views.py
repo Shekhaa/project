@@ -93,24 +93,40 @@ class CompleteProfileView(APIView):
 
         # Check existing profile
         existing_profile = getattr(user, "profile", None)
+        orig_method = getattr(existing_profile, "verification_method", None)
+        verification_method = data.get("verification_method") or orig_method or ("ID_CARD_OCR" if data.get("id_card_image") else "MICROSOFT_SSO")
 
         serializer = StudentProfileSerializer(instance=existing_profile, data=data, partial=bool(existing_profile))
         serializer.is_valid(raise_exception=True)
 
-        verification_method = data.get("verification_method", "ID_CARD_OCR" if data.get("id_card_image") else "MANUAL")
-
+        user_fields_to_update = []
         full_name = data.get("full_name")
         if full_name:
             user.full_name = str(full_name).strip()
-            user.save(update_fields=["full_name"])
+            user_fields_to_update.append("full_name")
 
+        phone_number = data.get("phone_number")
+        if phone_number:
+            clean_phone = "".join(filter(str.isdigit, str(phone_number)))[-10:]
+            if clean_phone and not User.objects.filter(phone_number=clean_phone).exclude(id=user.id).exists():
+                user.phone_number = clean_phone
+                user.is_phone_verified = True
+                user_fields_to_update.extend(["phone_number", "is_phone_verified"])
+
+        if user_fields_to_update:
+            user.save(update_fields=user_fields_to_update)
+
+        is_microsoft_verified = (verification_method == "MICROSOFT_SSO")
         profile = serializer.save(
             user=user,
             college_email=user.email,
-            verified=True,
+            verified=is_microsoft_verified,
+            id_card_verified=is_microsoft_verified,
             profile_completed=True,
             verification_method=verification_method,
         )
+
+        user.refresh_from_db()
 
         # Retrieve the 3 mandatory communities enrolled via profile post_save signal
         enrolled_communities = [
@@ -121,6 +137,18 @@ class CompleteProfileView(APIView):
             "message": f"Welcome to Campus Connect, @{profile.username}! Your college communities have been configured.",
             "profile": StudentProfileSerializer(profile).data,
             "communities_joined": enrolled_communities,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "phone_number": user.phone_number,
+                "is_email_verified": user.is_email_verified,
+                "is_phone_verified": user.is_phone_verified,
+                "is_verified_student": user.is_verified_student,
+                "verification_tier": user.verification_tier,
+                "badge_label": user.badge_label,
+                "profile_completed": user.profile_completed,
+            }
         }, status=status.HTTP_200_OK if existing_profile else status.HTTP_201_CREATED)
 
 
@@ -729,11 +757,21 @@ class UserProfileDetailView(APIView):
         if can_view_content:
             base_data["bio"] = prof.bio if prof else ""
             base_data["admission_number"] = prof.admission_number if (prof and is_self) else ""
-            base_data["gender"] = prof.gender if (prof and is_self) else ""
+            show_g = getattr(prof, "show_gender", True) if prof else True
+            if is_self:
+                base_data["gender"] = prof.gender if prof else ""
+                base_data["show_gender"] = show_g
+            elif show_g:
+                base_data["gender"] = prof.gender if prof else ""
+                base_data["show_gender"] = True
+            else:
+                base_data["gender"] = ""
+                base_data["show_gender"] = False
         else:
             base_data["bio"] = "This account is private."
             base_data["admission_number"] = ""
             base_data["gender"] = ""
+            base_data["show_gender"] = False
 
         return Response(base_data)
 

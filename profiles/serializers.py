@@ -9,6 +9,7 @@ class StudentProfileSerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(source="branch.name", read_only=True)
     academic_year_name = serializers.CharField(source="academic_year.display_name", read_only=True)
     section_name = serializers.CharField(source="section.name", read_only=True)
+    full_name = serializers.CharField(source="user.full_name", read_only=True)
     verification_tier = serializers.CharField(source="user.verification_tier", read_only=True)
     badge_label = serializers.CharField(source="user.badge_label", read_only=True)
     followers_count = serializers.SerializerMethodField()
@@ -22,10 +23,12 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         model = StudentProfile
         fields = [
             "id",
+            "full_name",
             "username",
             "bio",
             "profile_picture",
             "gender",
+            "show_gender",
             "anonymous_enabled",
             "is_private_account",
             "messaging_preference",

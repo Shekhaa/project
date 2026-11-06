@@ -579,26 +579,27 @@ class MicrosoftSSOView(APIView):
                 username=candidate_user,
                 bio="Excited for hackathons, college fests & campus tech clubs!",
                 gender="Male",
+                show_gender=True,
                 college=college,
                 course=course,
                 branch=branch,
                 academic_year=academic_year,
                 verified=True,
-                profile_completed=True,
+                profile_completed=False,
                 id_card_verified=True,
-                verification_method="EMAIL_OTP",
+                verification_method="MICROSOFT_SSO",
             )
         else:
             profile_fields = []
-            if not profile.profile_completed:
-                profile.profile_completed = True
-                profile_fields.append("profile_completed")
             if not profile.verified:
                 profile.verified = True
                 profile_fields.append("verified")
             if not profile.id_card_verified:
                 profile.id_card_verified = True
                 profile_fields.append("id_card_verified")
+            if profile.verification_method != "MICROSOFT_SSO":
+                profile.verification_method = "MICROSOFT_SSO"
+                profile_fields.append("verification_method")
             if not profile.admission_number and roll_no:
                 profile.admission_number = roll_no
                 profile_fields.append("admission_number")
@@ -622,14 +623,23 @@ class MicrosoftSSOView(APIView):
                 "is_email_verified": user.is_email_verified,
                 "is_phone_verified": user.is_phone_verified,
                 "is_verified_student": user.is_verified_student,
-                "profile_completed": True,
+                "verification_tier": user.verification_tier,
+                "badge_label": user.badge_label,
+                "profile_completed": user.profile_completed,
             },
             "detected_student": {
                 "roll_number": roll_no or email_prefix,
                 "admission_year": admission_year,
+                "full_name": user.full_name or display_name,
                 "college_id": domain_match.college.id,
                 "college_name": domain_match.college.name,
                 "college_short_name": domain_match.college.short_name,
+                "course_id": course.id if course else 1,
+                "course_name": course.name if course else "Engineering",
+                "branch_id": branch.id if branch else 1,
+                "branch_name": branch.name if branch else "Computer Science",
+                "suggested_username": getattr(profile, "username", f"student_{roll_no or email_prefix}"),
+                "verification_method": "MICROSOFT_SSO",
             },
             "detected_college": {
                 "id": domain_match.college.id,
@@ -1062,19 +1072,14 @@ class IDCardLoginView(APIView):
                 email=college_email,
                 full_name=full_name,
                 is_email_verified=True,
-                is_phone_verified=True,
-                is_verified_student=True,
+                is_phone_verified=False,
+                is_verified_student=False,
             )
             is_new_user = True
             password = str(request.data.get("password", "")).strip()
             if password and len(password) >= 6:
                 user.set_password(password)
                 user.save(update_fields=["password"])
-        else:
-            return Response(
-                {"error": "An account for this student roll number already exists. Please sign in with your password or college email OTP."},
-                status=status.HTTP_409_CONFLICT
-            )
 
         # Create or update profile
         clean_user = re.sub(r"[^a-z0-9]", "_", full_name.lower()) + "_" + safe_roll[-4:]
@@ -1088,9 +1093,12 @@ class IDCardLoginView(APIView):
                 "branch_id": ext.get("branch", {}).get("id", 1),
                 "academic_year_id": ext.get("academic_year", {}).get("id", 1),
                 "section_id": ext.get("section", {}).get("id", 1),
-                "bio": "Verified Student via Spotify-style ID Card OCR",
-                "id_card_verified": True,
+                "bio": "Excited for campus tech clubs and discussions!",
+                "verified": False,
+                "id_card_verified": False,
                 "verification_method": "ID_CARD_OCR",
+                "profile_completed": False,
+                "show_gender": True,
                 "id_card_hash": scan_res.get("image_hash"),
                 "id_card_ocr_data": ext,
             }
@@ -1098,7 +1106,7 @@ class IDCardLoginView(APIView):
 
         if image_bytes and not profile.id_card_image:
             profile.id_card_image = ContentFile(image_bytes, name=file_name)
-            profile.id_card_verified = True
+            profile.id_card_verified = False
             profile.verification_method = "ID_CARD_OCR"
             profile.save(update_fields=["id_card_image", "id_card_verified", "verification_method"])
 
@@ -1106,23 +1114,38 @@ class IDCardLoginView(APIView):
         from communities.services import CommunityEnrollmentService
         CommunityEnrollmentService.enroll_student_in_core_communities(user, profile)
 
+        user.refresh_from_db()
         refresh = RefreshToken.for_user(user)
 
         return Response({
-            "message": f"Welcome, {full_name}! College ID verified successfully.",
+            "message": f"College ID Card scanned! Welcome, {full_name}.",
             "access": str(refresh.access_token),
             "refresh": str(refresh),
             "is_new_user": is_new_user,
             "extracted_data": ext,
+            "detected_student": {
+                "roll_number": admission_num,
+                "full_name": full_name,
+                "college_id": ext.get("college", {}).get("id", 1),
+                "college_name": ext.get("college", {}).get("name", "Graphic Era University"),
+                "course_id": ext.get("course", {}).get("id", 1),
+                "course_name": ext.get("course", {}).get("name", "Engineering"),
+                "branch_id": ext.get("branch", {}).get("id", 1),
+                "branch_name": ext.get("branch", {}).get("name", "Computer Science"),
+                "suggested_username": clean_user,
+                "verification_method": "ID_CARD_OCR",
+            },
             "user": {
                 "id": user.id,
                 "email": user.email,
                 "full_name": user.full_name,
                 "username": profile.username,
-                "is_verified_student": True,
-                "id_card_verified": True,
-                "verification_method": "ID_CARD_OCR",
-                "profile_completed": True,
+                "is_email_verified": user.is_email_verified,
+                "is_phone_verified": user.is_phone_verified,
+                "is_verified_student": user.is_verified_student,
+                "verification_tier": user.verification_tier,
+                "badge_label": user.badge_label,
+                "profile_completed": user.profile_completed,
             }
         }, status=status.HTTP_200_OK)
 

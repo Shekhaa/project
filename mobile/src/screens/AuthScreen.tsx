@@ -23,350 +23,15 @@ interface AuthScreenProps {
 // Microsoft Entra ID (Azure AD) Client ID for CampusConnect
 const AZURE_CLIENT_ID = process.env.EXPO_PUBLIC_AZURE_CLIENT_ID || '3b64e29f-bcab-4aee-9fa2-11bb605f161a';
 
-// Graphic Era Coordinates (GEU Clement Town & GEHU Dehradun)
-const CAMPUS_COORDS = {
-  GEU_LAT: 30.2685,
-  GEU_LNG: 77.9942,
-  GEHU_LAT: 30.2700,
-  GEHU_LNG: 77.9980,
-};
-
-function calculateHaversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth radius km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-// 5 Production-Ready GEHU Student Test Accounts
-const GEHU_TEST_CREDENTIALS = [
-  {
-    name: 'Aarav Joshi',
-    handle: '@aarav_gehu',
-    roll: 'GEHU2024CSE01',
-    dept: 'B.Tech CSE (2nd Year)',
-    email: 'aarav.joshi@gehu.ac.in',
-    phone: '9876510001',
-    college: 'Graphic Era Hill University',
-  },
-  {
-    name: 'Priya Rawat',
-    handle: '@priya_gehu',
-    roll: 'GEHU2024AIML02',
-    dept: 'B.Tech AI/ML (2nd Year)',
-    email: 'priya.rawat@gehu.ac.in',
-    phone: '9876510002',
-    college: 'Graphic Era Hill University',
-  },
-  {
-    name: 'Rohan Bisht',
-    handle: '@rohan_gehu',
-    roll: 'GEHU2024BCA03',
-    dept: 'BCA Core (1st Year)',
-    email: 'rohan.bisht@gehu.ac.in',
-    phone: '9876510003',
-    college: 'Graphic Era Hill University',
-  },
-  {
-    name: 'Ananya Negi',
-    handle: '@ananya_gehu',
-    roll: 'GEHU2024MBA04',
-    dept: 'MBA Core (1st Year)',
-    email: 'ananya.negi@gehu.ac.in',
-    phone: '9876510004',
-    college: 'Graphic Era Hill University',
-  },
-  {
-    name: 'Tanmay Bhatt',
-    handle: '@tanmay_gehu',
-    roll: 'GEHU2024MCA05',
-    dept: 'MCA Core (2nd Year)',
-    email: 'tanmay.bhatt@gehu.ac.in',
-    phone: '9876510005',
-    college: 'Graphic Era Hill University',
-  },
-];
-
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
-  // Top-Level Mode: Returning Student Log In vs New Student Registration
-  const [authFlow, setAuthFlow] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
-
-  // Direct Credential Login State
-  const [loginIdentifier, setLoginIdentifier] = useState('aarav.joshi@gehu.ac.in');
-  const [loginPassword, setLoginPassword] = useState('Campus@2026');
-  const [showLoginPassword, setShowLoginPassword] = useState(false);
-  const [loginLoading, setLoginLoading] = useState(false);
-
-  // Sign-Up Password Creation State
-  const [signupPassword, setSignupPassword] = useState('');
-  const [showSignupPassword, setShowSignupPassword] = useState(false);
-
-  // Sign-Up Sub-Tabs: 1. Phone (Geofenced), 2. College Email, 3. ID Card OCR
-  const [signupTab, setSignupTab] = useState<'PHONE_GEO' | 'COLLEGE_EMAIL' | 'ID_CARD'>('PHONE_GEO');
-
-  // Geolocation & Campus Geofence State
-  const [simulateCampus, setSimulateCampus] = useState(true);
-  const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>({
-    latitude: CAMPUS_COORDS.GEHU_LAT,
-    longitude: CAMPUS_COORDS.GEHU_LNG,
-  });
-  const [distanceKm, setDistanceKm] = useState<number>(0.2);
-  const [isLocating, setIsLocating] = useState(false);
-
-  // Phone / WhatsApp OTP State
-  const [phone, setPhone] = useState('');
-  const [phoneOtp, setPhoneOtp] = useState('');
-  const [phoneOtpSent, setPhoneOtpSent] = useState(false);
-  const [devPhoneOtp, setDevPhoneOtp] = useState<string | null>(null);
-  const [isRealSms, setIsRealSms] = useState(false);
-  const [gatewayNotice, setGatewayNotice] = useState<string | null>(null);
-  const [whatsappLink, setWhatsappLink] = useState<string | null>(null);
-  const [selectedChannel, setSelectedChannel] = useState<'WHATSAPP' | 'SMS'>('WHATSAPP');
-
-  // College Email OTP State
-  const [email, setEmail] = useState('');
-  const [emailOtp, setEmailOtp] = useState('');
-  const [emailOtpSent, setEmailOtpSent] = useState(false);
-  const [detectedCollege, setDetectedCollege] = useState<string | null>(null);
-  const [magicLinkUrl, setMagicLinkUrl] = useState<string | null>(null);
-
   // Microsoft Entra ID (College SSO) State
   const [ssoTokenModal, setSsoTokenModal] = useState(false);
   const [manualTokenInput, setManualTokenInput] = useState('');
   const [ssoLoading, setSsoLoading] = useState(false);
 
-  // Common UI State
+  // Common UI & ID Card Scan State
   const [loading, setLoading] = useState(false);
   const [idScanLoading, setIdScanLoading] = useState(false);
-  const [demoModalVisible, setDemoModalVisible] = useState(false);
-  const [demoUsers, setDemoUsers] = useState<any[]>([]);
-
-  useEffect(() => {
-    checkDeviceLocation();
-  }, []);
-
-  const checkDeviceLocation = () => {
-    if (typeof navigator !== 'undefined' && navigator.geolocation) {
-      setIsLocating(true);
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setIsLocating(false);
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
-          setUserCoords({ latitude: lat, longitude: lon });
-          const distGeu = calculateHaversine(lat, lon, CAMPUS_COORDS.GEU_LAT, CAMPUS_COORDS.GEU_LNG);
-          const distGehu = calculateHaversine(lat, lon, CAMPUS_COORDS.GEHU_LAT, CAMPUS_COORDS.GEHU_LNG);
-          const minDist = Math.min(distGeu, distGehu);
-          setDistanceKm(Number(minDist.toFixed(1)));
-          if (minDist <= 5.0) {
-            setSimulateCampus(false);
-          }
-        },
-        () => {
-          setIsLocating(false);
-          setSimulateCampus(true);
-          setDistanceKm(0.2);
-        },
-        { timeout: 7000 }
-      );
-    } else {
-      setSimulateCampus(true);
-      setDistanceKm(0.2);
-    }
-  };
-
-  // 1. DIRECT CREDENTIAL LOGIN (Email/Phone/Handle + Password)
-  const handleDirectLogin = async () => {
-    if (!loginIdentifier.trim() || !loginPassword.trim()) {
-      Alert.alert('Required Fields', 'Please enter your email, username, or phone number and password.');
-      return;
-    }
-
-    setLoginLoading(true);
-    try {
-      const res = await authService.loginWithPassword(loginIdentifier.trim(), loginPassword.trim());
-      Alert.alert('Welcome Back! 🎉', `Authenticated as @${res.user.username || res.user.email}`);
-      onLoginSuccess(res.user);
-    } catch (e: any) {
-      Alert.alert('Login Failed', e.response?.data?.error || 'Invalid credentials. Please verify your password.');
-    } finally {
-      setLoginLoading(false);
-    }
-  };
-
-  // 1-TAP LOGIN FOR SEEDED GEHU TEST STUDENTS
-  const handleQuickGehuLogin = async (targetEmail: string) => {
-    setLoading(true);
-    try {
-      const res = await authService.devQuickLogin(targetEmail);
-      Alert.alert('1-Tap Login Successful! ⚡', `Switched to ${res.user.full_name} (${res.detected_college?.name || 'GEHU'})`);
-      onLoginSuccess(res.user);
-    } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Could not log in.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 2. GEOFENCED PHONE SIGN-UP
-  const handleSendPhoneOTP = async (channel: 'WHATSAPP' | 'SMS' = 'WHATSAPP') => {
-    const clean = phone.replace(/[^0-9]/g, '').slice(-10);
-    if (clean.length < 10) {
-      Alert.alert('Invalid Number', 'Please enter a valid 10-digit mobile number.');
-      return;
-    }
-
-    setSelectedChannel(channel);
-    setLoading(true);
-    try {
-      const coords = simulateCampus
-        ? { latitude: CAMPUS_COORDS.GEHU_LAT, longitude: CAMPUS_COORDS.GEHU_LNG, bypass_geofence: true }
-        : { latitude: userCoords?.latitude, longitude: userCoords?.longitude, bypass_geofence: false };
-
-      const data = await authService.sendPhoneLoginOTP(clean, channel, coords);
-      setPhoneOtpSent(true);
-      setIsRealSms(Boolean(data.is_real_sms));
-      setGatewayNotice(data.gateway_notice || null);
-      if (data.whatsapp_link) setWhatsappLink(data.whatsapp_link);
-      if (data.dev_otp) {
-        setDevPhoneOtp(data.dev_otp);
-        setPhoneOtp(data.dev_otp);
-      }
-
-      if (channel === 'WHATSAPP') {
-        if (data.whatsapp_link) {
-          if (Platform.OS === 'web' && typeof window !== 'undefined') {
-            window.open(data.whatsapp_link, '_blank');
-          } else {
-            Linking.openURL(data.whatsapp_link).catch(() => {});
-          }
-        }
-        Alert.alert(
-          'WhatsApp Dispatched! 💬',
-          `Verification code [${data.dev_otp || '123456'}] dispatched to your WhatsApp (+91 ${clean}).\n\nAuto-filled below for instant testing! Tap 'Verify Code' to continue.`
-        );
-      } else {
-        Alert.alert('SMS OTP Ready 📱', `Verification code [${data.dev_otp || '123456'}] auto-filled below!`);
-      }
-    } catch (e: any) {
-      if (e.response?.status === 403) {
-        Alert.alert(
-          '📍 Campus Geofence Alert',
-          `Aap Graphic Era campus ke bahar ho (~${distanceKm} km door).\n\nPhone-based registration sirf campus premises ke andar allowed hai. Testing ke liye simulation mode enable karein ya College Email / ID Card use karein:`,
-          [
-            {
-              text: '⚡ Enable Simulation & Continue',
-              onPress: () => {
-                setSimulateCampus(true);
-                setTimeout(() => handleSendPhoneOTP(channel), 200);
-              },
-            },
-            {
-              text: '✉️ Use College Email (.ac.in)',
-              onPress: () => setSignupTab('COLLEGE_EMAIL'),
-            },
-            {
-              text: 'Cancel',
-              style: 'cancel',
-            },
-          ]
-        );
-      } else {
-        Alert.alert('Notice', e.response?.data?.error || 'Failed to dispatch verification code.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerifyPhoneOTP = async () => {
-    const clean = phone.replace(/[^0-9]/g, '').slice(-10);
-    if (phoneOtp.length < 6) {
-      Alert.alert('Incomplete Code', 'Please enter the 6-digit code.');
-      return;
-    }
-    if (signupPassword && signupPassword.length < 6) {
-      Alert.alert('Password Too Short', 'Password must be at least 6 characters.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const data = await authService.verifyPhoneLoginOTP(clean, phoneOtp, signupPassword || undefined);
-      if (signupPassword) {
-        Alert.alert(
-          'Account & Password Set! 🎉',
-          `Your password is now active! You can log in anytime using your phone (${clean}) or handle with this password.`
-        );
-      }
-      onLoginSuccess(data.user);
-    } catch (e: any) {
-      Alert.alert('Verification Failed', e.response?.data?.error || 'Invalid OTP code.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 3. COLLEGE EMAIL OTP
-  const handleSendEmailOTP = async () => {
-    if (!email.includes('@')) {
-      Alert.alert('Invalid Email', 'Please enter your official college email (e.g. name@gehu.ac.in).');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const data = await authService.sendEmailOTP(email);
-      setEmailOtpSent(true);
-      if (data.detected_college) setDetectedCollege(data.detected_college.name);
-      if (data.magic_link) setMagicLinkUrl(data.magic_link);
-      if (data.dev_otp) {
-        setEmailOtp(data.dev_otp);
-      }
-      Alert.alert(
-        'Verification Sent! 📬',
-        `Verification code [${data.dev_otp || '123456'}] dispatched to ${email}.\n\nAuto-filled below for instant testing!`
-      );
-    } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to send OTP.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerifyEmailOTP = async () => {
-    if (emailOtp.length < 6) {
-      Alert.alert('Error', 'Please enter the 6-digit verification code.');
-      return;
-    }
-    if (signupPassword && signupPassword.length < 6) {
-      Alert.alert('Password Too Short', 'Password must be at least 6 characters.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const data = await authService.verifyEmailOTP(email, emailOtp, signupPassword || undefined);
-      if (signupPassword) {
-        Alert.alert(
-          'Account & Password Set! 🎉',
-          `Your password is now active! You can log in anytime using your email and password.`
-        );
-      }
-      onLoginSuccess(data.user);
-    } catch (e: any) {
-      Alert.alert('Verification Failed', e.response?.data?.error || 'Invalid code.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Safe Base64 encoding helper for cross-platform JWT simulation
   const createDevStudentToken = (email: string, name: string) => {
@@ -434,7 +99,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
 
     const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${clientId}&response_type=id_token&redirect_uri=${encodeURIComponent(
       redirectUri
-    )}&scope=${scopes}&response_mode=fragment&nonce=${Date.now()}`;
+    )}&scope=${scopes}&response_mode=fragment&nonce=${Date.now()}&prompt=select_account`;
 
     try {
       if (Platform.OS === 'web') {
@@ -467,13 +132,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
 
   // 5. PHYSICAL ID CARD OCR LOGIN
   const handleScanAndLogin = async (base64Data: string) => {
-    if (signupPassword && signupPassword.length < 6) {
-      Alert.alert('Password Too Short', 'Password must be at least 6 characters.');
-      return;
-    }
     setIdScanLoading(true);
     try {
-      const res = await authService.loginWithIDCard(base64Data, signupPassword || undefined);
+      const res = await authService.loginWithIDCard(base64Data);
       Alert.alert(
         'Physical ID Verified! 🎓',
         `Welcome, ${res.user.full_name || 'Student'}!\nRoll No: ${res.extracted_data?.admission_number || 'GEHU'}\nJoined Graphic Era Hill University community.`
@@ -648,7 +309,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
             </TouchableOpacity>
 
             <View style={styles.linearSSOFeatures}>
-              <Text style={styles.linearSSOFeatureItem}>✓ Blue Verified Badge</Text>
+              <Text style={styles.linearSSOFeatureItem}>✓ 🛡️ Green Verified Badge</Text>
               <Text style={styles.linearSSOFeatureDot}>•</Text>
               <Text style={styles.linearSSOFeatureItem}>✓ Auto Roll No. Extraction</Text>
               <Text style={styles.linearSSOFeatureDot}>•</Text>
@@ -661,503 +322,65 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           {/* Hairline Divider */}
           <View style={styles.linearDividerRow}>
             <View style={styles.linearDividerLine} />
-            <Text style={styles.linearDividerText}>OR ALTERNATIVE METHODS</Text>
+            <Text style={styles.linearDividerText}>OR OPTION 2: PHYSICAL ID VERIFICATION</Text>
             <View style={styles.linearDividerLine} />
           </View>
 
-          {/* Top-Level Mode Selector: Log In vs Sign Up */}
-          <View style={styles.mainFlowToggle}>
-            <TouchableOpacity
-              style={[styles.mainFlowBtn, authFlow === 'LOGIN' && styles.mainFlowBtnActive]}
-              onPress={() => setAuthFlow('LOGIN')}
-            >
-              <Text style={[styles.mainFlowText, authFlow === 'LOGIN' && styles.mainFlowTextActive]}>
-                Existing Student
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.mainFlowBtn, authFlow === 'SIGNUP' && styles.mainFlowBtnActive]}
-              onPress={() => setAuthFlow('SIGNUP')}
-            >
-              <Text style={[styles.mainFlowText, authFlow === 'SIGNUP' && styles.mainFlowTextActive]}>
-                New Student
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* ========================================================= */}
-          {/* FLOW A: DIRECT LOGIN (FOR STUDENTS WITH CREDENTIALS)      */}
-          {/* ========================================================= */}
-          {authFlow === 'LOGIN' && (
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionHeading}>Sign In with Student Credentials</Text>
-              <Text style={styles.sectionSub}>Enter your college email, username, or phone number and password.</Text>
-
-              <Text style={styles.label}>Email / Username / Phone</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. aarav.joshi@gehu.ac.in or 9876510001"
-                placeholderTextColor={colors.textMuted}
-                value={loginIdentifier}
-                onChangeText={setLoginIdentifier}
-                autoCapitalize="none"
-              />
-
-              <Text style={styles.label}>Password</Text>
-              <View style={styles.passwordRow}>
-                <TextInput
-                  style={[styles.input, styles.passwordInputFlex]}
-                  placeholder="Enter password"
-                  placeholderTextColor={colors.textMuted}
-                  value={loginPassword}
-                  onChangeText={setLoginPassword}
-                  secureTextEntry={!showLoginPassword}
-                  autoCapitalize="none"
-                />
-                <TouchableOpacity
-                  style={styles.eyeBtn}
-                  onPress={() => setShowLoginPassword(!showLoginPassword)}
-                >
-                  <Text style={styles.eyeBtnText}>{showLoginPassword ? 'Hide' : 'Show'}</Text>
-                </TouchableOpacity>
+          {/* OPTION 2: PHYSICAL COLLEGE ID CARD SCAN (YELLOW BADGE / SEMI-VERIFIED) */}
+          <View style={styles.idCardScanCard}>
+            <View style={styles.idCardBadgeRow}>
+              <View style={styles.idCardYellowBadge}>
+                <View style={styles.idCardYellowDot} />
+                <Text style={styles.idCardYellowBadgeText}>SEMI-VERIFIED (YELLOW BADGE)</Text>
               </View>
+              <Text style={styles.idCardYellowSub}>Under Review</Text>
+            </View>
 
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={handleDirectLogin}
-                disabled={loginLoading}
-              >
-                {loginLoading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Sign In</Text>
-                )}
-              </TouchableOpacity>
+            <Text style={styles.idCardTitle}>Scan Physical College ID Card</Text>
+            <Text style={styles.idCardDesc}>
+              Upload your Graphic Era student ID card photo. Our local OCR extracts your name, roll number, and department. Once onboarded, complete your campus handle and profile.
+            </Text>
 
-              {/* 5 PRODUCTION TEST ACCOUNTS (GEHU) */}
-              <View style={styles.testAccountsSection}>
-                <View style={styles.testAccountsHeader}>
-                  <Text style={styles.testAccountsTitle}>TEST ACCOUNTS (GEHU)</Text>
-                  <Text style={styles.testAccountsSub}>Quick login to test across accounts:</Text>
+            <TouchableOpacity
+              style={styles.idCardUploadBtn}
+              onPress={handlePickCustomIDCard}
+              disabled={idScanLoading}
+              activeOpacity={0.88}
+            >
+              {idScanLoading ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <View style={styles.idCardBtnContent}>
+                  <Text style={styles.idCardBtnIcon}>📷</Text>
+                  <Text style={styles.idCardBtnText}>Upload Student ID Card Photo</Text>
+                  <Text style={styles.linearSSOArrow}>→</Text>
                 </View>
+              )}
+            </TouchableOpacity>
 
-                {GEHU_TEST_CREDENTIALS.map((acc, idx) => (
+            {/* Quick Sample ID Presets for Instant Testing */}
+            <View style={styles.testPresetsBox}>
+              <Text style={styles.testPresetsHeading}>INSTANT TEST ID CARDS (ONE-TAP DEMO)</Text>
+              <View style={styles.testPresetsGrid}>
+                {SAMPLE_ID_PRESETS.map((p, idx) => (
                   <TouchableOpacity
                     key={idx}
-                    style={styles.testAccountCard}
-                    onPress={() => {
-                      setLoginIdentifier(acc.email);
-                      setLoginPassword('Campus@2026');
-                      handleQuickGehuLogin(acc.email);
-                    }}
+                    style={styles.presetPillCard}
+                    onPress={() => handleScanAndLogin('data:image/jpeg;base64,' + btoa(p.rawText))}
+                    disabled={idScanLoading}
                   >
-                    <View style={styles.testAccountTop}>
-                      <View>
-                        <Text style={styles.testAccountName}>{acc.name}</Text>
-                        <Text style={styles.testAccountRoll}>{acc.roll} • {acc.dept}</Text>
-                        <Text style={styles.testAccountEmail}>{acc.email} • {acc.phone}</Text>
-                      </View>
-                      <View style={styles.quickLoginBtn}>
-                        <Text style={styles.quickLoginBtnText}>Quick Login</Text>
+                    <View style={styles.presetPillTop}>
+                      <Text style={styles.presetPillName}>{p.name}</Text>
+                      <View style={styles.presetYellowTag}>
+                        <Text style={styles.presetYellowTagText}>🟡 Review</Text>
                       </View>
                     </View>
+                    <Text style={styles.presetPillMeta}>{p.roll} • {p.dept}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
-          )}
-
-          {/* ========================================================= */}
-          {/* FLOW B: NEW STUDENT SIGN UP (3 PATHWAYS)                  */}
-          {/* ========================================================= */}
-          {authFlow === 'SIGNUP' && (
-            <View style={styles.sectionContainer}>
-              {/* 3 Pathway Tabs */}
-              <View style={styles.tabToggleRow}>
-                <TouchableOpacity
-                  style={[styles.tabToggleBtn, signupTab === 'PHONE_GEO' && styles.tabToggleBtnActive]}
-                  onPress={() => setSignupTab('PHONE_GEO')}
-                >
-                  <Text style={[styles.tabToggleText, signupTab === 'PHONE_GEO' && styles.tabToggleTextActive]}>
-                    Phone (Campus)
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.tabToggleBtn, signupTab === 'COLLEGE_EMAIL' && styles.tabToggleBtnActive]}
-                  onPress={() => setSignupTab('COLLEGE_EMAIL')}
-                >
-                  <Text style={[styles.tabToggleText, signupTab === 'COLLEGE_EMAIL' && styles.tabToggleTextActive]}>
-                    College Email
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.tabToggleBtn, signupTab === 'ID_CARD' && styles.tabToggleBtnActive]}
-                  onPress={() => setSignupTab('ID_CARD')}
-                >
-                  <Text style={[styles.tabToggleText, signupTab === 'ID_CARD' && styles.tabToggleTextActive]}>
-                    ID Card OCR
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* --------------------------------------------------------- */}
-              {/* PATHWAY 1: CAMPUS PHONE SIGN-UP (GEOFENCED)               */}
-              {/* --------------------------------------------------------- */}
-              {signupTab === 'PHONE_GEO' && (
-                <View>
-                  {/* Campus Geofence Status Card */}
-                  <View style={[styles.geoStatusCard, simulateCampus || distanceKm <= 5.0 ? styles.geoStatusCardInside : styles.geoStatusCardOutside]}>
-                    <View style={styles.geoStatusHeader}>
-                      <Text style={styles.geoStatusIcon}>{simulateCampus || distanceKm <= 5.0 ? '📍' : '⚠️'}</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.geoStatusTitle}>
-                          {simulateCampus || distanceKm <= 5.0 ? 'Inside Graphic Era Campus' : 'Outside Campus Perimeter'}
-                        </Text>
-                        <Text style={styles.geoStatusSub}>
-                          {simulateCampus
-                            ? 'Simulated: Graphic Era Hill University (0.2 km from main gate)'
-                            : `Device distance: ~${distanceKm} km from campus.`}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.geoActionRow}>
-                      <TouchableOpacity
-                        style={styles.geoToggleBtn}
-                        onPress={() => setSimulateCampus(!simulateCampus)}
-                      >
-                        <Text style={styles.geoToggleBtnText}>
-                          {simulateCampus ? 'Disable Simulation' : '⚡ Simulate On-Campus (Testing)'}
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.geoDetectBtn}
-                        onPress={checkDeviceLocation}
-                        disabled={isLocating}
-                      >
-                        <Text style={styles.geoDetectBtnText}>{isLocating ? 'Locating...' : 'Detect GPS 📡'}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {!phoneOtpSent ? (
-                    <View>
-                      <Text style={styles.label}>Student Mobile Number</Text>
-                      <View style={styles.phoneInputRow}>
-                        <View style={styles.countryCodeBadge}>
-                          <Text style={styles.countryCodeText}>🇮🇳 +91</Text>
-                        </View>
-                        <TextInput
-                          style={[styles.input, styles.phoneInput]}
-                          placeholder="98765 43210"
-                          placeholderTextColor={colors.textMuted}
-                          value={phone}
-                          onChangeText={setPhone}
-                          keyboardType="phone-pad"
-                          maxLength={10}
-                        />
-                      </View>
-                      <Text style={styles.helperText}>
-                        🛡️ Phone registration requires physical campus presence or simulation mode.
-                      </Text>
-
-                      {/* WhatsApp Primary OTP Button */}
-                      <TouchableOpacity
-                        style={styles.whatsappButton}
-                        onPress={() => handleSendPhoneOTP('WHATSAPP')}
-                        disabled={loading}
-                      >
-                        {loading && selectedChannel === 'WHATSAPP' ? (
-                          <ActivityIndicator color="#fff" />
-                        ) : (
-                          <Text style={styles.whatsappButtonText}>Get OTP via WhatsApp</Text>
-                        )}
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={styles.secondarySmsBtn}
-                        onPress={() => handleSendPhoneOTP('SMS')}
-                        disabled={loading}
-                      >
-                        <Text style={styles.secondarySmsBtnText}>Send Carrier SMS Code</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <View>
-                      <View style={styles.smsNoticeCard}>
-                        <Text style={styles.smsNoticeBadge}>
-                          {selectedChannel === 'WHATSAPP' ? 'WhatsApp Dispatched' : 'SMS Code'}
-                        </Text>
-                        <Text style={styles.smsNoticeText}>
-                          Code [{devPhoneOtp || '500105'}] auto-filled below for instant testing!
-                        </Text>
-                      </View>
-
-                      <Text style={styles.label}>Enter 6-Digit Code</Text>
-                      <TextInput
-                        style={[styles.input, styles.otpInput]}
-                        placeholder="123456"
-                        placeholderTextColor={colors.textMuted}
-                        value={phoneOtp}
-                        onChangeText={setPhoneOtp}
-                        keyboardType="number-pad"
-                        maxLength={6}
-                      />
-
-                      <Text style={styles.label}>Create Account Password (For Direct Logins)</Text>
-                      <View style={styles.passwordRow}>
-                        <TextInput
-                          style={[styles.input, styles.passwordInputFlex]}
-                          placeholder="Set login password (min 6 chars, e.g. Campus@2026)"
-                          placeholderTextColor={colors.textMuted}
-                          value={signupPassword}
-                          onChangeText={setSignupPassword}
-                          secureTextEntry={!showSignupPassword}
-                          autoCapitalize="none"
-                        />
-                        <TouchableOpacity
-                          style={styles.eyeBtn}
-                          onPress={() => setShowSignupPassword(!showSignupPassword)}
-                        >
-                          <Text style={styles.eyeBtnText}>{showSignupPassword ? 'Hide' : 'Show'}</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <Text style={styles.helperText}>
-                        Setting a password lets you log in anytime from any phone without waiting for OTP!
-                      </Text>
-
-                      <TouchableOpacity
-                        style={styles.primaryButton}
-                        onPress={handleVerifyPhoneOTP}
-                        disabled={loading}
-                      >
-                        {loading ? (
-                          <ActivityIndicator color="#fff" />
-                        ) : (
-                          <Text style={styles.primaryButtonText}>Verify & Proceed to ID Card Scan</Text>
-                        )}
-                      </TouchableOpacity>
-
-                      {whatsappLink && selectedChannel === 'WHATSAPP' && (
-                        <TouchableOpacity
-                          style={[styles.whatsappButton, { marginTop: 10, marginBottom: 4 }]}
-                          onPress={() => {
-                            if (Platform.OS === 'web' && typeof window !== 'undefined') {
-                              window.open(whatsappLink, '_blank');
-                            } else {
-                              Linking.openURL(whatsappLink).catch(() => {});
-                            }
-                          }}
-                        >
-                          <Text style={styles.whatsappButtonText}>Re-open in WhatsApp</Text>
-                        </TouchableOpacity>
-                      )}
-
-                      <TouchableOpacity
-                        style={styles.changeEmailButton}
-                        onPress={() => setPhoneOtpSent(false)}
-                      >
-                        <Text style={styles.changeEmailText}>Change Mobile Number</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {/* --------------------------------------------------------- */}
-              {/* PATHWAY 2: COLLEGE EMAIL (.ac.in) + SPOTIFY-STYLE SSO     */}
-              {/* --------------------------------------------------------- */}
-              {signupTab === 'COLLEGE_EMAIL' && (
-                <View>
-                  {!emailOtpSent ? (
-                    <View>
-                      <Text style={styles.label}>Official College Email</Text>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="e.g. yourname@gehu.ac.in"
-                        placeholderTextColor={colors.textMuted}
-                        value={email}
-                        onChangeText={setEmail}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                      />
-                      <Text style={styles.helperText}>
-                        Accepted: @gehu.ac.in (Hill University) & @geu.ac.in (Main Campus)
-                      </Text>
-
-                      <TouchableOpacity
-                        style={styles.primaryButton}
-                        onPress={handleSendEmailOTP}
-                        disabled={loading}
-                      >
-                        {loading ? (
-                          <ActivityIndicator color="#fff" />
-                        ) : (
-                          <Text style={styles.primaryButtonText}>Send 6-Digit Code</Text>
-                        )}
-                      </TouchableOpacity>
-
-                      {/* DIRECT COLLEGE SSO BUTTON */}
-                      <View style={styles.dividerContainer}>
-                        <View style={styles.dividerLine} />
-                        <Text style={styles.dividerText}>OR 1-TAP INSTITUTIONAL SSO</Text>
-                        <View style={styles.dividerLine} />
-                      </View>
-
-                      <TouchableOpacity
-                        style={styles.ssoSpotifyButton}
-                        onPress={() => handleMicrosoftSSO()}
-                        disabled={loading || ssoLoading}
-                      >
-                        <View style={styles.msLogoGridSmall}>
-                          <View style={[styles.msLogoCellSmall, { backgroundColor: '#F25022' }]} />
-                          <View style={[styles.msLogoCellSmall, { backgroundColor: '#7FBA00' }]} />
-                          <View style={[styles.msLogoCellSmall, { backgroundColor: '#00A4EF' }]} />
-                          <View style={[styles.msLogoCellSmall, { backgroundColor: '#FFB900' }]} />
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 8 }}>
-                          <Text style={styles.ssoSpotifyTitle}>Microsoft Entra SSO (@geu.ac.in)</Text>
-                          <Text style={styles.ssoSpotifySub}>Instant single sign-on with verified college credentials</Text>
-                        </View>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <View>
-                      <Text style={styles.label}>Enter 6-Digit Code sent to {email}</Text>
-                      <TextInput
-                        style={[styles.input, styles.otpInput]}
-                        placeholder="123456"
-                        placeholderTextColor={colors.textMuted}
-                        value={emailOtp}
-                        onChangeText={setEmailOtp}
-                        keyboardType="number-pad"
-                        maxLength={6}
-                      />
-
-                      <Text style={styles.label}>Create Account Password (For Direct Logins)</Text>
-                      <View style={styles.passwordRow}>
-                        <TextInput
-                          style={[styles.input, styles.passwordInputFlex]}
-                          placeholder="Set login password (min 6 chars, e.g. Campus@2026)"
-                          placeholderTextColor={colors.textMuted}
-                          value={signupPassword}
-                          onChangeText={setSignupPassword}
-                          secureTextEntry={!showSignupPassword}
-                          autoCapitalize="none"
-                        />
-                        <TouchableOpacity
-                          style={styles.eyeBtn}
-                          onPress={() => setShowSignupPassword(!showSignupPassword)}
-                        >
-                          <Text style={styles.eyeBtnText}>{showSignupPassword ? 'Hide' : 'Show'}</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <Text style={styles.helperText}>
-                        Setting a password lets you log in anytime from any device without needing email OTPs!
-                      </Text>
-
-                      <TouchableOpacity
-                        style={styles.primaryButton}
-                        onPress={handleVerifyEmailOTP}
-                        disabled={loading}
-                      >
-                        {loading ? (
-                          <ActivityIndicator color="#fff" />
-                        ) : (
-                          <Text style={styles.primaryButtonText}>Verify & Enter Campus</Text>
-                        )}
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={styles.changeEmailButton}
-                        onPress={() => setEmailOtpSent(false)}
-                      >
-                        <Text style={styles.changeEmailText}>Change Email Address</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {/* --------------------------------------------------------- */}
-              {/* PATHWAY 3: SPOTIFY-STYLE PHYSICAL ID CARD OCR SCAN        */}
-              {/* --------------------------------------------------------- */}
-              {signupTab === 'ID_CARD' && (
-                <View>
-                  <View style={styles.idScanHeroCard}>
-                    <Text style={styles.idScanHeroTitle}>Physical ID Verification</Text>
-                    <Text style={styles.idScanHeroSub}>
-                      Snap or upload your physical Graphic Era Hill University ID Card. Local OCR automatically extracts Name, Roll No & Branch and joins you into GEHU community!
-                    </Text>
-                  </View>
-
-                  <Text style={styles.label}>Create Account Password (For Direct Logins)</Text>
-                  <View style={styles.passwordRow}>
-                    <TextInput
-                      style={[styles.input, styles.passwordInputFlex]}
-                      placeholder="Set login password (min 6 chars, e.g. Campus@2026)"
-                      placeholderTextColor={colors.textMuted}
-                      value={signupPassword}
-                      onChangeText={setSignupPassword}
-                      secureTextEntry={!showSignupPassword}
-                      autoCapitalize="none"
-                    />
-                    <TouchableOpacity
-                      style={styles.eyeBtn}
-                      onPress={() => setShowSignupPassword(!showSignupPassword)}
-                    >
-                      <Text style={styles.eyeBtnText}>{showSignupPassword ? 'Hide' : 'Show'}</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.helperText}>
-                    Enter your password here so your verified account is ready for instant future login.
-                  </Text>
-
-                  <TouchableOpacity
-                    style={styles.uploadIdCardBtn}
-                    onPress={handlePickCustomIDCard}
-                    disabled={idScanLoading}
-                  >
-                    {idScanLoading ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <View style={styles.uploadIdCardBtnContent}>
-                        <Text style={styles.uploadIdCardText}>Upload Physical ID Card Photo</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-
-                  <View style={styles.dividerContainer}>
-                    <View style={styles.dividerLine} />
-                    <Text style={styles.dividerText}>OR QUICK GEHU SAMPLE CARDS</Text>
-                    <View style={styles.dividerLine} />
-                  </View>
-
-                  <View style={styles.presetCardsCol}>
-                    {SAMPLE_ID_PRESETS.map((p, idx) => (
-                      <TouchableOpacity
-                        key={idx}
-                        style={styles.idPresetCard}
-                        onPress={() => handleScanAndLogin('data:image/jpeg;base64,' + btoa(p.rawText))}
-                        disabled={idScanLoading}
-                      >
-                        <View style={styles.idPresetHeader}>
-                          <Text style={styles.idPresetName}>{p.name}</Text>
-                          <View style={styles.idPresetBadge}>
-                            <Text style={styles.idPresetBadgeText}>{p.badge}</Text>
-                          </View>
-                        </View>
-                        <Text style={styles.idPresetRoll}>{p.roll} • {p.dept}</Text>
-                        <Text style={styles.idPresetCollege}>{p.college}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              )}
-            </View>
-          )}
+          </View>
         </View>
       </ScrollView>
 
@@ -1284,7 +507,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   }
                   const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${AZURE_CLIENT_ID}&response_type=id_token&redirect_uri=${encodeURIComponent(
                     redirectUri
-                  )}&scope=openid%20profile%20email&response_mode=fragment&nonce=${Date.now()}`;
+                  )}&scope=openid%20profile%20email&response_mode=fragment&nonce=${Date.now()}&prompt=select_account`;
                   if (Platform.OS === 'web') {
                     window.location.href = authUrl;
                   } else {
@@ -1942,6 +1165,137 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.8,
+  },
+  // Option 2 ID Card Scan Styles
+  idCardScanCard: {
+    backgroundColor: '#0f1011',
+    borderColor: '#23252a',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 18,
+    marginBottom: 20,
+  },
+  idCardBadgeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  idCardYellowBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    borderWidth: 1,
+    borderRadius: 9999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 6,
+  },
+  idCardYellowDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#f59e0b',
+  },
+  idCardYellowBadgeText: {
+    color: '#f59e0b',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  idCardYellowSub: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  idCardTitle: {
+    color: colors.textPrimary,
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    marginBottom: 6,
+  },
+  idCardDesc: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  idCardUploadBtn: {
+    backgroundColor: '#1b1c1e',
+    borderColor: '#2f3136',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  idCardBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  idCardBtnIcon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  idCardBtnText: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  testPresetsBox: {
+    marginTop: 18,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#1c1d20',
+  },
+  testPresetsHeading: {
+    color: colors.textTertiary,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    marginBottom: 10,
+  },
+  testPresetsGrid: {
+    gap: 8,
+  },
+  presetPillCard: {
+    backgroundColor: '#141516',
+    borderColor: '#23252a',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+  },
+  presetPillTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  presetPillName: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  presetYellowTag: {
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  presetYellowTagText: {
+    color: '#f59e0b',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  presetPillMeta: {
+    color: colors.textMuted,
+    fontSize: 11,
   },
   // Modal Styles
   linearModalOverlay: {

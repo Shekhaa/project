@@ -4,12 +4,14 @@ export interface CompleteProfilePayload {
   full_name?: string;
   username: string;
   gender: string;
-  college: number;
-  course: number;
-  branch: number;
-  academic_year: number;
-  section: number;
-  admission_number: string;
+  show_gender?: boolean;
+  phone_number?: string;
+  college?: number;
+  course?: number;
+  branch?: number;
+  academic_year?: number;
+  section?: number;
+  admission_number?: string;
   bio?: string;
 }
 
@@ -21,6 +23,8 @@ export interface PublicProfile {
   avatar?: string;
   bio?: string;
   admission_number?: string;
+  gender?: string;
+  show_gender?: boolean;
   college_name: string;
   college_short_name: string;
   branch_name: string;
@@ -102,6 +106,7 @@ export const profileService = {
     username?: string;
     bio?: string;
     gender?: string;
+    show_gender?: boolean;
     anonymous_enabled?: boolean;
     is_private_account?: boolean;
     messaging_preference?: string;

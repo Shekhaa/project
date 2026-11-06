@@ -12,6 +12,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { authService, User, DemoUser } from '../services/authService';
@@ -28,6 +29,7 @@ interface ProfileData {
   bio: string;
   profile_picture?: string;
   gender: string;
+  show_gender?: boolean;
   anonymous_enabled: boolean;
   is_private_account?: boolean;
   messaging_preference?: 'EVERYONE' | 'FOLLOWING' | 'CONNECTIONS_ONLY' | 'NOBODY';
@@ -101,6 +103,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [editUsername, setEditUsername] = useState('');
   const [editBio, setEditBio] = useState('');
   const [editGender, setEditGender] = useState('Male');
+  const [editShowGender, setEditShowGender] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
 
   // Change Password State
@@ -171,6 +174,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         setEditUsername(profileData.username || '');
         setEditBio(profileData.bio || '');
         setEditGender(profileData.gender || 'Male');
+        setEditShowGender(profileData.show_gender !== false);
         setIsPrivateAccount(!!profileData.is_private_account);
         setMessagingPreference(profileData.messaging_preference || 'EVERYONE');
       }
@@ -253,6 +257,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         username: editUsername.trim(),
         bio: editBio.trim(),
         gender: editGender,
+        show_gender: editShowGender,
       });
       setProfile((prev) => (prev ? { ...prev, ...res.profile } : null));
       if (editFullName.trim() !== currentUser.full_name) {
@@ -592,6 +597,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             {profile?.admission_number || 'GEU/24/CS/108'}
           </Text>
         </View>
+
+        {profile?.show_gender !== false && Boolean(profile?.gender) && (
+          <>
+            <View style={styles.divider} />
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Gender</Text>
+              <Text style={styles.infoValue}>{profile.gender}</Text>
+            </View>
+          </>
+        )}
       </View>
 
       {/* Privacy & Safe Campus Features */}
@@ -943,6 +958,21 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         </Text>
                       </TouchableOpacity>
                     ))}
+                  </View>
+
+                  <View style={[styles.prefRow, { marginTop: 12, marginBottom: 8 }]}>
+                    <View style={styles.prefTextCol}>
+                      <Text style={styles.prefHeading}>Hide Gender on Public Profile</Text>
+                      <Text style={styles.prefSub}>
+                        Keep your gender private so it won't be displayed on public cards or student badges.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={!editShowGender}
+                      onValueChange={(val) => setEditShowGender(!val)}
+                      trackColor={{ false: '#262626', true: colors.primary }}
+                      thumbColor="#ffffff"
+                    />
                   </View>
 
                   <TouchableOpacity

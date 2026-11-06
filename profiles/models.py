@@ -24,6 +24,10 @@ class StudentProfile(models.Model):
     bio = models.TextField(blank=True, max_length=500)
     profile_picture = models.ImageField(upload_to="profile_pictures/", blank=True, null=True)
     gender = models.CharField(max_length=20, choices=GENDER_CHOICES)
+    show_gender = models.BooleanField(
+        default=True,
+        help_text="If False, gender is hidden on public student badge and public profile cards"
+    )
     anonymous_enabled = models.BooleanField(default=False, help_text="Allow posting under anonymous pseudonyms")
 
     # College Hierarchy
@@ -45,6 +49,7 @@ class StudentProfile(models.Model):
         max_length=30,
         default="MANUAL",
         choices=[
+            ("MICROSOFT_SSO", "Microsoft Entra SSO"),
             ("EMAIL_OTP", "Email OTP"),
             ("ID_CARD_OCR", "College ID Card OCR"),
             ("PHONE_OTP", "Phone OTP"),

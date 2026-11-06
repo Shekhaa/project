@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,446 +8,307 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Modal,
+  Switch,
+  Platform,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { profileService } from '../services/profileService';
+import { authService, User } from '../services/authService';
+import { ShieldCheck, AlertCircle, Sparkles, Lock, Check } from 'lucide-react-native';
 
 interface ProfileSetupScreenProps {
+  currentUser: User;
   onProfileComplete: () => void;
 }
 
-// Sample ID Card Test Presets for Instant Blind Testing & OCR Demo
-const SAMPLE_ID_CARDS = [
-  {
-    title: 'Aarav Sharma',
-    badge: 'B.Tech CSE',
-    roll: 'GEU2024CSE142',
-    course: 'B.Tech',
-    branch: 'Computer Science & Engineering',
-    courseId: 1,
-    branchId: 1,
-    collegeName: 'Graphic Era University (GEU)',
-    rawText: 'GRAPHIC ERA UNIVERSITY\nNAME: AARAV SHARMA\nROLL NO: GEU2024CSE142\nCOURSE: B.TECH COMPUTER SCIENCE & ENG\nYEAR: 1ST YEAR',
-  },
-  {
-    title: 'Riya Sen',
-    badge: 'BCA Core',
-    roll: 'GEU2024BCA088',
-    course: 'BCA',
-    branch: 'BCA Core',
-    courseId: 2,
-    branchId: 9,
-    collegeName: 'Graphic Era University (GEU)',
-    rawText: 'GRAPHIC ERA UNIVERSITY\nNAME: RIYA SEN\nROLL NO: GEU2024BCA088\nCOURSE: BCA\nYEAR: 1ST YEAR',
-  },
-  {
-    title: 'Kabir Mehta',
-    badge: 'B.Tech AI/ML',
-    roll: 'GEU2024AIML077',
-    course: 'B.Tech',
-    branch: 'AI & Machine Learning',
-    courseId: 1,
-    branchId: 2,
-    collegeName: 'Graphic Era University (GEU)',
-    rawText: 'GRAPHIC ERA UNIVERSITY\nNAME: KABIR MEHTA\nROLL NO: GEU2024AIML077\nCOURSE: B.TECH AI MACHINE LEARNING\nYEAR: 1ST YEAR',
-  },
-  {
-    title: '⚠️ Spoof Attempt (Duplicate Priya Verma)',
-    badge: 'Fraud Test',
-    roll: 'GEU2024CSE108',
-    course: 'B.Tech',
-    branch: 'Computer Science & Engineering',
-    courseId: 1,
-    branchId: 1,
-    collegeName: 'Graphic Era University (GEU)',
-    rawText: 'GRAPHIC ERA UNIVERSITY\nNAME: FAKE SPOOF\nROLL NO: GEU2024CSE108\nCOURSE: B.TECH CSE',
-  },
-];
+export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({ currentUser, onProfileComplete }) => {
+  const [loadingInitial, setLoadingInitial] = useState(true);
 
-const COURSES = [
-  { id: 1, name: 'B.Tech', duration: '4 Years' },
-  { id: 2, name: 'BCA', duration: '3 Years' },
-  { id: 3, name: 'MBA', duration: '2 Years' },
-  { id: 4, name: 'MCA', duration: '2 Years' },
-];
-
-const BRANCHES: Record<number, { id: number; name: string }[]> = {
-  1: [
-    { id: 1, name: 'Computer Science (CSE)' },
-    { id: 2, name: 'AI & Machine Learning' },
-    { id: 3, name: 'Information Technology' },
-    { id: 4, name: 'Electronics & Comm' },
-  ],
-  2: [
-    { id: 9, name: 'BCA Core' },
-  ],
-  3: [
-    { id: 10, name: 'MBA Core' },
-  ],
-  4: [
-    { id: 11, name: 'MCA Core' },
-  ],
-};
-
-const YEARS = [
-  { id: 1, name: '1st Year' },
-  { id: 2, name: '2nd Year' },
-  { id: 3, name: '3rd Year' },
-  { id: 4, name: '4th Year' },
-];
-
-export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({ onProfileComplete }) => {
-  const [fullName, setFullName] = useState('');
+  // Form State
+  const [fullName, setFullName] = useState(currentUser.full_name || '');
   const [username, setUsername] = useState('');
-  const [gender, setGender] = useState('Male');
+  const [gender, setGender] = useState<'Male' | 'Female' | 'Other'>('Male');
+  const [showGender, setShowGender] = useState(true);
+  const [phoneNumber, setPhoneNumber] = useState(currentUser.phone_number || '');
+  const [bio, setBio] = useState('Excited for campus tech clubs, hackathons & fests!');
   const [admissionNumber, setAdmissionNumber] = useState('');
-  const [bio, setBio] = useState('Excited for hackathons, college fests & campus tech clubs!');
-  const [loading, setLoading] = useState(false);
-  const [scanning, setScanning] = useState(false);
+  const [collegeName, setCollegeName] = useState('Graphic Era University');
+  const [courseName, setCourseName] = useState('B.Tech');
+  const [branchName, setBranchName] = useState('Computer Science & Engineering');
+  const [verificationTier, setVerificationTier] = useState<string>(currentUser.verification_tier || 'FULLY_VERIFIED');
 
-  // Verification & OCR states
-  const [idCardVerified, setIdCardVerified] = useState(false);
-  const [verifiedName, setVerifiedName] = useState<string | null>(null);
-  const [fraudWarning, setFraudWarning] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  // Academic IDs
-  const [collegeId, setCollegeId] = useState(1);
-  const [courseId, setCourseId] = useState(1);
-  const [branchId, setBranchId] = useState(1);
-  const [academicYearId, setAcademicYearId] = useState(1);
-  const [sectionId, setSectionId] = useState(1);
+  useEffect(() => {
+    loadExistingData();
+  }, []);
 
-  const selectedCourse = COURSES.find((c) => c.id === courseId) || COURSES[0];
-  const currentBranches = BRANCHES[courseId] || BRANCHES[1];
-  const selectedBranch = currentBranches.find((b) => b.id === branchId) || currentBranches[0];
-  const selectedYear = YEARS.find((y) => y.id === academicYearId) || YEARS[0];
-
-  // Scan ID Card (via Backend Windows OCR & Anti-Fraud Engine)
-  const handleScanSampleCard = async (sample: typeof SAMPLE_ID_CARDS[0]) => {
-    setScanning(true);
-    setFraudWarning(null);
-
+  const loadExistingData = async () => {
     try {
-      const dummyBase64 = 'data:image/jpeg;base64,' + btoa(sample.rawText);
-      const res = await profileService.scanIdCard(dummyBase64);
-
-      if (res.anti_fraud?.is_flagged || res.anti_fraud?.is_duplicate_roll) {
-        setFraudWarning(res.anti_fraud?.flag_reason || 'Roll number already claimed by another student account.');
-        setIdCardVerified(false);
-        Alert.alert(
-          '🛡️ Anti-Fraud Shield Alert',
-          `FRAUD DETECTED!\n\n${res.anti_fraud?.flag_reason || 'This College ID Card or Roll Number is already registered.'}\n\nFake profiles are prevented during blind testing.`
-        );
-        return;
+      const data = await profileService.getMyProfile().catch(() => null);
+      if (data) {
+        if (data.full_name) setFullName(data.full_name);
+        if (data.username) setUsername(data.username);
+        if (data.admission_number) setAdmissionNumber(data.admission_number);
+        if (data.college_name) setCollegeName(data.college_name);
+        if (data.course_name) setCourseName(data.course_name);
+        if (data.branch_name) setBranchName(data.branch_name);
+        if (data.gender) setGender(data.gender);
+        if (typeof data.show_gender === 'boolean') setShowGender(data.show_gender);
+        if (data.verification_tier) setVerificationTier(data.verification_tier);
+        if (data.bio) setBio(data.bio);
+      } else {
+        const emailPrefix = currentUser.email.split('@')[0];
+        setAdmissionNumber(emailPrefix);
+        setUsername(`student_${emailPrefix}`);
       }
-
-      // Auto-populate extracted data
-      const data = res.extracted_data;
-      const extractedRoll = data?.admission_number || sample.roll;
-      const extractedName = data?.full_name || sample.title;
-      const suggestedUsername = extractedName.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Math.floor(Math.random() * 90 + 10);
-
-      setFullName(extractedName);
-      setUsername(suggestedUsername);
-      setAdmissionNumber(extractedRoll);
-      setVerifiedName(extractedName);
-      setCollegeId(data?.college?.id || 1);
-      setCourseId(sample.courseId || data?.course?.id || 1);
-      setBranchId(sample.branchId || data?.branch?.id || 1);
-      setAcademicYearId(data?.academic_year?.id || 1);
-      setSectionId(data?.section?.id || 1);
-      setIdCardVerified(true);
-      setFraudWarning(null);
-
-      Alert.alert(
-        'ID Card Verified! 🎓',
-        `Student Name: ${extractedName}\nRoll Number: ${extractedRoll}\nCourse: ${sample.course} • ${sample.branch}\n\nAll details auto-filled & verified!`
-      );
-    } catch (e: any) {
-      if (sample.roll === 'GEU2024CSE108') {
-        setFraudWarning('Roll number already claimed by @priya_verma');
-        Alert.alert('🛡️ Anti-Fraud Alert', 'Roll number GEU2024CSE108 is already registered to @priya_verma!');
-        return;
-      }
-      setFullName(sample.title);
-      setAdmissionNumber(sample.roll);
-      setUsername(sample.title.toLowerCase().replace(/\s+/g, '_'));
-      setVerifiedName(sample.title);
-      setCourseId(sample.courseId);
-      setBranchId(sample.branchId);
-      setIdCardVerified(true);
+    } catch (e) {
+      console.log('Error loading initial profile', e);
     } finally {
-      setScanning(false);
+      setLoadingInitial(false);
     }
   };
 
-  const handleCompleteSetup = async () => {
-    if (!fullName.trim()) {
-      Alert.alert('Required Field', 'Please enter your Full Name.');
-      return;
-    }
-    if (!username.trim() || !admissionNumber.trim()) {
-      Alert.alert('Required Fields', 'Please enter your username and student roll/admission number.');
+  const handleFinishSetup = async () => {
+    const cleanUser = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!cleanUser || cleanUser.length < 3) {
+      Alert.alert('Invalid Handle', 'Please choose a nickname/handle with at least 3 letters, numbers, or underscores.');
       return;
     }
 
-    setLoading(true);
+    setSaving(true);
     try {
       const res = await profileService.completeProfile({
-        full_name: fullName.trim(),
-        username: username.trim(),
+        full_name: fullName.trim() || currentUser.full_name,
+        username: cleanUser,
         gender,
-        admission_number: admissionNumber.trim(),
-        bio,
-        college: collegeId,
-        course: courseId,
-        branch: branchId,
-        academic_year: academicYearId,
-        section: sectionId,
+        show_gender: showGender,
+        phone_number: phoneNumber.trim() || undefined,
+        bio: bio.trim(),
       });
+
+      if (res.user) {
+        await authService.updateCurrentUser(res.user);
+      } else {
+        await authService.updateCurrentUser({ profile_completed: true });
+      }
 
       const joinedList = res.communities_joined?.length
         ? res.communities_joined.map((c: string) => `• ${c}`).join('\n')
-        : `• Graphic Era University\n• ${selectedCourse.name} (${selectedBranch.name})\n• ${selectedYear.name} Community`;
+        : `• ${collegeName}\n• ${courseName} (${branchName})`;
 
-      Alert.alert(
-        'Welcome to Campus Connect! 🎉',
-        `Your student profile @${username.trim()} is officially locked & verified.\n\nYou have joined your Core Communities:\n${joinedList}`
-      );
+      if (Platform.OS === 'web') {
+        window.alert(`Welcome, @${cleanUser}! 🎉\n\nYour campus profile is active. You have joined:\n${joinedList}`);
+      } else {
+        Alert.alert(
+          'Campus Identity Claimed! 🎉',
+          `Welcome, @${cleanUser}!\n\nYour profile is verified and active. You have been auto-enrolled in:\n${joinedList}`
+        );
+      }
       onProfileComplete();
     } catch (e: any) {
-      const errorMsg =
-        e.response?.data?.error ||
-        e.response?.data?.admission_number?.[0] ||
+      const err =
         e.response?.data?.username?.[0] ||
-        e.response?.data?.academic_year?.[0] ||
-        e.response?.data?.branch?.[0] ||
-        e.response?.data?.course?.[0] ||
-        (typeof e.response?.data === 'string' ? e.response?.data : null) ||
+        e.response?.data?.error ||
         e.message ||
-        'Could not complete profile setup.';
-      Alert.alert('Setup Failed', errorMsg);
+        'Failed to save campus profile.';
+      Alert.alert('Setup Failed', err);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
+
+  if (loadingInitial) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Verifying University Credentials...</Text>
+      </View>
+    );
+  }
+
+  const isGreenVerified = verificationTier === 'FULLY_VERIFIED';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.title}>Student Onboarding</Text>
-        <Text style={styles.subtitle}>Lock in your verified identity & join your classes</Text>
+        <View style={styles.logoRow}>
+          <Text style={styles.logoIcon}>🎓</Text>
+          <Text style={styles.appTitle}>Campus Connect</Text>
+        </View>
+        <Text style={styles.title}>Claim Your Campus Identity</Text>
+        <Text style={styles.subtitle}>
+          Your academic identity has been verified. Pick your public nickname and preferences before entering the campus feed.
+        </Text>
       </View>
 
-      {/* OCR ID CARD SCANNER BANNER */}
-      <View style={styles.scannerCard}>
-        <View style={styles.scannerHeaderRow}>
-          <Text style={styles.scannerIcon}>📷</Text>
-          <View style={styles.scannerHeaderTextCol}>
-            <Text style={styles.scannerTitle}>Scan Physical College ID Card</Text>
-            <Text style={styles.scannerSub}>
-              Spotify-Style SheerID verification: auto-reads Name, Roll No & Branch
+      {/* VERIFICATION TIER STATUS BANNER */}
+      {isGreenVerified ? (
+        <View style={styles.greenBanner}>
+          <View style={styles.bannerIconCircleGreen}>
+            <ShieldCheck size={20} color="#22c55e" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.greenBannerTitle}>Official Microsoft SSO Verified 🛡️</Text>
+            <Text style={styles.greenBannerSub}>
+              Cryptographically certified via Graphic Era Entra ID. You will receive the Green Verified Student Badge across all channels.
             </Text>
           </View>
         </View>
-
-        {scanning ? (
-          <View style={styles.scanningBox}>
-            <ActivityIndicator size="small" color="#6366f1" />
-            <Text style={styles.scanningText}>Running Local Windows OCR & checking anti-fraud registry...</Text>
+      ) : (
+        <View style={styles.yellowBanner}>
+          <View style={styles.bannerIconCircleYellow}>
+            <AlertCircle size={20} color="#f59e0b" />
           </View>
-        ) : (
-          <View style={styles.presetGrid}>
-            <Text style={styles.presetLabel}>TEST WITH A CAMPUS ID CARD:</Text>
-            {SAMPLE_ID_CARDS.map((card, idx) => (
+          <View style={{ flex: 1 }}>
+            <Text style={styles.yellowBannerTitle}>Physical ID Card Scanned (Under Review) 🟡</Text>
+            <Text style={styles.yellowBannerSub}>
+              Anti-fraud OCR verified. You will receive the Yellow Badge until in-person campus verification is completed.
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* LOCKED ACADEMIC CREDENTIALS BOX */}
+      <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <Lock size={15} color={colors.textMuted} />
+          <Text style={styles.cardSectionTitle}>VERIFIED ACADEMIC RECORD (LOCKED)</Text>
+        </View>
+        <Text style={styles.cardHint}>
+          Auto-linked to your institutional record. College, roll number & course cannot be modified.
+        </Text>
+
+        <View style={styles.lockedGrid}>
+          <View style={styles.lockedItem}>
+            <Text style={styles.lockedLabel}>University / College</Text>
+            <Text style={styles.lockedValue}>{collegeName}</Text>
+          </View>
+
+          <View style={styles.lockedItem}>
+            <Text style={styles.lockedLabel}>University Roll Number</Text>
+            <Text style={styles.lockedValueHighlight}>{admissionNumber || 'GEU Verified'}</Text>
+          </View>
+
+          <View style={styles.lockedItem}>
+            <Text style={styles.lockedLabel}>Official Name</Text>
+            <Text style={styles.lockedValue}>{fullName || currentUser.email}</Text>
+          </View>
+
+          <View style={styles.lockedItem}>
+            <Text style={styles.lockedLabel}>Enrolled Degree & Branch</Text>
+            <Text style={styles.lockedValue}>{courseName} • {branchName}</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* CUSTOMIZABLE CAMPUS IDENTITY BOX */}
+      <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <Sparkles size={15} color={colors.primary} />
+          <Text style={styles.cardSectionTitle}>CHOOSE YOUR CAMPUS NICKNAME & IDENTITY</Text>
+        </View>
+
+        {/* 1. Custom Username / Handle */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Campus Handle / Nickname *</Text>
+          <Text style={styles.inputSubtext}>
+            Your public identity across campus feed, comments, and direct message requests.
+          </Text>
+          <View style={styles.usernameRow}>
+            <Text style={styles.atSymbol}>@</Text>
+            <TextInput
+              style={styles.usernameInput}
+              value={username}
+              onChangeText={(txt) => setUsername(txt.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              placeholder="e.g. shekhar_rana"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              maxLength={30}
+            />
+          </View>
+        </View>
+
+        {/* 2. Gender Selection & Hide Gender Toggle */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Gender</Text>
+          <View style={styles.genderOptionsRow}>
+            {(['Male', 'Female', 'Other'] as const).map((g) => (
               <TouchableOpacity
-                key={idx}
-                style={[
-                  styles.presetBtn,
-                  card.roll === 'GEU2024CSE108' && styles.presetBtnDanger,
-                ]}
-                onPress={() => handleScanSampleCard(card)}
+                key={g}
+                style={[styles.genderPill, gender === g && styles.genderPillActive]}
+                onPress={() => setGender(g)}
               >
-                <View style={styles.presetBtnTop}>
-                  <Text style={styles.presetBtnTitle}>{card.title}</Text>
-                  <View style={[styles.pillBadge, card.roll === 'GEU2024CSE108' ? styles.pillDanger : styles.pillSuccess]}>
-                    <Text style={styles.pillText}>{card.badge}</Text>
-                  </View>
-                </View>
-                <Text style={styles.presetRollText}>Roll: {card.roll}</Text>
+                <Text style={[styles.genderPillText, gender === g && styles.genderPillTextActive]}>
+                  {g === 'Male' ? '👨 Male' : g === 'Female' ? '👩 Female' : '✨ Other'}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
-        )}
 
-        {fraudWarning && (
-          <View style={styles.fraudAlertBanner}>
-            <Text style={styles.fraudAlertIcon}>⚠️</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.fraudAlertTitle}>Fraud Detected</Text>
-              <Text style={styles.fraudAlertText}>{fraudWarning}</Text>
+          {/* Privacy Switch: Hide Gender on Public Profile */}
+          <View style={styles.toggleRow}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={styles.toggleTitle}>Hide Gender on Public Profile</Text>
+              <Text style={styles.toggleDesc}>
+                Keep gender private. It will not be shown on your profile card or to other students.
+              </Text>
             </View>
+            <Switch
+              value={!showGender}
+              onValueChange={(val) => setShowGender(!val)}
+              trackColor={{ false: '#262626', true: colors.primary }}
+              thumbColor="#ffffff"
+            />
           </View>
-        )}
-
-        {idCardVerified && (
-          <View style={styles.verifiedBanner}>
-            <Text style={styles.verifiedBannerIcon}>✅</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.verifiedBannerTitle}>College ID Card Verified</Text>
-              <Text style={styles.verifiedBannerText}>
-                Student: {verifiedName} • ID Locked: {admissionNumber}
-              </Text>
-            </View>
-          </View>
-        )}
-      </View>
-
-      {/* College Institution Card */}
-      <View style={styles.collegeCard}>
-        <View style={styles.collegeCardHeader}>
-          <Text style={styles.collegeLabel}>INSTITUTIONAL RECORD</Text>
-          {idCardVerified && (
-            <View style={styles.verifiedPill}>
-              <Text style={styles.verifiedPillText}>OCR VERIFIED</Text>
-            </View>
-          )}
-        </View>
-        <Text style={styles.collegeName}>Graphic Era University (GEU)</Text>
-        <Text style={styles.academicPath}>{selectedCourse.name} • {selectedBranch.name} • {selectedYear.name}</Text>
-      </View>
-
-      {/* Profile Form */}
-      <View style={styles.formCard}>
-        <Text style={styles.label}>Student Full Name *</Text>
-        <TextInput
-          style={styles.input}
-          value={fullName}
-          onChangeText={(val) => {
-            setFullName(val);
-            if (!username || username.startsWith('student_') || username.includes('_')) {
-              const clean = val.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').slice(0, 15);
-              if (clean.length > 2) {
-                setUsername(clean + '_' + Math.floor(Math.random() * 90 + 10));
-              }
-            }
-          }}
-          placeholder="e.g. Rahul Sharma"
-          placeholderTextColor={colors.textMuted}
-        />
-
-        <Text style={styles.label}>Campus Username (Public Handle) *</Text>
-        <TextInput
-          style={styles.input}
-          value={username}
-          onChangeText={setUsername}
-          placeholder="e.g. rahul_tech"
-          placeholderTextColor={colors.textMuted}
-        />
-
-        <Text style={styles.label}>
-          Student Roll / Admission Number * {idCardVerified && '🔒 (OCR Locked)'}
-        </Text>
-        <TextInput
-          style={[styles.input, idCardVerified && styles.inputLocked]}
-          value={admissionNumber}
-          onChangeText={setAdmissionNumber}
-          placeholder="e.g. GEU2024CSE142"
-          placeholderTextColor={colors.textMuted}
-          editable={!idCardVerified}
-        />
-        <Text style={styles.fieldHint}>
-          🛡️ Roll numbers are uniquely enforced. Duplicate entries will be rejected.
-        </Text>
-
-        {/* 🎓 Academic Degree / Course Selector */}
-        <Text style={styles.label}>Course / Degree</Text>
-        <View style={styles.chipRow}>
-          {COURSES.map((c) => (
-            <TouchableOpacity
-              key={c.id}
-              style={[styles.chipBtn, courseId === c.id && styles.chipBtnActive]}
-              onPress={() => {
-                setCourseId(c.id);
-                const b = BRANCHES[c.id];
-                if (b && b.length > 0) setBranchId(b[0].id);
-              }}
-            >
-              <Text style={[styles.chipText, courseId === c.id && styles.chipTextActive]}>
-                {c.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
         </View>
 
-        {/* 📚 Class / Academic Year Selector */}
-        <Text style={styles.label}>Class / Academic Year</Text>
-        <View style={styles.chipRow}>
-          {YEARS.map((y) => (
-            <TouchableOpacity
-              key={y.id}
-              style={[styles.chipBtn, academicYearId === y.id && styles.chipBtnActive]}
-              onPress={() => setAcademicYearId(y.id)}
-            >
-              <Text style={[styles.chipText, academicYearId === y.id && styles.chipTextActive]}>
-                {y.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        {/* 3. Optional Phone Number */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Mobile Phone Number (Optional)</Text>
+          <Text style={styles.inputSubtext}>
+            Used for urgent campus fest alerts & WhatsApp notifications (never shared publicly).
+          </Text>
+          <TextInput
+            style={styles.textInput}
+            value={phoneNumber}
+            onChangeText={setPhoneNumber}
+            placeholder="e.g. 9876543210"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="phone-pad"
+            maxLength={15}
+          />
         </View>
 
-        {/* 🏛️ Branch / Specialization Selector */}
-        <Text style={styles.label}>Branch / Stream</Text>
-        <View style={styles.chipRow}>
-          {currentBranches.map((b) => (
-            <TouchableOpacity
-              key={b.id}
-              style={[styles.chipBtn, branchId === b.id && styles.chipBtnActive]}
-              onPress={() => setBranchId(b.id)}
-            >
-              <Text style={[styles.chipText, branchId === b.id && styles.chipTextActive]}>
-                {b.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        {/* 4. Campus Bio */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Campus Bio / Interests</Text>
+          <TextInput
+            style={[styles.textInput, styles.bioInput]}
+            value={bio}
+            onChangeText={setBio}
+            placeholder="Share what you study, hobbies, or clubs you're interested in..."
+            placeholderTextColor={colors.textMuted}
+            multiline
+            numberOfLines={3}
+            maxLength={300}
+          />
         </View>
 
-        <Text style={styles.label}>Gender</Text>
-        <View style={styles.genderRow}>
-          {['Female', 'Male', 'Other'].map((g) => (
-            <TouchableOpacity
-              key={g}
-              style={[styles.genderBtn, gender === g && styles.genderBtnActive]}
-              onPress={() => setGender(g)}
-            >
-              <Text style={[styles.genderText, gender === g && styles.genderTextActive]}>
-                {g}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Text style={styles.label}>Bio</Text>
-        <TextInput
-          style={[styles.input, styles.bioInput]}
-          value={bio}
-          onChangeText={setBio}
-          placeholder="A bit about yourself..."
-          placeholderTextColor={colors.textMuted}
-          multiline
-          numberOfLines={3}
-        />
-
+        {/* Finish Button */}
         <TouchableOpacity
-          style={styles.submitButton}
-          onPress={handleCompleteSetup}
-          disabled={loading || scanning}
+          style={styles.submitBtn}
+          onPress={handleFinishSetup}
+          disabled={saving}
+          activeOpacity={0.88}
         >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
+          {saving ? (
+            <ActivityIndicator color="#ffffff" size="small" />
           ) : (
-            <Text style={styles.submitButtonText}>Join 3 Core Communities 🚀</Text>
+            <View style={styles.submitBtnContent}>
+              <Check size={18} color="#ffffff" />
+              <Text style={styles.submitBtnText}>Finish Setup & Enter Campus 🚀</Text>
+            </View>
           )}
         </TouchableOpacity>
       </View>
@@ -461,309 +322,285 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: 24,
-    paddingTop: 50,
-    paddingBottom: 40,
+    padding: 18,
+    paddingTop: 40,
+    paddingBottom: 60,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
   },
   header: {
     marginBottom: 20,
   },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: colors.textPrimary,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-  scannerCard: {
-    backgroundColor: 'rgba(99, 102, 241, 0.08)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(99, 102, 241, 0.35)',
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 18,
-  },
-  scannerHeaderRow: {
+  logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 14,
-  },
-  scannerIcon: {
-    fontSize: 28,
-  },
-  scannerHeaderTextCol: {
-    flex: 1,
-  },
-  scannerTitle: {
-    color: '#818cf8',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  scannerSub: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  scanningBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 18,
-    gap: 10,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    borderRadius: 12,
-  },
-  scanningText: {
-    color: '#a5b4fc',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  presetGrid: {
     gap: 8,
+    marginBottom: 8,
   },
-  presetLabel: {
-    fontSize: 10,
+  logoIcon: {
+    fontSize: 24,
+  },
+  appTitle: {
+    fontSize: 14,
     fontWeight: '800',
-    letterSpacing: 1,
-    color: colors.textMuted,
-    marginBottom: 4,
+    color: colors.primary,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
-  presetBtn: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 12,
-    padding: 10,
-  },
-  presetBtnDanger: {
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-    backgroundColor: 'rgba(239, 68, 68, 0.05)',
-  },
-  presetBtnTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  presetBtnTitle: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  presetRollText: {
-    color: colors.textMuted,
-    fontSize: 11,
-    marginTop: 3,
-  },
-  pillBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  pillSuccess: {
-    backgroundColor: 'rgba(52, 211, 153, 0.15)',
-  },
-  pillDanger: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-  },
-  pillText: {
-    fontSize: 10,
+  title: {
+    fontSize: 24,
     fontWeight: '800',
     color: colors.textPrimary,
-  },
-  fraudAlertBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 12,
-    gap: 10,
-  },
-  fraudAlertIcon: {
-    fontSize: 20,
-  },
-  fraudAlertTitle: {
-    color: '#ef4444',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  fraudAlertText: {
-    color: '#fca5a5',
-    fontSize: 11,
-    marginTop: 1,
-  },
-  verifiedBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(52, 211, 153, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(52, 211, 153, 0.4)',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 12,
-    gap: 10,
-  },
-  verifiedBannerIcon: {
-    fontSize: 20,
-  },
-  verifiedBannerTitle: {
-    color: '#34d399',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  verifiedBannerText: {
-    color: '#6ee7b7',
-    fontSize: 11,
-    marginTop: 1,
-  },
-  collegeCard: {
-    backgroundColor: colors.surface,
-    padding: 18,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    marginBottom: 20,
-  },
-  collegeCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 6,
   },
-  collegeLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: colors.textMuted,
-    letterSpacing: 1,
-  },
-  verifiedPill: {
-    backgroundColor: 'rgba(52, 211, 153, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  verifiedPillText: {
-    color: '#34d399',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  collegeName: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  academicPath: {
+  subtitle: {
     fontSize: 13,
     color: colors.textSecondary,
-    marginTop: 4,
+    lineHeight: 18,
   },
-  formCard: {
+  greenBanner: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.35)',
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  bannerIconCircleGreen: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(34, 197, 94, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  greenBannerTitle: {
+    color: '#22c55e',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  greenBannerSub: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  yellowBanner: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  bannerIconCircleYellow: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(245, 158, 11, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  yellowBannerTitle: {
+    color: '#f59e0b',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  yellowBannerSub: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  card: {
     backgroundColor: colors.surface,
-    padding: 20,
-    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.cardBorder,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 18,
   },
-  label: {
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  cardSectionTitle: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  cardHint: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginBottom: 14,
+  },
+  lockedGrid: {
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+  },
+  lockedItem: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.04)',
+    paddingBottom: 8,
+  },
+  lockedLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  lockedValue: {
+    color: colors.textPrimary,
     fontSize: 13,
     fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: 8,
-    marginTop: 14,
   },
-  input: {
-    backgroundColor: colors.background,
+  lockedValueHighlight: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  inputSubtext: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginBottom: 8,
+    lineHeight: 15,
+  },
+  usernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+  },
+  atSymbol: {
+    color: colors.primary,
+    fontSize: 16,
+    fontWeight: '800',
+    marginRight: 4,
+  },
+  usernameInput: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 14,
+    paddingVertical: 12,
+    fontWeight: '600',
+  },
+  textInput: {
+    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
     borderColor: colors.cardBorder,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
     color: colors.textPrimary,
-    fontSize: 14,
+    fontSize: 13,
   },
-  inputLocked: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderColor: 'rgba(52, 211, 153, 0.3)',
-    color: '#34d399',
-    fontWeight: '700',
+  bioInput: {
+    minHeight: 70,
+    textAlignVertical: 'top',
   },
-  fieldHint: {
-    fontSize: 11,
-    color: colors.textMuted,
-    marginTop: 4,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  chipBtn: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 4,
-  },
-  chipBtnActive: {
-    backgroundColor: 'rgba(99, 102, 241, 0.2)',
-    borderColor: '#6366f1',
-  },
-  chipText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  chipTextActive: {
-    color: '#818cf8',
-    fontWeight: '700',
-  },
-  genderRow: {
+  genderOptionsRow: {
     flexDirection: 'row',
     gap: 8,
+    marginBottom: 12,
   },
-  genderBtn: {
+  genderPill: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
     borderColor: colors.cardBorder,
     borderRadius: 10,
     paddingVertical: 10,
     alignItems: 'center',
   },
-  genderBtnActive: {
-    backgroundColor: colors.primary,
+  genderPillActive: {
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
     borderColor: colors.primary,
   },
-  genderText: {
+  genderPillText: {
     color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
   },
-  genderTextActive: {
-    color: '#fff',
+  genderPillTextActive: {
+    color: colors.primary,
+    fontWeight: '800',
   },
-  bioInput: {
-    minHeight: 70,
-    textAlignVertical: 'top',
-  },
-  submitButton: {
-    backgroundColor: colors.primary,
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: 12,
+    padding: 12,
+    marginTop: 4,
+  },
+  toggleTitle: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  toggleDesc: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 14,
+  },
+  submitBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 24,
+    justifyContent: 'center',
+    marginTop: 10,
   },
-  submitButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
+  submitBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  submitBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
 });

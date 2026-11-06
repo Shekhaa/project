@@ -46,17 +46,20 @@ class User(AbstractBaseUser, PermissionsMixin):
     def verification_tier(self):
         """
         Returns one of:
-        - 'FULLY_VERIFIED': College ID card verified or official .ac.in email verified.
-        - 'SEMI_VERIFIED': On-campus phone verified (Physical ID card pending).
+        - 'FULLY_VERIFIED': Microsoft SSO authenticated (@geu.ac.in / @gehu.ac.in) or admin verified -> Green Badge.
+        - 'SEMI_VERIFIED': Physical College ID Card OCR scanned (under review) -> Yellow Badge.
         - 'UNVERIFIED': Not verified.
         """
         prof = getattr(self, "profile", None)
-        if prof and prof.id_card_verified:
+        if prof and prof.verification_method == "MICROSOFT_SSO":
             return "FULLY_VERIFIED"
+        if prof and prof.verification_method == "ADMIN_VERIFIED":
+            return "FULLY_VERIFIED"
+        if prof and prof.verification_method == "ID_CARD_OCR":
+            return "SEMI_VERIFIED"
         if self.is_email_verified and ("@gehu.ac.in" in self.email.lower() or "@geu.ac.in" in self.email.lower()):
-            return "FULLY_VERIFIED"
-        if prof and prof.verification_method in ["ID_CARD_OCR", "ADMIN_VERIFIED", "EMAIL_OTP"]:
-            return "FULLY_VERIFIED"
+            if prof and prof.verification_method != "ID_CARD_OCR":
+                return "FULLY_VERIFIED"
         if self.is_phone_verified:
             return "SEMI_VERIFIED"
         return "UNVERIFIED"
@@ -67,7 +70,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         if tier == "FULLY_VERIFIED":
             return "🛡️ Verified Student"
         elif tier == "SEMI_VERIFIED":
-            return "🔴 Semi-Verified (ID Pending)"
+            return "🟡 Semi-Verified (ID Under Review)"
         return "⚪ Unverified"
 
     def check_and_update_student_status(self):

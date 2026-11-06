@@ -481,6 +481,19 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                         </View>
                       </>
                     ) : null}
+
+                    {profile.gender ? (
+                      <>
+                        <View style={styles.detailDivider} />
+                        <View style={styles.detailRow}>
+                          <Users size={16} color={colors.textSecondary} style={styles.detailIcon} />
+                          <View style={styles.detailTextCol}>
+                            <Text style={styles.detailLabel}>Gender</Text>
+                            <Text style={styles.detailValue}>{profile.gender}</Text>
+                          </View>
+                        </View>
+                      </>
+                    ) : null}
                   </View>
 
                   {/* Authorized Student Posts */}
