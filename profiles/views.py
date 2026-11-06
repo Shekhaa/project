@@ -52,18 +52,26 @@ class CompleteProfileView(APIView):
 
         # 2. Resolve Course, Branch, Academic Year & Section
         course_id = data.get("course")
+        course_name = data.get("course_name")
         course = None
         if course_id:
             course = Course.objects.filter(id=course_id).first()
+        if not course and course_name:
+            course = Course.objects.filter(college_id=data["college"], name__icontains=course_name).first() or Course.objects.filter(name__icontains=course_name).first()
         if not course:
             course = Course.objects.filter(college_id=data["college"]).first()
-            if course:
-                data["course"] = course.id
+        if course:
+            data["course"] = course.id
 
         if course:
             # Match Branch to Course
             branch_id = data.get("branch")
-            branch = Branch.objects.filter(id=branch_id, course=course).first()
+            branch_name = data.get("branch_name")
+            branch = None
+            if branch_id:
+                branch = Branch.objects.filter(id=branch_id, course=course).first()
+            if not branch and branch_name:
+                branch = Branch.objects.filter(course=course, name__icontains=branch_name).first()
             if not branch:
                 branch = Branch.objects.filter(course=course).first()
             if branch:

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Discussion } from '../../services/communityService';
 import { ArrowBigUp, MessageSquare, Paperclip, CheckCircle, Pin } from 'lucide-react-native';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 
 interface DiscussionCardProps {
   discussion: Discussion;
@@ -17,6 +17,8 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
   onVote,
   onAuthorPress,
 }) => {
+  const { colors, isDark } = useTheme();
+
   const getTypeBadgeColor = (type: string) => {
     switch (type) {
       case 'QUESTION':
@@ -48,7 +50,13 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
 
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.cardBorder,
+        },
+      ]}
       onPress={() => onPress(discussion)}
       activeOpacity={0.88}
     >
@@ -62,7 +70,7 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
             </View>
           )}
 
-          <View style={[styles.typeBadge, { backgroundColor: `${badgeColor}1c`, borderColor: `${badgeColor}55` }]}>
+          <View style={[styles.typeBadge, { backgroundColor: `${badgeColor}18`, borderColor: `${badgeColor}44` }]}>
             <Text style={[styles.typeBadgeText, { color: badgeColor }]}>
               {discussion.discussion_type === 'QUESTION' ? 'Question' : discussion.discussion_type}
             </Text>
@@ -76,17 +84,17 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
           )}
         </View>
 
-        <Text style={styles.timeAgo}>{formatTimeAgo(discussion.created_at)}</Text>
+        <Text style={[styles.timeAgo, { color: colors.textMuted }]}>{formatTimeAgo(discussion.created_at)}</Text>
       </View>
 
       {/* Title */}
-      <Text style={styles.title} numberOfLines={2}>
+      <Text style={[styles.title, { color: colors.textPrimary }]} numberOfLines={2}>
         {discussion.title}
       </Text>
 
       {/* Snippet */}
       {discussion.content ? (
-        <Text style={styles.contentSnippet} numberOfLines={2}>
+        <Text style={[styles.contentSnippet, { color: colors.textSecondary }]} numberOfLines={2}>
           {discussion.content}
         </Text>
       ) : null}
@@ -100,24 +108,32 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
               Accepted Solution by {discussion.accepted_answer_snippet.author_name}
             </Text>
           </View>
-          <Text style={styles.acceptedAnswerContent} numberOfLines={2}>
+          <Text style={[styles.acceptedAnswerContent, { color: colors.textPrimary }]} numberOfLines={2}>
             {discussion.accepted_answer_snippet.content}
           </Text>
         </View>
       )}
 
       {/* Footer Info: Author, Attachments, Upvotes & Replies */}
-      <View style={styles.footerRow}>
+      <View style={[styles.footerRow, { borderTopColor: colors.hairline }]}>
         <TouchableOpacity
           disabled={!discussion.author}
           onPress={() => discussion.author && onAuthorPress?.(discussion.author)}
           activeOpacity={0.7}
           style={styles.authorGroup}
         >
-          <View style={styles.authorAvatar}>
-            <Text style={styles.authorAvatarText}>{authorInitial}</Text>
+          <View
+            style={[
+              styles.authorAvatar,
+              {
+                backgroundColor: colors.surfaceLight,
+                borderColor: colors.cardBorder,
+              },
+            ]}
+          >
+            <Text style={[styles.authorAvatarText, { color: colors.primary }]}>{authorInitial}</Text>
           </View>
-          <Text style={styles.authorName} numberOfLines={1}>
+          <Text style={[styles.authorName, { color: colors.textSecondary }]} numberOfLines={1}>
             {discussion.author_name}
           </Text>
         </TouchableOpacity>
@@ -125,28 +141,43 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
         <View style={styles.actionsGroup}>
           {hasAttachments && (
             <View style={styles.statItem}>
-              <Paperclip size={13} color="#94a3b8" />
-              <Text style={styles.statText}>{discussion.attachments?.length}</Text>
+              <Paperclip size={13} color={colors.textMuted} />
+              <Text style={[styles.statText, { color: colors.textMuted }]}>{discussion.attachments?.length}</Text>
             </View>
           )}
 
           <View style={styles.statItem}>
-            <MessageSquare size={13} color="#94a3b8" />
-            <Text style={styles.statText}>{discussion.replies_count || 0}</Text>
+            <MessageSquare size={13} color={colors.textMuted} />
+            <Text style={[styles.statText, { color: colors.textMuted }]}>{discussion.replies_count || 0}</Text>
           </View>
 
           {/* Upvote Button */}
           <TouchableOpacity
-            style={[styles.voteBtn, discussion.user_has_voted && styles.voteBtnActive]}
+            style={[
+              styles.voteBtn,
+              {
+                backgroundColor: colors.surfaceLight,
+                borderColor: colors.cardBorder,
+              },
+              discussion.user_has_voted && {
+                backgroundColor: isDark ? 'rgba(94, 106, 210, 0.25)' : 'rgba(79, 70, 229, 0.12)',
+                borderColor: colors.primary,
+              },
+            ]}
             onPress={() => onVote(discussion)}
             activeOpacity={0.7}
           >
             <ArrowBigUp
               size={15}
-              color={discussion.user_has_voted ? '#38bdf8' : '#94a3b8'}
-              fill={discussion.user_has_voted ? '#38bdf8' : 'none'}
+              color={discussion.user_has_voted ? colors.primary : colors.textMuted}
+              fill={discussion.user_has_voted ? colors.primary : 'none'}
             />
-            <Text style={[styles.voteCount, discussion.user_has_voted && styles.voteCountActive]}>
+            <Text
+              style={[
+                styles.voteCount,
+                { color: discussion.user_has_voted ? colors.primary : colors.textSecondary },
+              ]}
+            >
               {discussion.upvotes_count || 0}
             </Text>
           </TouchableOpacity>
@@ -158,12 +189,10 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.surface,
     borderRadius: 14,
-    padding: 14,
+    padding: 15,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
   },
   headerRow: {
     flexDirection: 'row',
@@ -218,19 +247,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   timeAgo: {
-    color: '#64748b',
     fontSize: 11,
   },
   title: {
-    fontSize: 15,
+    fontSize: 15.5,
     fontWeight: '700',
-    color: colors.textPrimary,
-    lineHeight: 20,
+    lineHeight: 21,
     marginBottom: 6,
   },
   contentSnippet: {
-    fontSize: 12.5,
-    color: '#94a3b8',
+    fontSize: 13,
     lineHeight: 18,
     marginBottom: 10,
   },
@@ -238,7 +264,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(16, 185, 129, 0.08)',
     borderLeftWidth: 3,
     borderLeftColor: '#10b981',
-    padding: 8,
+    padding: 10,
     borderRadius: 6,
     marginBottom: 10,
   },
@@ -246,51 +272,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginBottom: 3,
+    marginBottom: 4,
   },
   acceptedAnswerLabel: {
     color: '#10b981',
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '700',
   },
   acceptedAnswerContent: {
-    color: '#cbd5e1',
-    fontSize: 11.5,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
   footerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 8,
+    paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: colors.hairline,
   },
   authorGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
     flex: 1,
   },
   authorAvatar: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: colors.surfaceLight,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.hairline,
   },
   authorAvatarText: {
-    color: colors.textSecondary,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
   },
   authorName: {
-    color: '#cbd5e1',
-    fontSize: 11.5,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '600',
   },
   actionsGroup: {
     flexDirection: 'row',
@@ -303,7 +323,6 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   statText: {
-    color: '#94a3b8',
     fontSize: 11.5,
     fontWeight: '600',
   },
@@ -311,23 +330,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: colors.surfaceLight,
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.hairline,
-  },
-  voteBtnActive: {
-    backgroundColor: 'rgba(94, 106, 210, 0.15)',
-    borderColor: colors.primary,
   },
   voteCount: {
-    color: '#94a3b8',
     fontSize: 11.5,
     fontWeight: '700',
-  },
-  voteCountActive: {
-    color: colors.primary,
   },
 });

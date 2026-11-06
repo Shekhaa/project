@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Discussion } from '../../services/communityService';
 import { DiscussionCard } from './DiscussionCard';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 import { Search, Plus, X } from 'lucide-react-native';
 
 interface DiscussionFeedProps {
@@ -45,34 +45,48 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
   onRefresh,
   onOpenProfile,
 }) => {
+  const { colors, isDark } = useTheme();
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Top Search & Ask Bar */}
-      <View style={styles.searchBarRow}>
-        <View style={styles.searchBox}>
-          <Search size={14} color="#64748b" style={{ marginRight: 6 }} />
+      <View style={[styles.searchBarRow, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
+        <View
+          style={[
+            styles.searchBox,
+            {
+              backgroundColor: isDark ? '#141516' : '#f1f5f9',
+              borderColor: colors.cardBorder,
+            },
+          ]}
+        >
+          <Search size={15} color={colors.textMuted} style={{ marginRight: 6 }} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.textPrimary }]}
             placeholder="Search questions, notes, topics..."
-            placeholderTextColor="#64748b"
+            placeholderTextColor={colors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <X size={14} color="#64748b" />
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <X size={14} color={colors.textMuted} />
             </TouchableOpacity>
           ) : null}
         </View>
 
-        <TouchableOpacity style={styles.askBtn} onPress={onOpenComposer} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={[styles.askBtn, { backgroundColor: colors.primary }]}
+          onPress={onOpenComposer}
+          activeOpacity={0.85}
+        >
           <Plus size={15} color="#fff" style={{ marginRight: 4 }} />
-          <Text style={styles.askBtnText}>Ask / Discuss</Text>
+          <Text style={styles.askBtnText}>Ask / Post</Text>
         </TouchableOpacity>
       </View>
 
       {/* Filter Chips Bar */}
-      <View style={styles.filterBar}>
+      <View style={[styles.filterBar, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterContent}>
           {(
             [
@@ -82,22 +96,46 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
               { key: 'GENERAL', label: '💬 General' },
               { key: 'SOLVED', label: '✓ Solved' },
             ] as const
-          ).map((item) => (
-            <TouchableOpacity
-              key={item.key}
-              style={[styles.filterChip, filter === item.key && styles.filterChipActive]}
-              onPress={() => setFilter(item.key)}
-            >
-              <Text style={[styles.filterChipText, filter === item.key && styles.filterChipTextActive]}>
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          ).map((item) => {
+            const active = filter === item.key;
+            return (
+              <TouchableOpacity
+                key={item.key}
+                style={[
+                  styles.filterChip,
+                  {
+                    backgroundColor: active
+                      ? isDark
+                        ? 'rgba(94, 106, 210, 0.25)'
+                        : 'rgba(79, 70, 229, 0.12)'
+                      : isDark
+                      ? '#141516'
+                      : '#f8fafc',
+                    borderColor: active ? colors.primary : colors.cardBorder,
+                  },
+                ]}
+                onPress={() => setFilter(item.key)}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    {
+                      color: active ? colors.primary : colors.textSecondary,
+                      fontWeight: active ? '700' : '600',
+                    },
+                  ]}
+                >
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </View>
 
       {/* Sort Bar */}
-      <View style={styles.sortBar}>
+      <View style={[styles.sortBar, { backgroundColor: colors.background }]}>
         {(
           [
             { key: 'latest', label: 'Latest' },
@@ -105,24 +143,40 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
             { key: 'popular', label: 'Popular' },
             { key: 'unanswered', label: 'Unanswered' },
           ] as const
-        ).map((s) => (
-          <TouchableOpacity
-            key={s.key}
-            style={[styles.sortPill, sort === s.key && styles.sortPillActive]}
-            onPress={() => setSort(s.key)}
-          >
-            <Text style={[styles.sortPillText, sort === s.key && styles.sortPillTextActive]}>
-              {s.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        ).map((s) => {
+          const active = sort === s.key;
+          return (
+            <TouchableOpacity
+              key={s.key}
+              style={[
+                styles.sortPill,
+                active && {
+                  backgroundColor: isDark ? '#141516' : '#e2e8f0',
+                },
+              ]}
+              onPress={() => setSort(s.key)}
+            >
+              <Text
+                style={[
+                  styles.sortPillText,
+                  {
+                    color: active ? colors.primary : colors.textMuted,
+                    fontWeight: active ? '700' : '600',
+                  },
+                ]}
+              >
+                {s.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Discussions Stream */}
       {loading && discussions.length === 0 ? (
         <View style={styles.centerLoading}>
           <ActivityIndicator color={colors.primary} size="large" />
-          <Text style={styles.loadingText}>Loading community discussions...</Text>
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading discussions...</Text>
         </View>
       ) : (
         <FlatList
@@ -142,12 +196,21 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyIcon}>💡</Text>
-              <Text style={styles.emptyTitle}>No discussions found</Text>
-              <Text style={styles.emptySubtitle}>
-                Got a doubt about syllabus, exams, or projects? Be the first to start a discussion!
+              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No discussions found</Text>
+              <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+                Got a doubt about syllabus, exams, or projects? Be the first student to post a question!
               </Text>
-              <TouchableOpacity style={styles.emptyActionBtn} onPress={onOpenComposer}>
-                <Text style={styles.emptyActionText}>Start a Discussion</Text>
+              <TouchableOpacity
+                style={[
+                  styles.emptyActionBtn,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.primary,
+                  },
+                ]}
+                onPress={onOpenComposer}
+              >
+                <Text style={[styles.emptyActionText, { color: colors.primary }]}>+ Start a Discussion</Text>
               </TouchableOpacity>
             </View>
           }
@@ -160,7 +223,6 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   searchBarRow: {
     flexDirection: 'row',
@@ -168,91 +230,66 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
   },
   searchBox: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0f172a',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1e293b',
     paddingHorizontal: 10,
     height: 38,
   },
   searchInput: {
     flex: 1,
-    color: '#ffffff',
-    fontSize: 12.5,
+    fontSize: 13,
     padding: 0,
   },
   askBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     height: 38,
     borderRadius: 8,
   },
   askBtnText: {
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
   },
   filterBar: {
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
-    paddingBottom: 8,
+    paddingVertical: 8,
   },
   filterContent: {
     paddingHorizontal: 16,
     gap: 6,
   },
   filterChip: {
-    backgroundColor: '#0f172a',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#1e293b',
-  },
-  filterChipActive: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-    borderColor: '#38bdf8',
   },
   filterChipText: {
-    color: '#94a3b8',
-    fontSize: 11.5,
-    fontWeight: '600',
-  },
-  filterChipTextActive: {
-    color: '#38bdf8',
-    fontWeight: '700',
+    fontSize: 12,
   },
   sortBar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    gap: 8,
+    gap: 6,
   },
   sortPill: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
     borderRadius: 6,
   },
-  sortPillActive: {
-    backgroundColor: '#1e293b',
-  },
   sortPillText: {
-    color: '#64748b',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  sortPillTextActive: {
-    color: '#cbd5e1',
-    fontWeight: '700',
+    fontSize: 11.5,
   },
   listContent: {
     padding: 16,
@@ -265,8 +302,7 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   loadingText: {
-    color: '#94a3b8',
-    fontSize: 12,
+    fontSize: 13,
     marginTop: 8,
   },
   emptyContainer: {
@@ -280,29 +316,24 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   emptyTitle: {
-    color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
     marginBottom: 6,
   },
   emptySubtitle: {
-    color: '#94a3b8',
-    fontSize: 12,
+    fontSize: 13,
     textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 16,
+    lineHeight: 19,
+    marginBottom: 18,
   },
   emptyActionBtn: {
-    backgroundColor: '#1e293b',
     borderWidth: 1,
-    borderColor: '#38bdf8',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
     borderRadius: 8,
   },
   emptyActionText: {
-    color: '#38bdf8',
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '700',
   },
 });

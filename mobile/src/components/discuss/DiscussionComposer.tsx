@@ -12,8 +12,8 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { X, Paperclip, FileText, Check } from 'lucide-react-native';
-import { colors } from '../../theme/colors';
+import { X, Paperclip, FileText, Check, Send } from 'lucide-react-native';
+import { useTheme } from '../../theme/ThemeContext';
 import { AttachmentPickerModal, StagedAttachment } from '../media/AttachmentPickerModal';
 import { chatService } from '../../services/chatService';
 
@@ -34,6 +34,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
   onClose,
   onSubmit,
 }) => {
+  const { colors, isDark } = useTheme();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [type, setType] = useState<'GENERAL' | 'QUESTION' | 'RESOURCE' | 'ANNOUNCEMENT'>('QUESTION');
@@ -44,15 +45,15 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
 
   const handleSubmit = async () => {
     if (!title.trim()) {
-      Alert.alert('Required', 'Please enter a discussion title.');
+      Alert.alert('Title Required', 'Please enter a title for your discussion (e.g. "DBMS End Term Notes").');
       return;
     }
     if (title.trim().length < 4) {
-      Alert.alert('Validation', 'Title must be at least 4 characters long.');
+      Alert.alert('Title Too Short', 'Discussion title must be at least 4 characters long.');
       return;
     }
     if (!content.trim()) {
-      Alert.alert('Required', 'Please write discussion details or questions.');
+      Alert.alert('Details Required', 'Please provide some details, notes, or explanation for your post.');
       return;
     }
 
@@ -74,7 +75,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
         attachment_ids,
       });
 
-      // Reset
+      // Reset state
       setTitle('');
       setContent('');
       setType('QUESTION');
@@ -91,31 +92,34 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <X size={20} color="#ffffff" />
+        <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
+          <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+            <X size={20} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>New Community Discussion</Text>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>New Community Post</Text>
           <TouchableOpacity
-            style={[styles.publishBtn, (!title.trim() || submitting) && styles.publishBtnDisabled]}
+            style={[
+              styles.publishBtn,
+              { backgroundColor: colors.primary },
+              (!title.trim() || submitting) && styles.publishBtnDisabled,
+            ]}
             onPress={handleSubmit}
-            disabled={!title.trim() || submitting}
           >
             {submitting ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
-              <Text style={styles.publishBtnText}>Publish</Text>
+              <Text style={styles.publishBtnText}>Post</Text>
             )}
           </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.formContent} keyboardShouldPersistTaps="handled">
           {/* Discussion Type Selector */}
-          <Text style={styles.label}>Discussion Type</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Post Type</Text>
           <View style={styles.typeRow}>
             {(
               [
@@ -124,37 +128,71 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
                 { key: 'GENERAL', label: '💬 Discussion' },
                 { key: 'ANNOUNCEMENT', label: '📢 Notice' },
               ] as const
-            ).map((item) => (
-              <TouchableOpacity
-                key={item.key}
-                style={[styles.typePill, type === item.key && styles.typePillActive]}
-                onPress={() => setType(item.key)}
-              >
-                {type === item.key && <Check size={12} color="#fff" style={{ marginRight: 4 }} />}
-                <Text style={[styles.typePillText, type === item.key && styles.typePillTextActive]}>
-                  {item.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            ).map((item) => {
+              const active = type === item.key;
+              return (
+                <TouchableOpacity
+                  key={item.key}
+                  style={[
+                    styles.typePill,
+                    {
+                      backgroundColor: active
+                        ? isDark
+                          ? 'rgba(94, 106, 210, 0.25)'
+                          : 'rgba(79, 70, 229, 0.12)'
+                        : isDark
+                        ? '#141516'
+                        : '#f1f5f9',
+                      borderColor: active ? colors.primary : colors.cardBorder,
+                    },
+                  ]}
+                  onPress={() => setType(item.key)}
+                >
+                  {active && <Check size={12} color={colors.primary} style={{ marginRight: 4 }} />}
+                  <Text
+                    style={[
+                      styles.typePillText,
+                      { color: active ? colors.primary : colors.textSecondary, fontWeight: active ? '700' : '600' },
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* Title */}
-          <Text style={styles.label}>Title</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Title *</Text>
           <TextInput
-            style={styles.titleInput}
+            style={[
+              styles.titleInput,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.cardBorder,
+                color: colors.textPrimary,
+              },
+            ]}
             placeholder="e.g. How to prepare for DBMS end term exam?"
-            placeholderTextColor="#64748b"
+            placeholderTextColor={colors.textMuted}
             value={title}
             onChangeText={setTitle}
             maxLength={250}
           />
 
           {/* Content / Question Body */}
-          <Text style={styles.label}>Details & Description</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Details & Description *</Text>
           <TextInput
-            style={styles.contentInput}
+            style={[
+              styles.contentInput,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.cardBorder,
+                color: colors.textPrimary,
+              },
+            ]}
             placeholder="Explain your problem, question, or share helpful college notes/syllabus details..."
-            placeholderTextColor="#64748b"
+            placeholderTextColor={colors.textMuted}
             value={content}
             onChangeText={setContent}
             multiline
@@ -163,44 +201,85 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
           />
 
           {/* Tags */}
-          <Text style={styles.label}>Tags (comma separated)</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Tags (Optional, comma separated)</Text>
           <TextInput
-            style={styles.tagInput}
+            style={[
+              styles.tagInput,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.cardBorder,
+                color: colors.textPrimary,
+              },
+            ]}
             placeholder="e.g. dbms, exam, notes, unit-3"
-            placeholderTextColor="#64748b"
+            placeholderTextColor={colors.textMuted}
             value={tags}
             onChangeText={setTags}
           />
 
           {/* Study Attachments (WhatsApp doc & media picker) */}
-          <Text style={styles.label}>Attachments (Optional)</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Attachments (Optional)</Text>
           <TouchableOpacity
-            style={styles.attachBtn}
+            style={[
+              styles.attachBtn,
+              {
+                backgroundColor: isDark ? 'rgba(56, 189, 248, 0.08)' : 'rgba(79, 70, 229, 0.06)',
+                borderColor: isDark ? 'rgba(56, 189, 248, 0.3)' : 'rgba(79, 70, 229, 0.25)',
+              },
+            ]}
             onPress={() => setPickerVisible(true)}
             activeOpacity={0.8}
           >
-            <Paperclip size={16} color="#38bdf8" />
-            <Text style={styles.attachBtnText}>Attach Notes, PDFs, Images or Word Docs</Text>
+            <Paperclip size={16} color={colors.primary} />
+            <Text style={[styles.attachBtnText, { color: colors.primary }]}>
+              Attach Notes, PDFs, Images or Documents
+            </Text>
           </TouchableOpacity>
 
           {/* Staged files list */}
           {stagedFiles.length > 0 && (
             <View style={styles.stagedList}>
               {stagedFiles.map((file) => (
-                <View key={file.id} style={styles.stagedItem}>
-                  <FileText size={14} color="#38bdf8" />
-                  <Text style={styles.stagedName} numberOfLines={1}>
+                <View
+                  key={file.id}
+                  style={[
+                    styles.stagedItem,
+                    { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+                  ]}
+                >
+                  <FileText size={14} color={colors.primary} />
+                  <Text style={[styles.stagedName, { color: colors.textPrimary }]} numberOfLines={1}>
                     {file.name}
                   </Text>
                   <TouchableOpacity
                     onPress={() => setStagedFiles((prev) => prev.filter((f) => f.id !== file.id))}
                   >
-                    <X size={14} color="#ef4444" />
+                    <X size={14} color={colors.danger} />
                   </TouchableOpacity>
                 </View>
               ))}
             </View>
           )}
+
+          {/* Large prominent bottom submit button */}
+          <TouchableOpacity
+            style={[
+              styles.bigSubmitBtn,
+              { backgroundColor: colors.primary },
+              (!title.trim() || submitting) && styles.bigSubmitBtnDisabled,
+            ]}
+            onPress={handleSubmit}
+            activeOpacity={0.85}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <View style={styles.bigSubmitBtnInner}>
+                <Send size={16} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.bigSubmitBtnText}>Post to Community</Text>
+              </View>
+            )}
+          </TouchableOpacity>
 
           <View style={{ height: 60 }} />
         </ScrollView>
@@ -221,7 +300,6 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -231,7 +309,6 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 52 : 16,
     paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: colors.cardBorder,
   },
   closeBtn: {
     padding: 6,
@@ -239,16 +316,14 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#ffffff',
   },
   publishBtn: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 7,
     borderRadius: 8,
   },
   publishBtnDisabled: {
-    opacity: 0.5,
+    opacity: 0.6,
   },
   publishBtnText: {
     color: '#ffffff',
@@ -262,7 +337,6 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#94a3b8',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
@@ -276,71 +350,47 @@ const styles = StyleSheet.create({
   typePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
     borderWidth: 1,
-    borderColor: '#334155',
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 8,
     borderRadius: 8,
   },
-  typePillActive: {
-    backgroundColor: 'rgba(56, 189, 248, 0.2)',
-    borderColor: '#38bdf8',
-  },
   typePillText: {
-    color: '#94a3b8',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  typePillTextActive: {
-    color: '#ffffff',
-    fontWeight: '700',
+    fontSize: 12.5,
   },
   titleInput: {
-    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    color: '#ffffff',
     fontSize: 14.5,
     fontWeight: '600',
   },
   contentInput: {
-    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    color: '#ffffff',
     fontSize: 13.5,
     minHeight: 120,
   },
   tagInput: {
-    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    color: '#ffffff',
     fontSize: 13,
   },
   attachBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(56, 189, 248, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.3)',
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
   attachBtnText: {
-    color: '#38bdf8',
     fontSize: 12.5,
     fontWeight: '600',
   },
@@ -352,16 +402,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
   },
   stagedName: {
     flex: 1,
-    color: '#f8fafc',
     fontSize: 12,
+  },
+  bigSubmitBtn: {
+    marginTop: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bigSubmitBtnDisabled: {
+    opacity: 0.65,
+  },
+  bigSubmitBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  bigSubmitBtnText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

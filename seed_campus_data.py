@@ -25,6 +25,7 @@ def seed():
         defaults={"short_name": "GEU"}
     )
     CollegeDomain.objects.get_or_create(college=geu, domain="geu.ac.in")
+    CollegeDomain.objects.get_or_create(college=geu, domain="graphicera.ac.in")
 
     gehu, _ = College.objects.get_or_create(
         name="Graphic Era Hill University",
@@ -32,15 +33,58 @@ def seed():
     )
     CollegeDomain.objects.get_or_create(college=gehu, domain="gehu.ac.in")
 
-    colleges = [geu, gehu]
-    print(" -> Seeded Colleges: GEU & GEHU with domains (geu.ac.in, gehu.ac.in)")
+    dit, _ = College.objects.get_or_create(
+        name="DIT University",
+        defaults={"short_name": "DIT"}
+    )
+    CollegeDomain.objects.get_or_create(college=dit, domain="dit.edu.in")
+    CollegeDomain.objects.get_or_create(college=dit, domain="dituniversity.edu.in")
 
-    # 2. Courses
+    upes, _ = College.objects.get_or_create(
+        name="UPES Dehradun",
+        defaults={"short_name": "UPES"}
+    )
+    CollegeDomain.objects.get_or_create(college=upes, domain="upes.ac.in")
+    CollegeDomain.objects.get_or_create(college=upes, domain="ddn.upes.ac.in")
+
+    colleges = [geu, gehu, dit, upes]
+    print(" -> Seeded Colleges: GEU, GEHU, DIT, UPES with institutional domains")
+
+    # 1b. Create Canonical College Communities
+    for col in colleges:
+        Community.objects.get_or_create(
+            name=f"{col.name} Community",
+            community_type="COLLEGE",
+            defaults={
+                "description": f"Official verified campus community for {col.name}. Connect with batchmates, seniors, and alumni.",
+                "is_system_managed": True,
+            }
+        )
+    print(" -> Seeded Official Canonical Communities for GEU, GEHU, DIT, UPES")
+
+    # 2. Comprehensive Courses
     courses_spec = [
         ("B.Tech", "BT", 4),
         ("BCA", "BCA", 3),
+        ("B.Com (Hons)", "BCOM_H", 3),
+        ("B.Com", "BCOM", 3),
+        ("BBA", "BBA", 3),
+        ("BA (Hons) English", "BA_ENG", 3),
+        ("BA (Hons) Economics", "BA_ECO", 3),
+        ("BA (Hons) Psychology", "BA_PSY", 3),
+        ("BA (General)", "BA_GEN", 3),
+        ("B.Sc. Computer Science", "BSC_CS", 3),
+        ("B.Sc. Information Technology", "BSC_IT", 3),
+        ("B.Sc. Biotechnology", "BSC_BT", 3),
+        ("B.Sc. Agriculture", "BSC_AG", 4),
+        ("B.Sc. Nursing", "BSC_NUR", 4),
+        ("B.Pharma", "BPHARM", 4),
+        ("D.Pharma", "DPHARM", 2),
         ("MBA", "MBA", 2),
         ("MCA", "MCA", 2),
+        ("M.Tech", "MT", 2),
+        ("M.Sc.", "MSC", 2),
+        ("BHM (Hotel Management)", "BHM", 4),
     ]
 
     all_courses = []
@@ -53,32 +97,53 @@ def seed():
             )
             all_courses.append(course)
 
-    print(" -> Seeded Courses: B.Tech, BCA, MBA, MCA across colleges")
+    print(" -> Seeded Complete Degree & Course Spectrum across colleges")
 
     # 3. Branches
-    branches_spec = [
+    btech_branches = [
         ("Computer Science & Engineering", "CSE"),
         ("AI & Machine Learning", "AIML"),
+        ("Data Science", "DS"),
         ("Information Technology", "IT"),
         ("Electronics & Communication", "ECE"),
+        ("Mechanical Engineering", "ME"),
+        ("Civil Engineering", "CE"),
+        ("Aerospace Engineering", "AERO"),
+    ]
+    bca_branches = [
+        ("BCA Core", "BCA_CORE"),
+        ("Cloud & Cyber Security", "BCA_SEC"),
+        ("AI & Data Science", "BCA_AI"),
+    ]
+    bba_branches = [
+        ("BBA Core & Finance", "BBA_FIN"),
+        ("Digital Marketing & Media", "BBA_MKT"),
+        ("Human Resource Management", "BBA_HR"),
+        ("International Business", "BBA_IB"),
+    ]
+    bcom_branches = [
+        ("Accounting & Finance", "BCOM_AF"),
+        ("Banking & Insurance", "BCOM_BI"),
+        ("General Commerce", "BCOM_GEN"),
     ]
 
     for course in all_courses:
         if course.name == "B.Tech":
-            for b_name, b_code in branches_spec:
-                Branch.objects.get_or_create(
-                    course=course,
-                    name=b_name,
-                    defaults={"code": b_code}
-                )
+            for b_name, b_code in btech_branches:
+                Branch.objects.get_or_create(course=course, name=b_name, defaults={"code": b_code})
+        elif course.name == "BCA":
+            for b_name, b_code in bca_branches:
+                Branch.objects.get_or_create(course=course, name=b_name, defaults={"code": b_code})
+        elif course.name == "BBA":
+            for b_name, b_code in bba_branches:
+                Branch.objects.get_or_create(course=course, name=b_name, defaults={"code": b_code})
+        elif "B.Com" in course.name:
+            for b_name, b_code in bcom_branches:
+                Branch.objects.get_or_create(course=course, name=b_name, defaults={"code": b_code})
         else:
-            Branch.objects.get_or_create(
-                course=course,
-                name=f"{course.name} Core",
-                defaults={"code": "GEN"}
-            )
+            Branch.objects.get_or_create(course=course, name=f"{course.name} Core", defaults={"code": "GEN"})
 
-    print(" -> Seeded Branches: B.Tech (CSE, AIML, IT, ECE), BCA, MBA, MCA")
+    print(" -> Seeded Specialized Branches (B.Tech, BCA, BBA, B.Com, BA, etc.)")
 
     # 4. Academic Years & Sections
     year_labels = ["First Year", "Second Year", "Third Year", "Fourth Year"]
@@ -88,11 +153,10 @@ def seed():
                 course=course,
                 year_number=y_idx,
                 defaults={
-                    "display_name": year_labels[y_idx - 1],
+                    "display_name": year_labels[y_idx - 1] if y_idx <= len(year_labels) else f"Year {y_idx}",
                     "batch": 2024 + (y_idx - 1)
                 }
             )
-            # Create Section A and Section B for each year
             Section.objects.get_or_create(academic_year=year, name="Section A")
             Section.objects.get_or_create(academic_year=year, name="Section B")
 

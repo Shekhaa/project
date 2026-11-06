@@ -18,7 +18,7 @@ import {
   CommunityMemberItem,
   communityService,
 } from '../../services/communityService';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 import { DiscussionReplies } from './DiscussionReplies';
 import { DocumentCard } from '../media/DocumentCard';
 import { MediaGrid } from '../media/MediaGrid';
@@ -51,6 +51,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   onVote,
   onOpenProfile,
 }) => {
+  const { colors, isDark } = useTheme();
   const [detail, setDetail] = useState<Discussion | null>(discussion);
   const [loading, setLoading] = useState(false);
   const [replyText, setReplyText] = useState('');
@@ -109,7 +110,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
     if (!replyText.trim() || submittingReply) return;
     setSubmittingReply(true);
     try {
-      const newReply = await communityService.postReply(
+      await communityService.postReply(
         communitySlug,
         detail.id,
         replyText.trim(),
@@ -167,25 +168,25 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
           <TouchableOpacity onPress={onClose} style={styles.backBtn}>
-            <Text style={styles.backBtnArrow}>←</Text>
+            <Text style={[styles.backBtnArrow, { color: colors.textPrimary }]}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle} numberOfLines={1}>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
             Discussion
           </Text>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <X size={18} color="#94a3b8" />
+            <X size={18} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.scrollArea} keyboardShouldPersistTaps="handled">
           {/* Main Discussion Post Card */}
-          <View style={styles.mainPostCard}>
+          <View style={[styles.mainPostCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
             {/* Badges */}
             <View style={styles.badgeRow}>
               {detail.is_pinned && (
@@ -194,8 +195,15 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                   <Text style={styles.pinnedBadgeText}>PINNED</Text>
                 </View>
               )}
-              <View style={styles.typeBadge}>
-                <Text style={styles.typeBadgeText}>{detail.discussion_type}</Text>
+              <View
+                style={[
+                  styles.typeBadge,
+                  {
+                    backgroundColor: isDark ? 'rgba(94, 106, 210, 0.2)' : 'rgba(79, 70, 229, 0.1)',
+                  },
+                ]}
+              >
+                <Text style={[styles.typeBadgeText, { color: colors.primary }]}>{detail.discussion_type}</Text>
               </View>
               {detail.is_solved && (
                 <View style={styles.solvedBadge}>
@@ -206,7 +214,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
             </View>
 
             {/* Title */}
-            <Text style={styles.detailTitle}>{detail.title}</Text>
+            <Text style={[styles.detailTitle, { color: colors.textPrimary }]}>{detail.title}</Text>
 
             {/* Author Row */}
             <TouchableOpacity
@@ -215,12 +223,20 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
               activeOpacity={0.7}
               style={styles.authorRow}
             >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{authorInitial}</Text>
+              <View
+                style={[
+                  styles.avatar,
+                  {
+                    backgroundColor: colors.surfaceLight,
+                    borderColor: colors.cardBorder,
+                  },
+                ]}
+              >
+                <Text style={[styles.avatarText, { color: colors.primary }]}>{authorInitial}</Text>
               </View>
               <View>
-                <Text style={styles.authorName}>{detail.author_name}</Text>
-                <Text style={styles.dateText}>
+                <Text style={[styles.authorName, { color: colors.textPrimary }]}>{detail.author_name}</Text>
+                <Text style={[styles.dateText, { color: colors.textMuted }]}>
                   {new Date(detail.created_at).toLocaleDateString(undefined, {
                     month: 'short',
                     day: 'numeric',
@@ -231,7 +247,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
             </TouchableOpacity>
 
             {/* Body */}
-            <Text style={styles.detailContent}>{detail.content}</Text>
+            <Text style={[styles.detailContent, { color: colors.textSecondary }]}>{detail.content}</Text>
 
             {/* Image Attachments */}
             {imageAttachments.length > 0 && (
@@ -250,34 +266,50 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
             )}
 
             {/* Post Vote & Stats Bar */}
-            <View style={styles.statsBar}>
+            <View style={[styles.statsBar, { borderTopColor: colors.cardBorder }]}>
               <TouchableOpacity
-                style={[styles.voteBtn, detail.user_has_voted && styles.voteBtnActive]}
+                style={[
+                  styles.voteBtn,
+                  {
+                    backgroundColor: colors.surfaceLight,
+                    borderColor: colors.cardBorder,
+                  },
+                  detail.user_has_voted && {
+                    backgroundColor: isDark ? 'rgba(94, 106, 210, 0.25)' : 'rgba(79, 70, 229, 0.12)',
+                    borderColor: colors.primary,
+                  },
+                ]}
                 onPress={() => onVote(detail)}
                 activeOpacity={0.7}
               >
                 <ArrowBigUp
                   size={16}
-                  color={detail.user_has_voted ? '#38bdf8' : '#94a3b8'}
-                  fill={detail.user_has_voted ? '#38bdf8' : 'none'}
+                  color={detail.user_has_voted ? colors.primary : colors.textMuted}
+                  fill={detail.user_has_voted ? colors.primary : 'none'}
                 />
-                <Text style={[styles.voteBtnText, detail.user_has_voted && styles.voteBtnTextActive]}>
+                <Text
+                  style={[
+                    styles.voteBtnText,
+                    { color: detail.user_has_voted ? colors.primary : colors.textSecondary },
+                  ]}
+                >
                   {detail.upvotes_count || 0} Upvotes
                 </Text>
               </TouchableOpacity>
 
               <View style={styles.replyStat}>
-                <MessageSquare size={15} color="#94a3b8" />
-                <Text style={styles.replyStatText}>{detail.replies_count || 0} Answers</Text>
+                <MessageSquare size={15} color={colors.textMuted} />
+                <Text style={[styles.replyStatText, { color: colors.textMuted }]}>
+                  {detail.replies_count || 0} Answers
+                </Text>
               </View>
             </View>
           </View>
 
           {/* Answers & Replies Section */}
           <View style={styles.repliesSection}>
-            <Text style={styles.repliesHeaderTitle}>
-              {isQuestion ? 'Answers & Solutions' : 'Replies & Discussion'} (
-              {detail.replies?.length || 0})
+            <Text style={[styles.repliesHeaderTitle, { color: colors.textPrimary }]}>
+              {isQuestion ? 'Answers & Solutions' : 'Replies & Discussion'} ({detail.replies?.length || 0})
             </Text>
 
             {loading && !detail.replies ? (
@@ -297,8 +329,13 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                 onOpenProfile={onOpenProfile}
               />
             ) : (
-              <View style={styles.emptyReplies}>
-                <Text style={styles.emptyRepliesText}>
+              <View
+                style={[
+                  styles.emptyReplies,
+                  { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+                ]}
+              >
+                <Text style={[styles.emptyRepliesText, { color: colors.textSecondary }]}>
                   {isQuestion
                     ? 'No answers yet. Be the first classmate to answer this question!'
                     : 'No replies yet. Join the conversation below!'}
@@ -311,21 +348,33 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
         </ScrollView>
 
         {/* Bottom Reply Composer Bar */}
-        <View style={styles.bottomComposer}>
+        <View style={[styles.bottomComposer, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
           {replyingTo && (
-            <View style={styles.replyingToBanner}>
-              <CornerDownRight size={13} color="#38bdf8" />
-              <Text style={styles.replyingToText} numberOfLines={1}>
+            <View
+              style={[
+                styles.replyingToBanner,
+                {
+                  backgroundColor: isDark ? 'rgba(94, 106, 210, 0.18)' : 'rgba(79, 70, 229, 0.1)',
+                },
+              ]}
+            >
+              <CornerDownRight size={13} color={colors.primary} />
+              <Text style={[styles.replyingToText, { color: colors.primary }]} numberOfLines={1}>
                 Replying to {replyingTo.author_name}
               </Text>
               <TouchableOpacity onPress={() => setReplyingTo(null)}>
-                <X size={14} color="#ef4444" />
+                <X size={14} color={colors.danger} />
               </TouchableOpacity>
             </View>
           )}
 
           {matchingMembers.length > 0 && (
-            <View style={styles.mentionSuggestionsContainer}>
+            <View
+              style={[
+                styles.mentionSuggestionsContainer,
+                { backgroundColor: colors.surface, borderTopColor: colors.cardBorder },
+              ]}
+            >
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -335,15 +384,21 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                 {matchingMembers.map((m) => (
                   <TouchableOpacity
                     key={m.id}
-                    style={styles.mentionPill}
+                    style={[
+                      styles.mentionPill,
+                      {
+                        backgroundColor: colors.surfaceLight,
+                        borderColor: colors.cardBorder,
+                      },
+                    ]}
                     onPress={() => handleSelectMention(m)}
                   >
-                    <View style={styles.mentionAvatar}>
+                    <View style={[styles.mentionAvatar, { backgroundColor: colors.primary }]}>
                       <Text style={styles.mentionAvatarText}>
                         {(m.user?.full_name || 'U')[0].toUpperCase()}
                       </Text>
                     </View>
-                    <Text style={styles.mentionName}>@{m.user?.full_name}</Text>
+                    <Text style={[styles.mentionName, { color: colors.primary }]}>@{m.user?.full_name}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -352,7 +407,14 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
 
           <View style={styles.inputRow}>
             <TextInput
-              style={styles.inputField}
+              style={[
+                styles.inputField,
+                {
+                  backgroundColor: isDark ? '#141516' : '#f1f5f9',
+                  borderColor: colors.cardBorder,
+                  color: colors.textPrimary,
+                },
+              ]}
               placeholder={
                 replyingTo
                   ? `Reply to ${replyingTo.author_name}...`
@@ -360,14 +422,18 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                   ? 'Write your answer or solution...'
                   : 'Add to the discussion...'
               }
-              placeholderTextColor="#64748b"
+              placeholderTextColor={colors.textMuted}
               value={replyText}
               onChangeText={setReplyText}
               multiline
             />
 
             <TouchableOpacity
-              style={[styles.sendBtn, (!replyText.trim() || submittingReply) && styles.sendBtnDisabled]}
+              style={[
+                styles.sendBtn,
+                { backgroundColor: colors.primary },
+                (!replyText.trim() || submittingReply) && styles.sendBtnDisabled,
+              ]}
               onPress={handleSendReply}
               disabled={!replyText.trim() || submittingReply}
             >
@@ -387,7 +453,6 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -397,20 +462,17 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 52 : 16,
     paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: colors.cardBorder,
   },
   backBtn: {
     padding: 6,
   },
   backBtnArrow: {
-    color: '#ffffff',
     fontSize: 20,
     fontWeight: '700',
   },
   headerTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#ffffff',
     flex: 1,
     marginHorizontal: 12,
   },
@@ -422,11 +484,9 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   mainPostCard: {
-    backgroundColor: colors.surface,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     marginBottom: 16,
   },
   badgeRow: {
@@ -450,13 +510,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   typeBadge: {
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
   },
   typeBadgeText: {
-    color: '#38bdf8',
     fontSize: 10.5,
     fontWeight: '700',
   },
@@ -475,10 +533,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   detailTitle: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '800',
-    color: '#ffffff',
-    lineHeight: 23,
+    lineHeight: 24,
     marginBottom: 12,
   },
   authorRow: {
@@ -491,30 +548,24 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
   avatarText: {
-    color: '#38bdf8',
     fontSize: 12,
     fontWeight: '700',
   },
   authorName: {
-    color: '#ffffff',
     fontSize: 13,
     fontWeight: '600',
   },
   dateText: {
-    color: '#64748b',
     fontSize: 10.5,
   },
   detailContent: {
-    color: '#e2e8f0',
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 14.5,
+    lineHeight: 22,
     marginBottom: 14,
   },
   mediaContainer: {
@@ -530,30 +581,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#1e293b',
   },
   voteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#1e293b',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#334155',
-  },
-  voteBtnActive: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-    borderColor: '#38bdf8',
   },
   voteBtnText: {
-    color: '#94a3b8',
     fontSize: 12,
     fontWeight: '700',
-  },
-  voteBtnTextActive: {
-    color: '#38bdf8',
   },
   replyStat: {
     flexDirection: 'row',
@@ -561,7 +601,6 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   replyStatText: {
-    color: '#94a3b8',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -569,29 +608,23 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   repliesHeaderTitle: {
-    color: '#ffffff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     marginBottom: 12,
   },
   emptyReplies: {
-    backgroundColor: colors.surface,
     padding: 24,
     borderRadius: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.cardBorder,
   },
   emptyRepliesText: {
-    color: '#94a3b8',
-    fontSize: 12.5,
+    fontSize: 13,
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 19,
   },
   bottomComposer: {
-    backgroundColor: '#0f172a',
     borderTopWidth: 1,
-    borderTopColor: colors.cardBorder,
     padding: 10,
     paddingBottom: Platform.OS === 'ios' ? 28 : 12,
   },
@@ -599,15 +632,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(56, 189, 248, 0.1)',
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 6,
     marginBottom: 8,
   },
   replyingToText: {
-    color: '#38bdf8',
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
     flex: 1,
     marginHorizontal: 6,
@@ -619,29 +650,25 @@ const styles = StyleSheet.create({
   },
   inputField: {
     flex: 1,
-    backgroundColor: '#1e293b',
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 9,
-    color: '#ffffff',
-    fontSize: 13,
+    fontSize: 13.5,
+    borderWidth: 1,
     maxHeight: 90,
   },
   sendBtn: {
-    backgroundColor: colors.primary,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sendBtnDisabled: {
-    opacity: 0.4,
+    opacity: 0.45,
   },
   mentionSuggestionsContainer: {
-    backgroundColor: '#0f172a',
     borderTopWidth: 1,
-    borderTopColor: colors.cardBorder,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
@@ -653,29 +680,25 @@ const styles = StyleSheet.create({
   mentionPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.25)',
   },
   mentionAvatar: {
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#38bdf8',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 6,
   },
   mentionAvatarText: {
-    color: '#0f172a',
+    color: '#ffffff',
     fontSize: 10,
     fontWeight: '700',
   },
   mentionName: {
-    color: '#38bdf8',
     fontSize: 12,
     fontWeight: '600',
   },

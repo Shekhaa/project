@@ -174,6 +174,7 @@ function AppMain() {
         <ProfileSetupScreen
           currentUser={currentUser}
           onProfileComplete={handleProfileComplete}
+          onBack={handleLogout}
         />
       </SafeAreaView>
     );

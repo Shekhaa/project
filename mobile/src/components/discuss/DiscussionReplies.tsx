@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { DiscussionReply } from '../../services/communityService';
 import { ArrowBigUp, Check, CornerDownRight } from 'lucide-react-native';
+import { useTheme } from '../../theme/ThemeContext';
 
 interface DiscussionRepliesProps {
   replies: DiscussionReply[];
@@ -23,6 +24,8 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
   onReplyToReply,
   onOpenProfile,
 }) => {
+  const { colors, isDark } = useTheme();
+
   const formatTimeAgo = (dateStr: string) => {
     try {
       const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
@@ -35,15 +38,32 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
     }
   };
 
-  const renderReplyItem = (item: DiscussionReply, isNested = false) => {
+  const renderReplyItem = (item: DiscussionReply, depth = 0) => {
     const initial = (item.author_name || 'S').trim()[0]?.toUpperCase() || 'S';
+    const isNested = depth > 0;
 
     return (
       <View
         key={item.id}
         style={[
           styles.replyCard,
-          isNested && styles.nestedReplyCard,
+          {
+            backgroundColor: isNested
+              ? isDark
+                ? '#121417'
+                : '#f8fafc'
+              : colors.surface,
+            borderColor: item.is_accepted ? colors.success : colors.cardBorder,
+            marginLeft: isNested ? Math.min(depth * 14, 40) : 0,
+            borderLeftWidth: isNested ? 3 : 1,
+            borderLeftColor: item.is_accepted
+              ? colors.success
+              : isNested
+              ? isDark
+                ? 'rgba(94, 106, 210, 0.6)'
+                : 'rgba(79, 70, 229, 0.45)'
+              : colors.cardBorder,
+          },
           item.is_accepted && styles.acceptedReplyCard,
         ]}
       >
@@ -55,12 +75,20 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
             activeOpacity={0.7}
             style={styles.authorRow}
           >
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initial}</Text>
+            <View
+              style={[
+                styles.avatar,
+                {
+                  backgroundColor: colors.surfaceLight,
+                  borderColor: colors.cardBorder,
+                },
+              ]}
+            >
+              <Text style={[styles.avatarText, { color: colors.primary }]}>{initial}</Text>
             </View>
             <View>
-              <Text style={styles.authorName}>{item.author_name}</Text>
-              <Text style={styles.replyTime}>{formatTimeAgo(item.created_at)}</Text>
+              <Text style={[styles.authorName, { color: colors.textPrimary }]}>{item.author_name}</Text>
+              <Text style={[styles.replyTime, { color: colors.textMuted }]}>{formatTimeAgo(item.created_at)}</Text>
             </View>
           </TouchableOpacity>
 
@@ -74,11 +102,11 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
         </View>
 
         {/* Content */}
-        <Text style={styles.replyContent}>
+        <Text style={[styles.replyContent, { color: colors.textSecondary }]}>
           {item.content.split(/(@[a-zA-Z0-9_\.]+(?=\s|$|[.,!?]))/g).map((part, idx) => {
             if (part.startsWith('@')) {
               return (
-                <Text key={idx} style={styles.mentionHighlight}>
+                <Text key={idx} style={[styles.mentionHighlight, { color: colors.primary }]}>
                   {part}
                 </Text>
               );
@@ -90,16 +118,31 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
         {/* Actions Bar: Upvote, Reply, Accept */}
         <View style={styles.replyActions}>
           <TouchableOpacity
-            style={[styles.voteBtn, item.user_has_voted && styles.voteBtnActive]}
+            style={[
+              styles.voteBtn,
+              {
+                backgroundColor: colors.surfaceLight,
+                borderColor: colors.cardBorder,
+              },
+              item.user_has_voted && {
+                backgroundColor: isDark ? 'rgba(94, 106, 210, 0.25)' : 'rgba(79, 70, 229, 0.12)',
+                borderColor: colors.primary,
+              },
+            ]}
             onPress={() => onVoteReply(item)}
             activeOpacity={0.7}
           >
             <ArrowBigUp
               size={14}
-              color={item.user_has_voted ? '#38bdf8' : '#94a3b8'}
-              fill={item.user_has_voted ? '#38bdf8' : 'none'}
+              color={item.user_has_voted ? colors.primary : colors.textMuted}
+              fill={item.user_has_voted ? colors.primary : 'none'}
             />
-            <Text style={[styles.voteCount, item.user_has_voted && styles.voteCountActive]}>
+            <Text
+              style={[
+                styles.voteCount,
+                { color: item.user_has_voted ? colors.primary : colors.textSecondary },
+              ]}
+            >
               {item.upvotes_count || 0}
             </Text>
           </TouchableOpacity>
@@ -109,8 +152,8 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
             onPress={() => onReplyToReply(item)}
             activeOpacity={0.7}
           >
-            <CornerDownRight size={13} color="#94a3b8" />
-            <Text style={styles.replyActionText}>Reply</Text>
+            <CornerDownRight size={13} color={colors.textSecondary} />
+            <Text style={[styles.replyActionText, { color: colors.textSecondary }]}>Reply</Text>
           </TouchableOpacity>
 
           {/* Mark as Accepted (Visible to question author if not yet solved or if toggling) */}
@@ -126,17 +169,17 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
           )}
         </View>
 
-        {/* Nested Child Replies */}
+        {/* Nested Child Replies (Recursive Tree at any depth) */}
         {item.children && item.children.length > 0 && (
           <View style={styles.childrenContainer}>
-            {item.children.map((child) => renderReplyItem(child, true))}
+            {item.children.map((child) => renderReplyItem(child, depth + 1))}
           </View>
         )}
       </View>
     );
   };
 
-  return <View style={styles.container}>{replies.map((r) => renderReplyItem(r))}</View>;
+  return <View style={styles.container}>{replies.map((r) => renderReplyItem(r, 0))}</View>;
 };
 
 const styles = StyleSheet.create({
@@ -145,22 +188,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   replyCard: {
-    backgroundColor: '#0f172a',
     borderRadius: 12,
-    padding: 12,
+    padding: 13,
     borderWidth: 1,
-    borderColor: '#1e293b',
-  },
-  nestedReplyCard: {
-    backgroundColor: '#131e33',
-    marginLeft: 14,
-    marginTop: 8,
-    borderLeftWidth: 2,
-    borderLeftColor: '#38bdf8',
+    marginTop: 6,
   },
   acceptedReplyCard: {
-    borderColor: '#10b981',
-    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    backgroundColor: 'rgba(16, 185, 129, 0.06)',
   },
   replyHeader: {
     flexDirection: 'row',
@@ -177,24 +211,19 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: '#1e293b',
     borderWidth: 1,
-    borderColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
-    color: '#38bdf8',
     fontSize: 11,
     fontWeight: '700',
   },
   authorName: {
-    color: '#f8fafc',
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '600',
   },
   replyTime: {
-    color: '#64748b',
     fontSize: 10,
   },
   acceptedBadge: {
@@ -213,13 +242,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   replyContent: {
-    color: '#cbd5e1',
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 13.5,
+    lineHeight: 20,
     marginBottom: 10,
   },
   mentionHighlight: {
-    color: '#38bdf8',
     fontWeight: '700',
   },
   replyActions: {
@@ -231,24 +258,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#1e293b',
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#334155',
-  },
-  voteBtnActive: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-    borderColor: '#38bdf8',
   },
   voteCount: {
-    color: '#94a3b8',
     fontSize: 11,
     fontWeight: '700',
-  },
-  voteCountActive: {
-    color: '#38bdf8',
   },
   replyActionBtn: {
     flexDirection: 'row',
@@ -258,8 +275,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   replyActionText: {
-    color: '#94a3b8',
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   acceptActionBtn: {

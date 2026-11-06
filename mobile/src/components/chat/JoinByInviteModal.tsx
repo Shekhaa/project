@@ -9,10 +9,10 @@ import {
   StyleSheet,
   Alert,
 } from 'react-native';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 import { communityService } from '../../services/communityService';
 import { chatService } from '../../services/chatService';
-import { Link2, Users, X, ArrowRight, CheckCircle2 } from 'lucide-react-native';
+import { Link2, Users, X, ArrowRight } from 'lucide-react-native';
 
 interface JoinByInviteModalProps {
   visible: boolean;
@@ -27,6 +27,7 @@ export const JoinByInviteModal: React.FC<JoinByInviteModalProps> = ({
   onJoinedCommunity,
   onJoinedChat,
 }) => {
+  const { colors, isDark } = useTheme();
   const [inputText, setInputText] = useState('');
   const [preview, setPreview] = useState<any | null>(null);
   const [previewType, setPreviewType] = useState<'COMMUNITY' | 'CHAT'>('COMMUNITY');
@@ -52,7 +53,6 @@ export const JoinByInviteModal: React.FC<JoinByInviteModalProps> = ({
       const parts = trimmed.split('/invite/c/');
       return { code: parts[parts.length - 1].replace(/\/$/, ''), type: 'COMMUNITY' };
     }
-    // Default fallback: if has slashes, get last segment
     const segments = trimmed.split('/');
     const code = segments[segments.length - 1];
     return { code, type: 'COMMUNITY' };
@@ -61,38 +61,26 @@ export const JoinByInviteModal: React.FC<JoinByInviteModalProps> = ({
   const handleLookup = async () => {
     if (!inputText.trim()) return;
     const { code, type } = extractCodeAndType(inputText);
+    if (!code) {
+      Alert.alert('Invalid Link', 'Please enter a valid invite link or code.');
+      return;
+    }
+
     setCleanCode(code);
     setPreviewType(type);
+    setLoadingPreview(true);
+    setPreview(null);
 
     try {
-      setLoadingPreview(true);
       if (type === 'COMMUNITY') {
-        try {
-          const res = await communityService.previewInvite(code);
-          setPreview(res);
-          return;
-        } catch {
-          // try chat if community failed
-          const res = await chatService.previewInvite(code);
-          setPreview(res);
-          setPreviewType('CHAT');
-          return;
-        }
+        const data = await communityService.previewInvite(code);
+        setPreview(data);
       } else {
-        try {
-          const res = await chatService.previewInvite(code);
-          setPreview(res);
-          return;
-        } catch {
-          const res = await communityService.previewInvite(code);
-          setPreview(res);
-          setPreviewType('COMMUNITY');
-          return;
-        }
+        const data = await chatService.previewInvite(code);
+        setPreview(data);
       }
     } catch (e: any) {
-      Alert.alert('Invalid Link', 'This invite link is invalid, expired, or has been reset.');
-      setPreview(null);
+      Alert.alert('Not Found', e.response?.data?.error || 'Invalid or expired invite link.');
     } finally {
       setLoadingPreview(false);
     }
@@ -136,8 +124,8 @@ export const JoinByInviteModal: React.FC<JoinByInviteModalProps> = ({
         resetState();
       }}
     >
-      <View style={styles.overlay}>
-        <View style={styles.card}>
+      <View style={[styles.overlay, { backgroundColor: colors.modalOverlay }]}>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
           <TouchableOpacity
             onPress={() => {
               onClose();
@@ -145,24 +133,24 @@ export const JoinByInviteModal: React.FC<JoinByInviteModalProps> = ({
             }}
             style={styles.closeBtn}
           >
-            <X size={18} color="#94a3b8" />
+            <X size={18} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          <View style={styles.iconCircle}>
-            <Link2 size={24} color="#38bdf8" />
+          <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(94, 106, 210, 0.2)' : 'rgba(79, 70, 229, 0.12)' }]}>
+            <Link2 size={24} color={colors.primary} />
           </View>
 
-          <Text style={styles.title}>Join via Invite Link</Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>Join via Invite Link</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             Paste an invite link or code to join a campus community or group chat.
           </Text>
 
           {/* Input field */}
-          <View style={styles.inputRow}>
+          <View style={[styles.inputRow, { backgroundColor: isDark ? '#141516' : '#f1f5f9', borderColor: colors.cardBorder }]}>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { color: colors.textPrimary }]}
               placeholder="Paste invite link or code..."
-              placeholderTextColor="#64748b"
+              placeholderTextColor={colors.textMuted}
               value={inputText}
               onChangeText={(t) => {
                 setInputText(t);
@@ -172,32 +160,44 @@ export const JoinByInviteModal: React.FC<JoinByInviteModalProps> = ({
               autoCorrect={false}
             />
             <TouchableOpacity
-              style={[styles.lookupBtn, (!inputText.trim() || loadingPreview) && styles.lookupBtnDisabled]}
+              style={[
+                styles.lookupBtn,
+                { backgroundColor: colors.primary },
+                (!inputText.trim() || loadingPreview) && styles.lookupBtnDisabled,
+              ]}
               onPress={handleLookup}
               disabled={!inputText.trim() || loadingPreview}
             >
               {loadingPreview ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
-                <ArrowRight size={18} color="#fff" />
+                <ArrowRight size={16} color="#fff" />
               )}
             </TouchableOpacity>
           </View>
 
-          {/* Group Preview Card */}
+          {/* Preview result */}
           {preview && (
-            <View style={styles.previewCard}>
+            <View
+              style={[
+                styles.previewCard,
+                {
+                  backgroundColor: colors.surfaceLight,
+                  borderColor: colors.cardBorder,
+                },
+              ]}
+            >
               <View style={styles.previewHeader}>
-                <View style={styles.groupAvatar}>
-                  <Text style={styles.groupAvatarText}>
+                <View style={[styles.groupAvatar, { backgroundColor: isDark ? '#1e293b' : '#e2e8f0', borderColor: colors.cardBorder }]}>
+                  <Text style={[styles.groupAvatarText, { color: colors.primary }]}>
                     {(preview.name || 'G')[0].toUpperCase()}
                   </Text>
                 </View>
                 <View style={styles.groupMeta}>
-                  <Text style={styles.groupName} numberOfLines={1}>
+                  <Text style={[styles.groupName, { color: colors.textPrimary }]} numberOfLines={1}>
                     {preview.name}
                   </Text>
-                  <Text style={styles.groupType}>
+                  <Text style={[styles.groupType, { color: colors.primary }]}>
                     {previewType === 'COMMUNITY'
                       ? `${preview.community_type} Community`
                       : preview.is_ephemeral
@@ -208,18 +208,20 @@ export const JoinByInviteModal: React.FC<JoinByInviteModalProps> = ({
               </View>
 
               {preview.description ? (
-                <Text style={styles.groupDesc} numberOfLines={2}>
+                <Text style={[styles.groupDesc, { color: colors.textSecondary }]} numberOfLines={2}>
                   {preview.description}
                 </Text>
               ) : null}
 
               <View style={styles.statsRow}>
-                <Users size={14} color="#94a3b8" />
-                <Text style={styles.statsText}>{preview.members_count || 1} members</Text>
+                <Users size={14} color={colors.textMuted} />
+                <Text style={[styles.statsText, { color: colors.textMuted }]}>
+                  {preview.members_count || 1} members
+                </Text>
               </View>
 
               <TouchableOpacity
-                style={styles.joinBtn}
+                style={[styles.joinBtn, { backgroundColor: colors.primary }]}
                 onPress={handleJoin}
                 disabled={joining}
                 activeOpacity={0.8}
@@ -243,19 +245,16 @@ export const JoinByInviteModal: React.FC<JoinByInviteModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   card: {
-    backgroundColor: '#1e293b',
     borderRadius: 18,
     width: '100%',
     maxWidth: 400,
     padding: 20,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     alignItems: 'center',
   },
   closeBtn: {
@@ -268,46 +267,38 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: 'rgba(56, 189, 248, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
     marginBottom: 12,
   },
   title: {
-    color: '#ffffff',
     fontSize: 18,
     fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   subtitle: {
-    color: '#94a3b8',
-    fontSize: 13,
+    fontSize: 12.5,
     textAlign: 'center',
     lineHeight: 18,
-    paddingHorizontal: 12,
-    marginBottom: 18,
+    marginBottom: 16,
+    paddingHorizontal: 8,
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0f172a',
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     paddingHorizontal: 12,
     width: '100%',
     marginBottom: 16,
   },
   input: {
     flex: 1,
-    color: '#ffffff',
     fontSize: 13,
     paddingVertical: 12,
   },
   lookupBtn: {
-    backgroundColor: colors.primary,
     width: 34,
     height: 34,
     borderRadius: 17,
@@ -319,12 +310,10 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   previewCard: {
-    backgroundColor: '#0f172a',
     borderRadius: 14,
     padding: 16,
     width: '100%',
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.25)',
   },
   previewHeader: {
     flexDirection: 'row',
@@ -335,15 +324,12 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
     borderWidth: 1,
-    borderColor: '#475569',
   },
   groupAvatarText: {
-    color: '#38bdf8',
     fontSize: 18,
     fontWeight: '700',
   },
@@ -351,17 +337,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   groupName: {
-    color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
   },
   groupType: {
-    color: '#38bdf8',
     fontSize: 12,
     marginTop: 2,
+    fontWeight: '600',
   },
   groupDesc: {
-    color: '#cbd5e1',
     fontSize: 12.5,
     lineHeight: 17,
     marginBottom: 10,
@@ -373,11 +357,9 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   statsText: {
-    color: '#94a3b8',
     fontSize: 12,
   },
   joinBtn: {
-    backgroundColor: colors.primary,
     borderRadius: 10,
     paddingVertical: 11,
     alignItems: 'center',

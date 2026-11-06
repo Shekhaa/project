@@ -82,14 +82,14 @@ class DiscussionReplySerializer(serializers.ModelSerializer):
 
     def get_user_has_voted(self, obj):
         request = self.context.get("request")
-        if request and request.user.is_authenticated:
+        if request and hasattr(request, "user") and request.user.is_authenticated:
             return obj.votes.filter(user=request.user, vote_type=1).exists()
         return False
 
     def get_children(self, obj):
-        # Support nested replies (1 level down)
-        if obj.parent_reply is None:
-            children = obj.children.select_related("author", "author__profile").all()
+        # Support multi-level nested discussion replies
+        children = obj.children.select_related("author", "author__profile").all()
+        if children.exists():
             return DiscussionReplySerializer(children, many=True, context=self.context).data
         return []
 
@@ -158,7 +158,7 @@ class DiscussionSerializer(serializers.ModelSerializer):
 
     def get_user_has_voted(self, obj):
         request = self.context.get("request")
-        if request and request.user.is_authenticated:
+        if request and hasattr(request, "user") and request.user.is_authenticated:
             return obj.votes.filter(user=request.user, vote_type=1).exists()
         return False
 

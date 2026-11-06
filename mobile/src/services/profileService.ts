@@ -8,7 +8,9 @@ export interface CompleteProfilePayload {
   phone_number?: string;
   college?: number;
   course?: number;
+  course_name?: string;
   branch?: number;
+  branch_name?: string;
   academic_year?: number;
   section?: number;
   admission_number?: string;

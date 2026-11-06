@@ -498,12 +498,12 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
             onPress={() => setActiveCommunity(null)}
             accessibilityLabel="Back to Hubs"
           >
-            <Text style={styles.backBtnArrow}>←</Text>
+            <Text style={[styles.backBtnArrow, { color: colors.textPrimary }]}>←</Text>
           </TouchableOpacity>
 
           <View style={styles.communityHeaderCenter}>
             <View style={styles.titleRow}>
-              <Text style={styles.communityTitle} numberOfLines={1}>
+              <Text style={[styles.communityTitle, { color: colors.textPrimary }]} numberOfLines={1}>
                 {activeCommunity.name}
               </Text>
               <View
@@ -520,7 +520,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
             {/* Clickable Subtitle to open Members */}
             <TouchableOpacity onPress={handleOpenMembers} activeOpacity={0.7}>
-              <Text style={styles.communitySubtitle}>
+              <Text style={[styles.communitySubtitle, { color: colors.textSecondary }]}>
                 👥 {activeCommunity.total_members} members · Campus Community
               </Text>
             </TouchableOpacity>
@@ -529,57 +529,87 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
           {/* Action Menu (•••) */}
           <View style={styles.headerActions}>
             <TouchableOpacity
-              style={styles.headerIconBtn}
+              style={[styles.headerIconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder, borderWidth: 1 }]}
               onPress={() => setInviteLinkModalVisible(true)}
               accessibilityLabel="Invite link"
             >
-              <Link2 size={18} color="#38bdf8" />
+              <Link2 size={18} color={colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.headerIconBtn}
+              style={[styles.headerIconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder, borderWidth: 1 }]}
               onPress={() => {
                 handleOpenMembers();
                 setAddMembersModalVisible(true);
               }}
               accessibilityLabel="Add members"
             >
-              <UserPlus size={18} color="#38bdf8" />
+              <UserPlus size={18} color={colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.headerIconBtn}
+              style={[styles.headerIconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder, borderWidth: 1 }]}
               onPress={handleOpenMembers}
               accessibilityLabel="View members"
             >
-              <Users size={18} color="#94a3b8" />
+              <Users size={18} color={colors.textSecondary} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.headerIconBtn}
+              style={[styles.headerIconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder, borderWidth: 1 }]}
               onPress={() => setMoreMenuVisible(true)}
               accessibilityLabel="More options"
             >
-              <MoreVertical size={18} color="#94a3b8" />
+              <MoreVertical size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Segmented Two-Tab Bar (Matches Exact Screenshot!) */}
-        <View style={styles.segmentedTabContainer}>
+        {/* Segmented Two-Tab Bar */}
+        <View style={[styles.segmentedTabContainer, { backgroundColor: isDark ? '#0b0f19' : '#f1f5f9', borderBottomColor: colors.cardBorder, borderBottomWidth: 1 }]}>
           <TouchableOpacity
-            style={[styles.segmentedTab, activeTab === 'CHAT' && styles.segmentedTabActive]}
+            style={[
+              styles.segmentedTab,
+              {
+                backgroundColor: activeTab === 'CHAT' ? colors.primary : isDark ? '#141516' : '#ffffff',
+                borderColor: colors.cardBorder,
+                borderWidth: 1,
+              },
+            ]}
             onPress={() => setActiveTab('CHAT')}
             activeOpacity={0.85}
           >
-            <Text style={[styles.segmentedTabText, activeTab === 'CHAT' && styles.segmentedTabTextActive]}>
+            <Text
+              style={[
+                styles.segmentedTabText,
+                {
+                  color: activeTab === 'CHAT' ? '#ffffff' : colors.textSecondary,
+                  fontWeight: activeTab === 'CHAT' ? '800' : '600',
+                },
+              ]}
+            >
               Chat
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.segmentedTab, activeTab === 'DISCUSS' && styles.segmentedTabActive]}
+            style={[
+              styles.segmentedTab,
+              {
+                backgroundColor: activeTab === 'DISCUSS' ? colors.primary : isDark ? '#141516' : '#ffffff',
+                borderColor: colors.cardBorder,
+                borderWidth: 1,
+              },
+            ]}
             onPress={() => setActiveTab('DISCUSS')}
             activeOpacity={0.85}
           >
-            <Text style={[styles.segmentedTabText, activeTab === 'DISCUSS' && styles.segmentedTabTextActive]}>
+            <Text
+              style={[
+                styles.segmentedTabText,
+                {
+                  color: activeTab === 'DISCUSS' ? '#ffffff' : colors.textSecondary,
+                  fontWeight: activeTab === 'DISCUSS' ? '800' : '600',
+                },
+              ]}
+            >
               Discuss
             </Text>
           </TouchableOpacity>
@@ -740,9 +770,9 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
             )}
 
             {/* Chat Input Bar */}
-            <View style={styles.chatInputBar}>
+            <View style={[styles.chatInputBar, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
               <TouchableOpacity
-                style={styles.attachBtn}
+                style={[styles.attachBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
                 onPress={() => setAttachmentPickerVisible(true)}
                 activeOpacity={0.7}
                 accessibilityLabel="Attach media or documents"
@@ -751,7 +781,14 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
               </TouchableOpacity>
 
               <TextInput
-                style={styles.chatTextInput}
+                style={[
+                  styles.chatTextInput,
+                  {
+                    backgroundColor: isDark ? '#141516' : '#f1f5f9',
+                    borderColor: colors.cardBorder,
+                    color: colors.textPrimary,
+                  },
+                ]}
                 placeholder={`Message ${activeCommunity.name}...`}
                 placeholderTextColor={colors.textMuted}
                 value={messageText}
@@ -760,7 +797,11 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
               />
 
               <TouchableOpacity
-                style={[styles.sendBtn, !messageText.trim() && styles.sendBtnDisabled]}
+                style={[
+                  styles.sendBtn,
+                  { backgroundColor: colors.primary },
+                  (!messageText.trim() || sendingMessage) && styles.sendBtnDisabled,
+                ]}
                 onPress={handleSendHubMessage}
                 disabled={!messageText.trim() || sendingMessage}
               >
@@ -1182,23 +1223,45 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       {/* Category Chips Bar (2 Default: College & Course, plus Custom) */}
       <View style={styles.categoryBar}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
-          {(['ALL', 'COLLEGE', 'COURSE', 'CUSTOM'] as const).map((cat) => (
-            <TouchableOpacity
-              key={cat}
-              style={[styles.categoryPill, selectedCategory === cat && styles.categoryPillActive]}
-              onPress={() => setSelectedCategory(cat)}
-            >
-              <Text style={[styles.categoryPillText, selectedCategory === cat && styles.categoryPillTextActive]}>
-                {cat === 'ALL'
-                  ? '🏛️ All Hubs'
-                  : cat === 'COLLEGE'
-                  ? '🎓 College'
-                  : cat === 'COURSE'
-                  ? '📚 Course'
-                  : '👥 Custom'}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {(['ALL', 'COLLEGE', 'COURSE', 'CUSTOM'] as const).map((cat) => {
+            const active = selectedCategory === cat;
+            return (
+              <TouchableOpacity
+                key={cat}
+                style={[
+                  styles.categoryPill,
+                  {
+                    backgroundColor: active
+                      ? colors.primary
+                      : isDark
+                      ? '#141516'
+                      : '#ffffff',
+                    borderColor: active ? colors.primary : colors.cardBorder,
+                    borderWidth: 1,
+                  },
+                ]}
+                onPress={() => setSelectedCategory(cat)}
+              >
+                <Text
+                  style={[
+                    styles.categoryPillText,
+                    {
+                      color: active ? '#ffffff' : colors.textSecondary,
+                      fontWeight: active ? '700' : '600',
+                    },
+                  ]}
+                >
+                  {cat === 'ALL'
+                    ? '🏛️ All Hubs'
+                    : cat === 'COLLEGE'
+                    ? '🎓 College'
+                    : cat === 'COURSE'
+                    ? '📚 Course'
+                    : '👥 Custom'}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </View>
 
@@ -1206,7 +1269,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       {loading ? (
         <View style={styles.centerLoading}>
           <ActivityIndicator color={colors.primary} size="large" />
-          <Text style={styles.loadingText}>Loading campus communities...</Text>
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading campus communities...</Text>
         </View>
       ) : (
         <FlatList
@@ -1215,7 +1278,6 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
           contentContainerStyle={styles.listContent}
           renderItem={({ item }) => {
             const badgeColor = getBadgeColor(item.community_type);
-            const latestDisc = item.latest_discussion;
             return (
               <TouchableOpacity
                 style={[styles.communityCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}
@@ -1225,8 +1287,8 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                 {/* Card Header */}
                 <View style={styles.cardHeader}>
                   <View style={{ flex: 1, marginRight: 8 }}>
-                    <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
-                    <Text style={styles.cardMeta}>
+                    <Text style={[styles.cardTitle, { color: colors.textPrimary }]} numberOfLines={1}>{item.name}</Text>
+                    <Text style={[styles.cardMeta, { color: colors.textSecondary }]}>
                       👥 {item.total_members || 0} members • Campus Community
                     </Text>
                   </View>
@@ -1236,13 +1298,13 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                 </View>
 
                 {item.description ? (
-                  <Text style={styles.cardDesc} numberOfLines={2}>{item.description}</Text>
+                  <Text style={[styles.cardDesc, { color: colors.textSecondary }]} numberOfLines={2}>{item.description}</Text>
                 ) : null}
 
                 {/* Card Action Row */}
                 <View style={styles.cardActionRow}>
                   <View style={styles.openCommunityBtn}>
-                    <Text style={styles.openCommunityBtnText}>Open Hub Chat & Discussions →</Text>
+                    <Text style={[styles.openCommunityBtnText, { color: colors.primary }]}>Open Hub Chat & Discussions →</Text>
                   </View>
                 </View>
               </TouchableOpacity>
@@ -1260,38 +1322,70 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
       {/* CREATE CUSTOM COMMUNITY MODAL */}
       <Modal visible={createCommunityModalVisible} animationType="slide" transparent onRequestClose={() => setCreateCommunityModalVisible(false)}>
-        <View style={styles.sheetOverlay}>
-          <View style={styles.reportModalCard}>
-            <Text style={styles.reportTitle}>Create Student Community</Text>
-            <Text style={styles.reportSubtitle}>
+        <View style={[styles.sheetOverlay, { backgroundColor: colors.modalOverlay }]}>
+          <View style={[styles.reportModalCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+            <Text style={[styles.reportTitle, { color: colors.textPrimary }]}>Create Student Community</Text>
+            <Text style={[styles.reportSubtitle, { color: colors.textSecondary }]}>
               Create a custom club, society, or hostel group for your campus mates.
             </Text>
 
-            <Text style={styles.formLabel}>Community Name</Text>
+            <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Community Name</Text>
             <TextInput
-              style={styles.modalInput}
+              style={[
+                styles.modalInput,
+                {
+                  backgroundColor: isDark ? '#141516' : '#f1f5f9',
+                  borderColor: colors.cardBorder,
+                  color: colors.textPrimary,
+                },
+              ]}
               placeholder="e.g. AI & Robotics Club, Devsthali Hostel"
-              placeholderTextColor="#64748b"
+              placeholderTextColor={colors.textMuted}
               value={newTitle}
               onChangeText={setNewTitle}
             />
 
-            <Text style={styles.formLabel}>Description</Text>
+            <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Description</Text>
             <TextInput
-              style={[styles.modalInput, { height: 80 }]}
+              style={[
+                styles.modalInput,
+                {
+                  height: 80,
+                  backgroundColor: isDark ? '#141516' : '#f1f5f9',
+                  borderColor: colors.cardBorder,
+                  color: colors.textPrimary,
+                },
+              ]}
               placeholder="What is this community about?"
-              placeholderTextColor="#64748b"
+              placeholderTextColor={colors.textMuted}
               value={newDesc}
               onChangeText={setNewDesc}
               multiline
             />
 
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setCreateCommunityModalVisible(false)}>
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+              <TouchableOpacity
+                style={[
+                  styles.cancelBtn,
+                  {
+                    backgroundColor: colors.surfaceLight,
+                    borderColor: colors.cardBorder,
+                  },
+                ]}
+                onPress={() => setCreateCommunityModalVisible(false)}
+              >
+                <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.confirmBtn} onPress={handleCreateCustom} disabled={creatingCommunity}>
-                {creatingCommunity ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmBtnText}>Create Hub</Text>}
+              <TouchableOpacity
+                style={[styles.confirmBtn, { backgroundColor: colors.primary }]}
+                onPress={handleCreateCustom}
+                disabled={creatingCommunity}
+              >
+                {creatingCommunity ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.confirmBtnText}>Create Hub</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>

@@ -197,11 +197,12 @@ class CommunityDiscussionsView(APIView):
 
     def post(self, request, slug):
         community = get_object_or_404(Community, slug=slug)
-        # Ensure user is an enrolled member
+        # Auto-enroll user in community if not already enrolled
         if not CommunityMember.objects.filter(community=community, user=request.user).exists():
-            return Response(
-                {"error": "Access denied. You must be an enrolled member to create discussions."},
-                status=status.HTTP_403_FORBIDDEN
+            CommunityMember.objects.get_or_create(
+                community=community,
+                user=request.user,
+                defaults={"role": "MEMBER"}
             )
 
         serializer = DiscussionCreateSerializer(data=request.data)
@@ -347,6 +348,14 @@ class DiscussionRepliesView(APIView):
     def post(self, request, slug, pk):
         community = get_object_or_404(Community, slug=slug)
         discussion = get_object_or_404(Discussion, community=community, id=pk)
+
+        # Auto-enroll user in community if not already enrolled
+        if not CommunityMember.objects.filter(community=community, user=request.user).exists():
+            CommunityMember.objects.get_or_create(
+                community=community,
+                user=request.user,
+                defaults={"role": "MEMBER"}
+            )
 
         content = request.data.get("content", "").strip()
         if not content:

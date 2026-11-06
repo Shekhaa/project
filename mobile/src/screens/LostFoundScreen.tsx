@@ -10,10 +10,9 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { colors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { lostFoundService, LostFoundItem } from '../services/lostFoundService';
-import { MapPin, Plus } from 'lucide-react-native';
+import { MapPin, Plus, ShieldCheck, MessageCircle, HelpCircle } from 'lucide-react-native';
 
 export const LostFoundScreen = () => {
   const { colors, isDark } = useTheme();
@@ -47,7 +46,7 @@ export const LostFoundScreen = () => {
 
   const handleReport = async () => {
     if (!description.trim() || !location.trim()) {
-      Alert.alert('Required', 'Please describe the item and where it was lost/found.');
+      Alert.alert('Required', 'Please describe the item and where it was lost or found.');
       return;
     }
 
@@ -62,7 +61,7 @@ export const LostFoundScreen = () => {
       setDescription('');
       setLocation('');
       await loadItems();
-      Alert.alert('Reported! 📢', 'Your lost & found notice is now visible across campus.');
+      Alert.alert('Reported! 📢', 'Your notice is now live for all students on campus.');
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || 'Failed to submit report.');
     } finally {
@@ -72,12 +71,12 @@ export const LostFoundScreen = () => {
 
   const handleContact = async (item: LostFoundItem) => {
     if (item.is_mine) {
-      Alert.alert('Notice', 'This is your own report.');
+      Alert.alert('Your Notice', 'This is your own report. Classmates who find or claim this item will message you directly.');
       return;
     }
 
     try {
-      const res = await lostFoundService.contactReporter(item.id);
+      await lostFoundService.contactReporter(item.id);
       Alert.alert(
         'Chat Thread Opened! 💬',
         `Direct chat started with ${item.reporter_name}.\nMessage context: "${item.description.slice(0, 40)}..."`
@@ -92,31 +91,55 @@ export const LostFoundScreen = () => {
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
         <View>
-          <Text style={styles.headerTitle}>Lost & Found</Text>
-          <Text style={styles.headerSubtitle}>Frictionless 1-step campus recovery</Text>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Lost & Found</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+            Frictionless 1-step campus recovery
+          </Text>
         </View>
 
         <TouchableOpacity
-          style={styles.reportBtn}
+          style={[styles.reportBtn, { backgroundColor: colors.primary }]}
           onPress={() => setModalVisible(true)}
+          activeOpacity={0.85}
         >
-          <Text style={styles.reportBtnText}>+ Report Item</Text>
+          <Plus size={15} color="#fff" style={{ marginRight: 4 }} />
+          <Text style={styles.reportBtnText}>Report Item</Text>
         </TouchableOpacity>
       </View>
 
       {/* Filter Tabs */}
-      <View style={styles.tabsRow}>
-        {(['ALL', 'LOST', 'FOUND'] as const).map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={[styles.tab, activeTab === tab && styles.tabActive]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-              {tab === 'ALL' ? 'All Notices' : tab === 'LOST' ? 'Lost' : 'Found'}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <View style={[styles.tabsRow, { backgroundColor: colors.background }]}>
+        {(['ALL', 'LOST', 'FOUND'] as const).map((tab) => {
+          const active = activeTab === tab;
+          return (
+            <TouchableOpacity
+              key={tab}
+              style={[
+                styles.tab,
+                {
+                  backgroundColor: active
+                    ? colors.primary
+                    : colors.surface,
+                  borderColor: active ? colors.primary : colors.cardBorder,
+                },
+              ]}
+              onPress={() => setActiveTab(tab)}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  {
+                    color: active ? '#ffffff' : colors.textSecondary,
+                    fontWeight: active ? '700' : '600',
+                  },
+                ]}
+              >
+                {tab === 'ALL' ? 'All Notices' : tab === 'LOST' ? '🔍 Lost' : '📦 Found'}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* List */}
@@ -137,70 +160,176 @@ export const LostFoundScreen = () => {
                   ]}
                 >
                   <Text style={[styles.typeTagText, item.item_type === 'LOST' ? styles.lostTagText : styles.foundTagText]}>
-                    {item.item_type === 'LOST' ? 'LOST' : 'FOUND'}
+                    {item.item_type === 'LOST' ? 'LOST ITEM' : 'FOUND ITEM'}
                   </Text>
                 </View>
-                <Text style={styles.reporterName}>Reported by {item.reporter_name}</Text>
+                <Text style={[styles.reporterName, { color: colors.textMuted }]}>
+                  Reported by {item.reporter_name}
+                </Text>
               </View>
 
-              <Text style={styles.itemDesc}>{item.description}</Text>
+              <Text style={[styles.itemDesc, { color: colors.textPrimary }]}>{item.description}</Text>
 
               <View style={styles.locationRow}>
-                <MapPin size={13} color={colors.textSecondary} style={{ marginRight: 4 }} />
-                <Text style={styles.locationText}>{item.location}</Text>
+                <MapPin size={13} color={colors.primary} style={{ marginRight: 5 }} />
+                <Text style={[styles.locationText, { color: colors.textSecondary }]}>{item.location}</Text>
               </View>
 
-              <TouchableOpacity
-                style={styles.contactBtn}
-                onPress={() => handleContact(item)}
-              >
-                <Text style={styles.contactBtnText}>
-                  {item.item_type === 'LOST' ? 'I Found This (Message)' : 'This is Mine (Claim)'}
-                </Text>
-              </TouchableOpacity>
+              {/* Redesigned Claim / Contact Action Button */}
+              {item.is_mine ? (
+                <View
+                  style={[
+                    styles.contactBtn,
+                    {
+                      backgroundColor: colors.surfaceLight,
+                      borderColor: colors.cardBorder,
+                      opacity: 0.8,
+                    },
+                  ]}
+                >
+                  <View style={styles.actionBtnInner}>
+                    <HelpCircle size={15} color={colors.textMuted} style={{ marginRight: 6 }} />
+                    <Text style={[styles.contactBtnText, { color: colors.textMuted }]}>
+                      Your Notice · Active on Campus
+                    </Text>
+                  </View>
+                </View>
+              ) : item.item_type === 'FOUND' ? (
+                <TouchableOpacity
+                  style={[
+                    styles.contactBtn,
+                    {
+                      backgroundColor: isDark ? 'rgba(94, 106, 210, 0.16)' : 'rgba(79, 70, 229, 0.08)',
+                      borderColor: isDark ? 'rgba(94, 106, 210, 0.4)' : 'rgba(79, 70, 229, 0.28)',
+                    },
+                  ]}
+                  onPress={() => handleContact(item)}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.actionBtnInner}>
+                    <ShieldCheck size={16} color={colors.primary} style={{ marginRight: 7 }} />
+                    <Text style={[styles.contactBtnText, { color: colors.primary }]}>
+                      Claim Item · Contact Finder
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.contactBtn,
+                    {
+                      backgroundColor: isDark ? 'rgba(39, 166, 68, 0.16)' : 'rgba(22, 163, 74, 0.08)',
+                      borderColor: isDark ? 'rgba(39, 166, 68, 0.4)' : 'rgba(22, 163, 74, 0.28)',
+                    },
+                  ]}
+                  onPress={() => handleContact(item)}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.actionBtnInner}>
+                    <MessageCircle size={16} color={colors.accent} style={{ marginRight: 7 }} />
+                    <Text style={[styles.contactBtnText, { color: colors.accent }]}>
+                      I Found This · Message Owner
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
             </View>
           )}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyIcon}>🔍</Text>
+              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No notices yet</Text>
+              <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+                Lost something on campus or found an item? Help your campus peers by reporting it here.
+              </Text>
+            </View>
+          }
         />
       )}
 
       {/* Modal: Frictionless Report */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Report Lost / Found Item</Text>
-            <Text style={styles.modalSubtitle}>
-              No complex forms. Just tell what happened and where.
+      <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
+        <View style={[styles.modalOverlay, { backgroundColor: colors.modalOverlay }]}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Report Lost / Found Item</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+              No complex paperwork. Just specify what happened and where.
             </Text>
 
             <View style={styles.typeToggleRow}>
               <TouchableOpacity
-                style={[styles.typeOption, reportType === 'LOST' && styles.typeOptionLost]}
+                style={[
+                  styles.typeOption,
+                  {
+                    backgroundColor: reportType === 'LOST'
+                      ? isDark ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.12)'
+                      : colors.surfaceLight,
+                    borderColor: reportType === 'LOST' ? '#ef4444' : colors.cardBorder,
+                  },
+                ]}
                 onPress={() => setReportType('LOST')}
               >
-                <Text style={styles.typeOptionText}>I Lost Something</Text>
+                <Text
+                  style={[
+                    styles.typeOptionText,
+                    { color: reportType === 'LOST' ? '#ef4444' : colors.textSecondary },
+                  ]}
+                >
+                  🔍 I Lost Something
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.typeOption, reportType === 'FOUND' && styles.typeOptionFound]}
+                style={[
+                  styles.typeOption,
+                  {
+                    backgroundColor: reportType === 'FOUND'
+                      ? isDark ? 'rgba(39, 166, 68, 0.2)' : 'rgba(22, 163, 74, 0.12)'
+                      : colors.surfaceLight,
+                    borderColor: reportType === 'FOUND' ? colors.accent : colors.cardBorder,
+                  },
+                ]}
                 onPress={() => setReportType('FOUND')}
               >
-                <Text style={styles.typeOptionText}>I Found Something</Text>
+                <Text
+                  style={[
+                    styles.typeOptionText,
+                    { color: reportType === 'FOUND' ? colors.accent : colors.textSecondary },
+                  ]}
+                >
+                  📦 I Found Something
+                </Text>
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.label}>Descriptive Message</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Item Description *</Text>
             <TextInput
-              style={[styles.input, styles.descInput]}
-              placeholder="e.g. Black boat airdopes case mila CS lab 3 me, bench no 4 ke paas."
+              style={[
+                styles.input,
+                styles.descInput,
+                {
+                  backgroundColor: isDark ? '#141516' : '#f1f5f9',
+                  borderColor: colors.cardBorder,
+                  color: colors.textPrimary,
+                },
+              ]}
+              placeholder="e.g. Black boAt Airdopes case found in CS Lab 3, near bench 4."
               placeholderTextColor={colors.textMuted}
               value={description}
               onChangeText={setDescription}
               multiline
             />
 
-            <Text style={styles.label}>Location (Where was it?)</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Campus Location *</Text>
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: isDark ? '#141516' : '#f1f5f9',
+                  borderColor: colors.cardBorder,
+                  color: colors.textPrimary,
+                },
+              ]}
               placeholder="e.g. CS Lab 3, 2nd Floor Block B"
               placeholderTextColor={colors.textMuted}
               value={location}
@@ -209,14 +338,20 @@ export const LostFoundScreen = () => {
 
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={styles.cancelBtn}
+                style={[
+                  styles.cancelBtn,
+                  {
+                    backgroundColor: colors.surfaceLight,
+                    borderColor: colors.cardBorder,
+                  },
+                ]}
                 onPress={() => setModalVisible(false)}
               >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.confirmBtn}
+                style={[styles.confirmBtn, { backgroundColor: colors.primary }]}
                 onPress={handleReport}
                 disabled={submitting}
               >
@@ -237,7 +372,6 @@ export const LostFoundScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -247,20 +381,18 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: colors.cardBorder,
   },
   headerTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: colors.textPrimary,
   },
   headerSubtitle: {
     fontSize: 12,
-    color: colors.textSecondary,
     marginTop: 2,
   },
   reportBtn: {
-    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 8,
@@ -273,48 +405,36 @@ const styles = StyleSheet.create({
   tabsRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     gap: 8,
   },
   tab: {
-    paddingVertical: 6,
+    paddingVertical: 7,
     paddingHorizontal: 14,
     borderRadius: 8,
-    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-  },
-  tabActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
   },
   tabText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  tabTextActive: {
-    color: '#fff',
+    fontSize: 12.5,
   },
   listContent: {
     padding: 16,
+    paddingBottom: 40,
   },
   card: {
-    backgroundColor: colors.surface,
     borderRadius: 14,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
   },
   cardTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   typeTag: {
-    paddingVertical: 3,
+    paddingVertical: 3.5,
     paddingHorizontal: 8,
     borderRadius: 6,
   },
@@ -330,72 +450,85 @@ const styles = StyleSheet.create({
   },
   typeTagText: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   lostTagText: {
     color: '#ef4444',
   },
   foundTagText: {
-    color: '#27a644',
+    color: '#16a34a',
   },
   reporterName: {
-    color: colors.textMuted,
     fontSize: 12,
   },
   itemDesc: {
-    color: colors.textPrimary,
-    fontSize: 15,
+    fontSize: 15.5,
     fontWeight: '600',
-    lineHeight: 20,
-    marginVertical: 4,
+    lineHeight: 22,
+    marginBottom: 6,
   },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 6,
-    marginBottom: 12,
-  },
-  locationIcon: {
-    fontSize: 13,
-    marginRight: 4,
+    marginTop: 4,
+    marginBottom: 14,
   },
   locationText: {
-    color: colors.textSecondary,
     fontSize: 13,
   },
   contactBtn: {
-    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    paddingVertical: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
     borderRadius: 10,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   contactBtnText: {
-    color: colors.primary,
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '700',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    marginTop: 30,
+  },
+  emptyIcon: {
+    fontSize: 40,
+    marginBottom: 10,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 19,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
     justifyContent: 'center',
     padding: 20,
   },
   modalCard: {
-    backgroundColor: colors.surface,
     borderRadius: 20,
     padding: 22,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
   },
   modalTitle: {
-    color: colors.textPrimary,
     fontSize: 19,
     fontWeight: '800',
   },
   modalSubtitle: {
-    color: colors.textSecondary,
     fontSize: 13,
     marginTop: 4,
     marginBottom: 16,
@@ -407,50 +540,39 @@ const styles = StyleSheet.create({
   },
   typeOption: {
     flex: 1,
-    backgroundColor: colors.card,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderRadius: 10,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-  },
-  typeOptionLost: {
-    backgroundColor: '#7f1d1d',
-    borderColor: '#ef4444',
-  },
-  typeOptionFound: {
-    backgroundColor: '#064e3b',
-    borderColor: '#10b981',
   },
   typeOptionText: {
-    color: '#fff',
     fontSize: 13,
     fontWeight: '700',
   },
   label: {
-    color: colors.textSecondary,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
     marginBottom: 6,
+    marginTop: 4,
   },
   input: {
-    backgroundColor: colors.card,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    color: colors.textPrimary,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 11,
     marginBottom: 12,
+    fontSize: 13.5,
   },
   descInput: {
-    height: 70,
+    height: 75,
     textAlignVertical: 'top',
   },
   modalActions: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 6,
+    marginTop: 8,
   },
   cancelBtn: {
     flex: 1,
@@ -458,21 +580,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
   },
   cancelBtnText: {
-    color: colors.textSecondary,
     fontWeight: '600',
+    fontSize: 14,
   },
   confirmBtn: {
     flex: 1,
-    backgroundColor: colors.accent,
     paddingVertical: 12,
     alignItems: 'center',
     borderRadius: 10,
   },
   confirmBtnText: {
-    color: '#064e3b',
+    color: '#ffffff',
     fontWeight: '800',
+    fontSize: 14,
   },
 });
