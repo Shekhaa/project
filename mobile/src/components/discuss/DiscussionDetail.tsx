@@ -30,6 +30,10 @@ import {
   Pin,
   Send,
   CornerDownRight,
+  MoreVertical,
+  Trash2,
+  Flag,
+  AlertTriangle,
 } from 'lucide-react-native';
 
 interface DiscussionDetailProps {
@@ -40,6 +44,7 @@ interface DiscussionDetailProps {
   onClose: () => void;
   onVote: (discussion: Discussion) => void;
   onOpenProfile?: (userId: number) => void;
+  onDeleteDiscussion?: (id: string) => void;
 }
 
 export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
@@ -50,6 +55,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   onClose,
   onVote,
   onOpenProfile,
+  onDeleteDiscussion,
 }) => {
   const { colors, isDark } = useTheme();
   const [detail, setDetail] = useState<Discussion | null>(discussion);
@@ -58,6 +64,14 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   const [replyingTo, setReplyingTo] = useState<DiscussionReply | null>(null);
   const [submittingReply, setSubmittingReply] = useState(false);
   const [members, setMembers] = useState<CommunityMemberItem[]>([]);
+
+  // Menu & Reporting State
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{ type: 'DISCUSSION' | 'REPLY'; id: string } | null>(null);
+  const [reportReason, setReportReason] = useState<'SPAM' | 'HARASSMENT' | 'ABUSIVE' | 'INAPPROPRIATE' | 'OTHER'>('SPAM');
+  const [reportDescription, setReportDescription] = useState('');
+  const [submittingReport, setSubmittingReport] = useState(false);
 
   useEffect(() => {
     if (!discussion || !visible) return;
@@ -103,8 +117,73 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   if (!detail) return null;
 
   const isQuestionAuthor = currentUser && detail.author === currentUser.id;
+  const canDeletePost = isQuestionAuthor || currentUser?.is_staff || currentUser?.is_superuser;
   const isQuestion = detail.discussion_type === 'QUESTION';
   const authorInitial = (detail.author_name || 'S').trim()[0]?.toUpperCase() || 'S';
+
+  const handleDeleteDiscussion = () => {
+    setMenuVisible(false);
+    Alert.alert(
+      'Delete Discussion',
+      'Are you sure you want to delete this discussion post? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await communityService.deleteDiscussion(communitySlug, detail.id);
+              onClose();
+              onDeleteDiscussion?.(detail.id);
+            } catch (err: any) {
+              Alert.alert('Error', err.response?.data?.error || 'Could not delete discussion.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteReply = async (reply: DiscussionReply) => {
+    try {
+      await communityService.deleteReply(communitySlug, detail.id, reply.id);
+      const updated = await communityService.getDiscussionDetail(communitySlug, detail.id);
+      setDetail(updated);
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.error || 'Could not delete reply.');
+    }
+  };
+
+  const handleOpenReport = (type: 'DISCUSSION' | 'REPLY', id: string) => {
+    setMenuVisible(false);
+    setReportTarget({ type, id });
+    setReportReason('SPAM');
+    setReportDescription('');
+    setReportModalVisible(true);
+  };
+
+  const handleSubmitReport = async () => {
+    if (!reportTarget) return;
+    setSubmittingReport(true);
+    try {
+      await communityService.submitReport(communitySlug, {
+        target_type: reportTarget.type,
+        target_id: reportTarget.id,
+        reason: reportReason,
+        description: reportDescription.trim(),
+      });
+      setReportModalVisible(false);
+      Alert.alert(
+        'Report Submitted 🛡️',
+        'Thank you for reporting. Campus moderators will review this discussion to maintain a safe and productive environment.'
+      );
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.error || 'Could not submit report.');
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
 
   const handleSendReply = async () => {
     if (!replyText.trim() || submittingReply) return;
@@ -179,9 +258,18 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
             Discussion
           </Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <X size={18} color={colors.textSecondary} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <TouchableOpacity
+              onPress={() => setMenuVisible(true)}
+              style={styles.headerBtn}
+              accessibilityLabel="More options"
+            >
+              <MoreVertical size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+              <X size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView style={styles.scrollArea} keyboardShouldPersistTaps="handled">
@@ -326,6 +414,8 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                   setReplyingTo(r);
                   setReplyText((prev) => (prev ? prev : `@${r.author_name} `));
                 }}
+                onDeleteReply={handleDeleteReply}
+                onReportReply={(r) => handleOpenReport('REPLY', r.id)}
                 onOpenProfile={onOpenProfile}
               />
             ) : (
@@ -445,6 +535,156 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Post Options Action Sheet */}
+        {menuVisible && (
+          <Modal transparent animationType="fade" visible={menuVisible} onRequestClose={() => setMenuVisible(false)}>
+            <TouchableOpacity style={styles.menuModalBackdrop} activeOpacity={1} onPress={() => setMenuVisible(false)}>
+              <View style={[styles.menuModalSheet, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+                <View style={styles.dragBar} />
+                <Text style={[styles.menuModalTitle, { color: colors.textPrimary }]}>Discussion Options</Text>
+
+                {canDeletePost && (
+                  <TouchableOpacity style={styles.menuModalItem} onPress={handleDeleteDiscussion}>
+                    <Trash2 size={17} color={colors.danger} />
+                    <Text style={[styles.menuModalItemText, { color: colors.danger, fontWeight: '700' }]}>
+                      Delete Discussion
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  style={styles.menuModalItem}
+                  onPress={() => handleOpenReport('DISCUSSION', detail.id)}
+                >
+                  <Flag size={17} color={colors.textSecondary} />
+                  <Text style={[styles.menuModalItemText, { color: colors.textPrimary }]}>
+                    Report Discussion
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.menuModalItem, { borderTopWidth: 1, borderTopColor: colors.cardBorder, marginTop: 4 }]}
+                  onPress={() => setMenuVisible(false)}
+                >
+                  <X size={17} color={colors.textMuted} />
+                  <Text style={[styles.menuModalItemText, { color: colors.textMuted }]}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </Modal>
+        )}
+
+        {/* Clean Report Modal */}
+        {reportModalVisible && (
+          <Modal
+            transparent
+            animationType="fade"
+            visible={reportModalVisible}
+            onRequestClose={() => setReportModalVisible(false)}
+          >
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              style={styles.menuModalBackdrop}
+            >
+              <View style={[styles.reportModalCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+                <View style={styles.reportModalHeader}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <AlertTriangle size={18} color="#f59e0b" />
+                    <Text style={[styles.reportModalTitle, { color: colors.textPrimary }]}>
+                      Report {reportTarget?.type === 'DISCUSSION' ? 'Post' : 'Reply'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setReportModalVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <X size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={[styles.reportSub, { color: colors.textMuted }]}>
+                  Select the reason that best describes this issue:
+                </Text>
+
+                <View style={styles.reportReasonsList}>
+                  {(
+                    [
+                      { key: 'SPAM', label: 'Spam or Advertising' },
+                      { key: 'HARASSMENT', label: 'Harassment or Bullying' },
+                      { key: 'ABUSIVE', label: 'Abusive or Hate Speech' },
+                      { key: 'INAPPROPRIATE', label: 'Inappropriate Content' },
+                      { key: 'OTHER', label: 'Other Guidelines Violation' },
+                    ] as const
+                  ).map((item) => {
+                    const active = reportReason === item.key;
+                    return (
+                      <TouchableOpacity
+                        key={item.key}
+                        style={[
+                          styles.reportReasonPill,
+                          {
+                            backgroundColor: active
+                              ? isDark
+                                ? 'rgba(99, 102, 241, 0.2)'
+                                : 'rgba(79, 70, 229, 0.12)'
+                              : colors.surfaceLight,
+                            borderColor: active ? colors.primary : colors.cardBorder,
+                          },
+                        ]}
+                        onPress={() => setReportReason(item.key)}
+                      >
+                        <Text
+                          style={[
+                            styles.reportReasonPillText,
+                            { color: active ? colors.primary : colors.textSecondary, fontWeight: active ? '700' : '500' },
+                          ]}
+                        >
+                          {item.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <TextInput
+                  style={[
+                    styles.reportInput,
+                    {
+                      backgroundColor: colors.surfaceLight,
+                      borderColor: colors.cardBorder,
+                      color: colors.textPrimary,
+                    },
+                  ]}
+                  placeholder="Optional details for campus moderators..."
+                  placeholderTextColor={colors.textMuted}
+                  value={reportDescription}
+                  onChangeText={setReportDescription}
+                  multiline
+                  numberOfLines={3}
+                />
+
+                <View style={styles.reportBtnRow}>
+                  <TouchableOpacity
+                    style={[styles.reportCancelBtn, { borderColor: colors.cardBorder }]}
+                    onPress={() => setReportModalVisible(false)}
+                  >
+                    <Text style={[styles.reportCancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.reportSubmitBtn, { backgroundColor: colors.danger }]}
+                    onPress={handleSubmitReport}
+                    disabled={submittingReport}
+                  >
+                    {submittingReport ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.reportSubmitBtnText}>Submit Report</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </Modal>
+        )}
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -453,6 +693,9 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    maxWidth: 680,
+    width: '100%',
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -462,6 +705,9 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 52 : 16,
     paddingBottom: 14,
     borderBottomWidth: 1,
+  },
+  headerBtn: {
+    padding: 6,
   },
   backBtn: {
     padding: 6,
@@ -701,5 +947,115 @@ const styles = StyleSheet.create({
   mentionName: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  menuModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  menuModalSheet: {
+    width: '100%',
+    maxWidth: 680,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+  },
+  dragBar: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  menuModalTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  menuModalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+  },
+  menuModalItemText: {
+    fontSize: 14,
+  },
+  reportModalCard: {
+    width: '92%',
+    maxWidth: 480,
+    borderRadius: 18,
+    padding: 20,
+    borderWidth: 1,
+    marginVertical: 'auto',
+    alignSelf: 'center',
+  },
+  reportModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  reportModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  reportSub: {
+    fontSize: 12,
+    marginBottom: 14,
+  },
+  reportReasonsList: {
+    gap: 8,
+    marginBottom: 14,
+  },
+  reportReasonPill: {
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  reportReasonPillText: {
+    fontSize: 13,
+  },
+  reportInput: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    fontSize: 13,
+    minHeight: 70,
+    textAlignVertical: 'top',
+    marginBottom: 16,
+  },
+  reportBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  reportCancelBtn: {
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  reportCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  reportSubmitBtn: {
+    paddingVertical: 9,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+  },
+  reportSubmitBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

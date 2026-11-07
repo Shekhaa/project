@@ -366,10 +366,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             </View>
 
             <View style={styles.roomMeta}>
-              <Text style={styles.roomTitle} numberOfLines={1}>
+              <Text style={[styles.roomTitle, { color: colors.textPrimary }]} numberOfLines={1}>
                 {roomTitle}
               </Text>
-              <Text style={styles.roomSubtitle}>
+              <Text style={[styles.roomSubtitle, { color: colors.textSecondary }]}>
                 {activeConv.is_ephemeral
                   ? `Self-destructing (${activeConv.duration || 24}h)`
                   : activeConv.is_group
@@ -558,7 +558,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Top Header */}
       <View style={[styles.inboxHeader, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
-        <Text style={styles.inboxTitle}>Campus Messages</Text>
+        <Text style={[styles.inboxTitle, { color: colors.textPrimary }]}>Campus Messages</Text>
         <View style={styles.headerBtnGroup}>
           <TouchableOpacity
             style={pendingRequestsCount > 0 ? styles.requestsPillActive : styles.requestsPill}
@@ -639,8 +639,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                     </Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.directoryName}>{item.full_name || item.email}</Text>
-                    <Text style={styles.directoryEmail}>{item.email}</Text>
+                    <Text style={[styles.directoryName, { color: colors.textPrimary }]}>{item.full_name || item.email}</Text>
+                    <Text style={[styles.directoryEmail, { color: colors.textSecondary }]}>{item.email}</Text>
                   </View>
                   <Text style={styles.startChatLink}>Chat</Text>
                 </TouchableOpacity>
@@ -706,11 +706,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
                 <View style={styles.convBody}>
                   <View style={styles.convTopRow}>
-                    <Text style={styles.convName} numberOfLines={1}>
+                    <Text style={[styles.convName, { color: colors.textPrimary }]} numberOfLines={1}>
                       {item.is_ephemeral ? `🔥 ${name}` : name}
                     </Text>
                     {item.last_message?.created_at && (
-                      <Text style={styles.convTime}>
+                      <Text style={[styles.convTime, { color: colors.textMuted }]}>
                         {new Date(item.last_message.created_at).toLocaleTimeString([], {
                           hour: '2-digit',
                           minute: '2-digit',
@@ -720,7 +720,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                   </View>
 
                   <View style={styles.convBottomRow}>
-                    <Text style={styles.lastMsg} numberOfLines={1}>
+                    <Text style={[styles.lastMsg, { color: colors.textSecondary }]} numberOfLines={1}>
                       {item.last_message?.text
                         ? item.last_message.text.includes('[CAMPUS_POST_CARD:')
                           ? '📎 Shared a post'
@@ -852,6 +852,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+    maxWidth: 680,
+    width: '100%',
+    alignSelf: 'center',
   },
   inboxHeader: {
     flexDirection: 'row',
@@ -1134,6 +1137,9 @@ const styles = StyleSheet.create({
   roomContainer: {
     flex: 1,
     backgroundColor: colors.background,
+    maxWidth: 680,
+    width: '100%',
+    alignSelf: 'center',
   },
   roomHeader: {
     flexDirection: 'row',

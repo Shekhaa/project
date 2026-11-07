@@ -1,7 +1,7 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { DiscussionReply } from '../../services/communityService';
-import { ArrowBigUp, Check, CornerDownRight } from 'lucide-react-native';
+import { ArrowBigUp, Check, CornerDownRight, Trash2, Flag } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
 
 interface DiscussionRepliesProps {
@@ -12,16 +12,21 @@ interface DiscussionRepliesProps {
   onVoteReply: (reply: DiscussionReply) => void;
   onAcceptReply?: (reply: DiscussionReply) => void;
   onReplyToReply: (reply: DiscussionReply) => void;
+  onDeleteReply?: (reply: DiscussionReply) => void;
+  onReportReply?: (reply: DiscussionReply) => void;
   onOpenProfile?: (userId: number) => void;
 }
 
 export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
   replies,
+  currentUserId,
   isQuestionAuthor,
   isSolved,
   onVoteReply,
   onAcceptReply,
   onReplyToReply,
+  onDeleteReply,
+  onReportReply,
   onOpenProfile,
 }) => {
   const { colors, isDark } = useTheme();
@@ -38,9 +43,28 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
     }
   };
 
-  const renderReplyItem = (item: DiscussionReply, depth = 0) => {
+  const handleDeletePrompt = (item: DiscussionReply) => {
+    Alert.alert(
+      'Delete Reply',
+      'Are you sure you want to delete your reply?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => onDeleteReply?.(item),
+        },
+      ]
+    );
+  };
+
+  const renderReplyItem = (item: DiscussionReply, depth = 0, parentName?: string) => {
     const initial = (item.author_name || 'S').trim()[0]?.toUpperCase() || 'S';
     const isNested = depth > 0;
+    const isDeep = depth >= 3;
+    // Cap indent to prevent horizontal blowout: depth 1 gets 14px, depth 2 gets 10px, depth >= 3 gets 0px
+    const indentMargin = depth === 1 ? 14 : depth === 2 ? 10 : 0;
+    const isAuthor = currentUserId && item.author === currentUserId;
 
     return (
       <View
@@ -54,19 +78,29 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
                 : '#f8fafc'
               : colors.surface,
             borderColor: item.is_accepted ? colors.success : colors.cardBorder,
-            marginLeft: isNested ? Math.min(depth * 14, 40) : 0,
-            borderLeftWidth: isNested ? 3 : 1,
+            marginLeft: indentMargin,
+            borderLeftWidth: isNested ? (isDeep ? 3 : 2.5) : 1,
             borderLeftColor: item.is_accepted
               ? colors.success
               : isNested
               ? isDark
-                ? 'rgba(94, 106, 210, 0.6)'
-                : 'rgba(79, 70, 229, 0.45)'
+                ? 'rgba(99, 102, 241, 0.7)'
+                : 'rgba(79, 70, 229, 0.6)'
               : colors.cardBorder,
           },
           item.is_accepted && styles.acceptedReplyCard,
         ]}
       >
+        {/* Deep thread lineage indicator so context is crystal clear without squeezing width */}
+        {isDeep && (
+          <View style={styles.deepLineageRow}>
+            <CornerDownRight size={11} color={colors.primary} />
+            <Text style={[styles.deepLineageText, { color: colors.primary }]}>
+              Thread reply {parentName ? `to @${parentName}` : `(Level ${depth + 1})`}
+            </Text>
+          </View>
+        )}
+
         {/* Author Header */}
         <View style={styles.replyHeader}>
           <TouchableOpacity
@@ -92,13 +126,39 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
             </View>
           </TouchableOpacity>
 
-          {/* Accepted Solution Badge */}
-          {item.is_accepted && (
-            <View style={styles.acceptedBadge}>
-              <Check size={12} color="#10b981" />
-              <Text style={styles.acceptedBadgeText}>ACCEPTED SOLUTION</Text>
-            </View>
-          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            {/* Accepted Solution Badge */}
+            {item.is_accepted && (
+              <View style={styles.acceptedBadge}>
+                <Check size={12} color="#10b981" />
+                <Text style={styles.acceptedBadgeText}>ACCEPTED SOLUTION</Text>
+              </View>
+            )}
+
+            {/* Author Delete Option */}
+            {isAuthor && onDeleteReply && (
+              <TouchableOpacity
+                style={styles.iconActionBtn}
+                onPress={() => handleDeletePrompt(item)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Delete reply"
+              >
+                <Trash2 size={13} color={colors.danger} />
+              </TouchableOpacity>
+            )}
+
+            {/* Classmate Report Option */}
+            {!isAuthor && onReportReply && (
+              <TouchableOpacity
+                style={styles.iconActionBtn}
+                onPress={() => onReportReply(item)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Report reply"
+              >
+                <Flag size={12} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* Content */}
@@ -169,10 +229,10 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
           )}
         </View>
 
-        {/* Nested Child Replies (Recursive Tree at any depth) */}
+        {/* Nested Child Replies (Recursive Tree with controlled indentation) */}
         {item.children && item.children.length > 0 && (
           <View style={styles.childrenContainer}>
-            {item.children.map((child) => renderReplyItem(child, depth + 1))}
+            {item.children.map((child) => renderReplyItem(child, depth + 1, item.author_name))}
           </View>
         )}
       </View>
@@ -294,5 +354,23 @@ const styles = StyleSheet.create({
   },
   childrenContainer: {
     marginTop: 8,
+  },
+  deepLineageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+    opacity: 0.85,
+  },
+  deepLineageText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  iconActionBtn: {
+    padding: 4,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

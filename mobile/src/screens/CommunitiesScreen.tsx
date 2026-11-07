@@ -562,15 +562,26 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
           </View>
         </View>
 
-        {/* Segmented Two-Tab Bar */}
-        <View style={[styles.segmentedTabContainer, { backgroundColor: isDark ? '#0b0f19' : '#f1f5f9', borderBottomColor: colors.cardBorder, borderBottomWidth: 1 }]}>
+        {/* Segmented Two-Tab Bar (Sleek Apple/Linear pill control) */}
+        <View
+          style={[
+            styles.segmentedTabContainer,
+            {
+              backgroundColor: isDark ? '#141516' : '#f1f5f9',
+              borderColor: colors.cardBorder,
+            },
+          ]}
+        >
           <TouchableOpacity
             style={[
               styles.segmentedTab,
-              {
-                backgroundColor: activeTab === 'CHAT' ? colors.primary : isDark ? '#141516' : '#ffffff',
-                borderColor: colors.cardBorder,
-                borderWidth: 1,
+              activeTab === 'CHAT' && {
+                backgroundColor: colors.primary,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.15,
+                shadowRadius: 3,
+                elevation: 2,
               },
             ]}
             onPress={() => setActiveTab('CHAT')}
@@ -585,17 +596,20 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                 },
               ]}
             >
-              Chat
+              💬 Chat
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
               styles.segmentedTab,
-              {
-                backgroundColor: activeTab === 'DISCUSS' ? colors.primary : isDark ? '#141516' : '#ffffff',
-                borderColor: colors.cardBorder,
-                borderWidth: 1,
+              activeTab === 'DISCUSS' && {
+                backgroundColor: colors.primary,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.15,
+                shadowRadius: 3,
+                elevation: 2,
               },
             ]}
             onPress={() => setActiveTab('DISCUSS')}
@@ -610,7 +624,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                 },
               ]}
             >
-              Discuss
+              💡 Discuss
             </Text>
           </TouchableOpacity>
         </View>
@@ -1177,8 +1191,8 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
         <View>
-          <Text style={styles.headerTitle}>Campus Hubs</Text>
-          <Text style={styles.headerSubtitle}>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Campus Hubs</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
             Your verified academic & student communities
           </Text>
         </View>
@@ -1406,6 +1420,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+    maxWidth: 680,
+    width: '100%',
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -1663,28 +1680,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Segmented Two Tabs (Matches Exact Screenshot!)
+  // Segmented Two Tabs (Sleek Linear Pill Group)
   segmentedTabContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#0b0f19',
-    gap: 12,
+    padding: 3,
+    marginHorizontal: 16,
+    marginVertical: 10,
+    borderRadius: 12,
+    maxWidth: 420,
+    width: '92%',
+    alignSelf: 'center',
+    borderWidth: 1,
   },
   segmentedTab: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 10,
-    backgroundColor: '#1e293b',
+    borderRadius: 9,
   },
   segmentedTabActive: {
-    backgroundColor: '#2563eb', // Matches blue button in screenshot
+    backgroundColor: colors.primary,
   },
   segmentedTabText: {
-    color: '#94a3b8',
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700',
   },
   segmentedTabTextActive: {

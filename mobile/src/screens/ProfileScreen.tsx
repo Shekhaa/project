@@ -416,7 +416,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={styles.scrollContent}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={[styles.scrollContent, { maxWidth: 680, width: '100%', alignSelf: 'center' }]}>
       {/* Top Header Card */}
       <View style={[styles.heroCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
         <View style={styles.heroTopActions}>
@@ -434,11 +434,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             </TouchableOpacity>
           )}
           <TouchableOpacity
-            style={styles.settingsIconBtn}
+            style={[styles.settingsIconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
             onPress={() => setSettingsModalVisible(true)}
           >
             <Settings size={14} color={colors.textSecondary} />
-            <Text style={styles.settingsIconText}>Settings</Text>
+            <Text style={[styles.settingsIconText, { color: colors.textSecondary }]}>Settings</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.heroLogoutBtn}
@@ -464,7 +464,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
           <View style={styles.heroIdentity}>
             <View style={styles.nameBadgeRow}>
-              <Text style={styles.fullName}>{currentUser.full_name || 'Campus Student'}</Text>
+              <Text style={[styles.fullName, { color: colors.textPrimary }]}>{currentUser.full_name || 'Campus Student'}</Text>
               {currentUser.verification_tier === 'SEMI_VERIFIED' || !profile?.verified ? (
                 <View style={styles.semiVerifiedTag}>
                   <AlertCircle size={11} color="#f59e0b" />
@@ -477,10 +477,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </View>
               )}
             </View>
-            <Text style={styles.handleText}>
+            <Text style={[styles.handleText, { color: colors.primary }]}>
               @{profile?.username || currentUser.email.split('@')[0]}
             </Text>
-            <Text style={styles.emailText}>{currentUser.email}</Text>
+            <Text style={[styles.emailText, { color: colors.textMuted }]}>{currentUser.email}</Text>
           </View>
         </View>
 
@@ -497,19 +497,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         )}
 
         {profile?.bio ? (
-          <View style={styles.bioContainer}>
-            <Text style={styles.bioText}>{profile.bio}</Text>
+          <View style={[styles.bioContainer, { backgroundColor: colors.surfaceLight, borderLeftColor: colors.primary }]}>
+            <Text style={[styles.bioText, { color: colors.textSecondary }]}>{profile.bio}</Text>
           </View>
         ) : null}
 
         {/* Social Stats Row: Posts | Followers | Following | Credibility */}
-        <View style={styles.statsRow}>
+        <View style={[styles.statsRow, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>{profile?.posts_count ?? userPosts.length}</Text>
-            <Text style={styles.statLabel}>Posts</Text>
+            <Text style={[styles.statNumber, { color: colors.textPrimary }]}>{profile?.posts_count ?? userPosts.length}</Text>
+            <Text style={[styles.statLabel, { color: colors.textMuted }]}>Posts</Text>
           </View>
 
-          <View style={styles.statDivider} />
+          <View style={[styles.statDivider, { backgroundColor: colors.cardBorder }]} />
 
           <TouchableOpacity
             style={styles.statBox}
@@ -520,11 +520,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             }}
             activeOpacity={0.7}
           >
-            <Text style={styles.statNumber}>{profile?.followers_count ?? 0}</Text>
-            <Text style={styles.statLabel}>Followers</Text>
+            <Text style={[styles.statNumber, { color: colors.textPrimary }]}>{profile?.followers_count ?? 0}</Text>
+            <Text style={[styles.statLabel, { color: colors.textMuted }]}>Followers</Text>
           </TouchableOpacity>
 
-          <View style={styles.statDivider} />
+          <View style={[styles.statDivider, { backgroundColor: colors.cardBorder }]} />
 
           <TouchableOpacity
             style={styles.statBox}
@@ -535,91 +535,91 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             }}
             activeOpacity={0.7}
           >
-            <Text style={styles.statNumber}>{profile?.following_count ?? 0}</Text>
-            <Text style={styles.statLabel}>Following</Text>
+            <Text style={[styles.statNumber, { color: colors.textPrimary }]}>{profile?.following_count ?? 0}</Text>
+            <Text style={[styles.statLabel, { color: colors.textMuted }]}>Following</Text>
           </TouchableOpacity>
 
-          <View style={styles.statDivider} />
+          <View style={[styles.statDivider, { backgroundColor: colors.cardBorder }]} />
 
           <View style={styles.statBox}>
             <Text style={[styles.statNumber, { color: '#fbbf24' }]}>⭐ {profile?.credibility_score ?? 0}</Text>
-            <Text style={styles.statLabel}>Credibility</Text>
+            <Text style={[styles.statLabel, { color: colors.textMuted }]}>Credibility</Text>
           </View>
         </View>
 
         {/* Quick Switch Button in Hero - Dev or Staff Only */}
         {(Boolean(__DEV__) || currentUser.is_staff || currentUser.is_superuser) && (
           <TouchableOpacity
-            style={styles.switchButton}
+            style={[styles.switchButton, { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(79, 70, 229, 0.1)', borderColor: isDark ? 'rgba(99, 102, 241, 0.35)' : 'rgba(79, 70, 229, 0.25)' }]}
             onPress={() => setSwitcherModalVisible(true)}
           >
             <Text style={styles.switchButtonIcon}>🔄</Text>
-            <Text style={styles.switchButtonText}>Switch Demo Account (12 Students)</Text>
+            <Text style={[styles.switchButtonText, { color: colors.primary }]}>Switch Demo Account (12 Students)</Text>
           </TouchableOpacity>
         )}
       </View>
 
       {/* Academic Identity Details */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>🏛️ Institutional Enrollment</Text>
+      <View style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+        <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>🏛️ Institutional Enrollment</Text>
 
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>College</Text>
-          <Text style={styles.infoValue}>
+          <Text style={[styles.infoLabel, { color: colors.textMuted }]}>College</Text>
+          <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
             {profile?.college_name || 'Graphic Era University'}
           </Text>
         </View>
-        <View style={styles.divider} />
+        <View style={[styles.divider, { backgroundColor: colors.cardBorder }]} />
 
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Degree / Course</Text>
-          <Text style={styles.infoValue}>{profile?.course_name || 'B.Tech'}</Text>
+          <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Degree / Course</Text>
+          <Text style={[styles.infoValue, { color: colors.textPrimary }]}>{profile?.course_name || 'B.Tech'}</Text>
         </View>
-        <View style={styles.divider} />
+        <View style={[styles.divider, { backgroundColor: colors.cardBorder }]} />
 
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Department / Branch</Text>
-          <Text style={styles.infoValue}>
+          <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Department / Branch</Text>
+          <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
             {profile?.branch_name || 'Computer Science & Engineering'}
           </Text>
         </View>
-        <View style={styles.divider} />
+        <View style={[styles.divider, { backgroundColor: colors.cardBorder }]} />
 
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Academic Cohort</Text>
-          <Text style={styles.infoValue}>
+          <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Academic Cohort</Text>
+          <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
             {profile?.academic_year_name || 'Year 1'} • {profile?.section_name || 'Section A'}
           </Text>
         </View>
-        <View style={styles.divider} />
+        <View style={[styles.divider, { backgroundColor: colors.cardBorder }]} />
 
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Roll / Admission No.</Text>
-          <Text style={styles.infoValue}>
+          <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Roll / Admission No.</Text>
+          <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
             {profile?.admission_number || 'GEU/24/CS/108'}
           </Text>
         </View>
 
         {profile?.show_gender !== false && Boolean(profile?.gender) && (
           <>
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: colors.cardBorder }]} />
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Gender</Text>
-              <Text style={styles.infoValue}>{profile.gender}</Text>
+              <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Gender</Text>
+              <Text style={[styles.infoValue, { color: colors.textPrimary }]}>{profile.gender}</Text>
             </View>
           </>
         )}
       </View>
 
       {/* Privacy & Safe Campus Features */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>🛡️ Privacy & Campus Shield</Text>
+      <View style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+        <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>🛡️ Privacy & Campus Shield</Text>
 
         <View style={styles.privacyFeatureRow}>
           <Text style={styles.privacyIcon}>🎭</Text>
           <View style={styles.privacyCol}>
-            <Text style={styles.privacyHeading}>Anonymous Post Shield</Text>
-            <Text style={styles.privacySub}>
+            <Text style={[styles.privacyHeading, { color: colors.textPrimary }]}>Anonymous Post Shield</Text>
+            <Text style={[styles.privacySub, { color: colors.textSecondary }]}>
               Configured with randomized animal mascots. Your identity is mathematically unlinked.
             </Text>
           </View>
@@ -628,13 +628,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         </View>
 
-        <View style={styles.divider} />
+        <View style={[styles.divider, { backgroundColor: colors.cardBorder }]} />
 
         <View style={styles.privacyFeatureRow}>
           <Text style={styles.privacyIcon}>🔒</Text>
           <View style={styles.privacyCol}>
-            <Text style={styles.privacyHeading}>End-to-End Ephemeral Hangouts</Text>
-            <Text style={styles.privacySub}>
+            <Text style={[styles.privacyHeading, { color: colors.textPrimary }]}>End-to-End Ephemeral Hangouts</Text>
+            <Text style={[styles.privacySub, { color: colors.textSecondary }]}>
               Self-destructing temporary rooms auto-expire in 10m to 24h.
             </Text>
           </View>
@@ -645,10 +645,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       </View>
 
       {/* My Campus Posts Section */}
-      <View style={styles.sectionCard}>
+      <View style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>📝 My Campus Posts</Text>
-          <Text style={styles.sectionBadgeText}>{userPosts.length} published</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>📝 My Campus Posts</Text>
+          <Text style={[styles.sectionBadgeText, { color: colors.textSecondary }]}>{userPosts.length} published</Text>
         </View>
 
         {loadingPosts ? (
@@ -659,8 +659,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         ) : userPosts.length === 0 ? (
           <View style={styles.emptyPostsBox}>
             <Text style={{ fontSize: 24, marginBottom: 6 }}>📭</Text>
-            <Text style={styles.emptyPostsTitle}>No posts yet</Text>
-            <Text style={styles.emptyPostsSub}>
+            <Text style={[styles.emptyPostsTitle, { color: colors.textPrimary }]}>No posts yet</Text>
+            <Text style={[styles.emptyPostsSub, { color: colors.textMuted }]}>
               Share updates, class resources, or thoughts on the campus feed.
             </Text>
           </View>
@@ -717,12 +717,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
       {/* Testing & Multi-User Switcher Section - Dev/Staff Only */}
       {(Boolean(__DEV__) || currentUser.is_staff || currentUser.is_superuser) && (
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
           <View style={styles.switcherHeaderRow}>
-            <Text style={styles.sectionTitle}>👥 Multi-User Testing Bench</Text>
-            <Text style={styles.switcherCount}>{demoUsers.length} Students</Text>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>👥 Multi-User Testing Bench</Text>
+            <Text style={[styles.switcherCount, { color: colors.textMuted }]}>{demoUsers.length} Students</Text>
           </View>
-          <Text style={styles.switcherDescription}>
+          <Text style={[styles.switcherDescription, { color: colors.textSecondary }]}>
             Tap any student to instantly switch sessions and test multi-person group chats, direct messaging, posts, and audio/video calling.
           </Text>
 
@@ -733,7 +733,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               return (
                 <TouchableOpacity
                   key={user.id}
-                  style={[styles.demoCard, isCurrent && styles.demoCardActive]}
+                  style={[
+                    styles.demoCard,
+                    {
+                      backgroundColor: colors.surfaceLight,
+                      borderColor: isCurrent ? colors.primary : colors.cardBorder,
+                    },
+                    isCurrent && {
+                      backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(79, 70, 229, 0.08)',
+                    },
+                  ]}
                   onPress={() => handleSwitchAccount(user.email)}
                   disabled={switchingUser !== null}
                 >
@@ -743,7 +752,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   </View>
                   <View style={styles.demoInfoCol}>
                     <View style={styles.demoNameRow}>
-                      <Text style={[styles.demoName, isCurrent && styles.demoNameActive]}>
+                      <Text style={[styles.demoName, { color: isCurrent ? colors.primary : colors.textPrimary }]}>
                         {user.full_name}
                       </Text>
                       {isCurrent && (
@@ -752,10 +761,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         </View>
                       )}
                     </View>
-                    <Text style={styles.demoMeta}>
+                    <Text style={[styles.demoMeta, { color: colors.textMuted }]}>
                       {user.course} {user.branch ? `• ${user.branch}` : ''}
                     </Text>
-                    <Text style={styles.demoBio} numberOfLines={1}>
+                    <Text style={[styles.demoBio, { color: colors.textSecondary }]} numberOfLines={1}>
                       {user.bio}
                     </Text>
                   </View>
@@ -1210,7 +1219,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         key={opt.key}
                         style={[
                           styles.prefOptionCard,
-                          messagingPreference === opt.key && styles.prefOptionCardActive,
+                          {
+                            backgroundColor: messagingPreference === opt.key
+                              ? (isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(79, 70, 229, 0.08)')
+                              : colors.surfaceLight,
+                            borderColor: messagingPreference === opt.key ? colors.primary : colors.cardBorder,
+                          },
                         ]}
                         onPress={() => handleUpdateMessagingPreference(opt.key as any)}
                         disabled={updatingPrivacy}
@@ -1219,20 +1233,20 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                           <Text
                             style={[
                               styles.prefOptionLabel,
-                              messagingPreference === opt.key && styles.prefOptionLabelActive,
+                              { color: messagingPreference === opt.key ? colors.primary : colors.textPrimary },
                             ]}
                           >
                             {opt.label}
                           </Text>
-                          <Text style={styles.prefOptionSub}>{opt.sub}</Text>
+                          <Text style={[styles.prefOptionSub, { color: colors.textMuted }]}>{opt.sub}</Text>
                         </View>
                         <View
                           style={[
                             styles.radioCircle,
-                            messagingPreference === opt.key && styles.radioCircleActive,
+                            { borderColor: messagingPreference === opt.key ? colors.primary : colors.cardBorder },
                           ]}
                         >
-                          {messagingPreference === opt.key && <View style={styles.radioDot} />}
+                          {messagingPreference === opt.key && <View style={[styles.radioDot, { backgroundColor: colors.primary }]} />}
                         </View>
                       </TouchableOpacity>
                     ))}

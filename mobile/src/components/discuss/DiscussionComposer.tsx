@@ -300,6 +300,9 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    maxWidth: 680,
+    width: '100%',
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',

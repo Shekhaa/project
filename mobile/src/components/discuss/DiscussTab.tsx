@@ -99,13 +99,11 @@ export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser, 
       />
 
       {/* Composer Modal */}
-      {composerVisible && (
-        <DiscussionComposer
-          visible={composerVisible}
-          onClose={() => setComposerVisible(false)}
-          onSubmit={handleCreateDiscussion}
-        />
-      )}
+      <DiscussionComposer
+        visible={composerVisible}
+        onClose={() => setComposerVisible(false)}
+        onSubmit={handleCreateDiscussion}
+      />
 
       {/* Discussion Detail & Replies Modal */}
       {selectedDiscussion && (
@@ -117,6 +115,10 @@ export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser, 
           onClose={() => setSelectedDiscussion(null)}
           onVote={handleVote}
           onOpenProfile={onOpenProfile}
+          onDeleteDiscussion={(id) => {
+            setDiscussions((prev) => prev.filter((d) => d.id !== id));
+            setSelectedDiscussion(null);
+          }}
         />
       )}
     </View>
