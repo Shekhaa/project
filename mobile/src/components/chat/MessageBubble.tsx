@@ -38,39 +38,34 @@ interface MessageBubbleProps {
 }
 
 const AudioPlayerPill: React.FC<{ url: string; fileName: string; isMe: boolean }> = ({ url, fileName, isMe }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const audioRef = useRef<any>(null);
+  const fullUrl = getFullMediaUrl(url);
+
+  if (Platform.OS === 'web') {
+    return (
+      <View style={[styles.audioPill, isMe ? styles.audioPillMe : styles.audioPillThem, { flexDirection: 'column', alignItems: 'stretch', padding: 8, gap: 4, minWidth: 260 }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+          <Mic size={14} color={isMe ? '#ffffff' : '#6366f1'} />
+          <Text style={[styles.audioNameText, isMe ? styles.audioNameMe : styles.audioNameThem, { fontWeight: '700', flex: 1 }]} numberOfLines={1}>
+            {fileName || 'Voice Note'}
+          </Text>
+        </View>
+        {/* @ts-ignore */}
+        <audio
+          src={fullUrl}
+          controls
+          controlsList="nodownload"
+          preload="metadata"
+          style={{ width: '100%', height: 38, borderRadius: 8, outline: 'none' }}
+        />
+      </View>
+    );
+  }
 
   const togglePlay = () => {
-    const fullUrl = getFullMediaUrl(url);
-    if (Platform.OS === 'web' && typeof Audio !== 'undefined') {
-      if (!audioRef.current) {
-        audioRef.current = new Audio(fullUrl);
-        audioRef.current.onended = () => setIsPlaying(false);
-        audioRef.current.onerror = () => setIsPlaying(false);
-      }
-      if (isPlaying) {
-        audioRef.current.pause();
-        setIsPlaying(false);
-      } else {
-        audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
-      }
-    } else {
-      Linking.openURL(fullUrl).catch(() => {
-        Alert.alert('Cannot Play Audio', 'Could not open audio file.');
-      });
-    }
+    Linking.openURL(fullUrl).catch(() => {
+      Alert.alert('Cannot Play Audio', 'Could not open audio file.');
+    });
   };
-
-  useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        try {
-          audioRef.current.pause();
-        } catch {}
-      }
-    };
-  }, []);
 
   return (
     <TouchableOpacity
@@ -79,25 +74,11 @@ const AudioPlayerPill: React.FC<{ url: string; fileName: string; isMe: boolean }
       activeOpacity={0.8}
     >
       <View style={[styles.playBtnCircle, isMe ? styles.playBtnCircleMe : styles.playBtnCircleThem]}>
-        {isPlaying ? <Pause size={14} color="#fff" /> : <Play size={14} color="#fff" style={{ marginLeft: 2 }} />}
+        <Play size={14} color="#fff" style={{ marginLeft: 2 }} />
       </View>
       <View style={styles.audioMetaCol}>
-        <View style={styles.waveformRow}>
-          {[40, 75, 55, 95, 60, 80, 45, 90, 65, 85, 50, 70, 60, 85, 40].map((h, i) => (
-            <View
-              key={i}
-              style={[
-                styles.waveformBar,
-                { height: (h * 16) / 100 },
-                isPlaying
-                  ? { backgroundColor: isMe ? '#ffffff' : '#6366f1' }
-                  : { backgroundColor: isMe ? 'rgba(255,255,255,0.45)' : 'rgba(99,102,241,0.35)' },
-              ]}
-            />
-          ))}
-        </View>
         <Text style={[styles.audioNameText, isMe ? styles.audioNameMe : styles.audioNameThem]} numberOfLines={1}>
-          {isPlaying ? 'Playing Voice Note...' : fileName || 'Audio Note • Tap to play'}
+          {fileName || 'Audio Note • Tap to play'}
         </Text>
       </View>
     </TouchableOpacity>
@@ -204,10 +185,20 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   const allAttachments = [...attachments, ...legacyAttachment];
   const audioAttachments = allAttachments.filter(
-    (a) => a.file_type === 'AUDIO' || a.file_extension?.match(/^(mp3|wav|m4a|aac|ogg|webm|opus)$/i) || a.mime_type?.startsWith('audio/')
+    (a) =>
+      a.file_type === 'AUDIO' ||
+      a.file_name?.toLowerCase().includes('voice_note') ||
+      a.mime_type?.startsWith('audio/') ||
+      a.file_extension?.match(/^(mp3|wav|m4a|aac|ogg|opus)$/i) ||
+      (a.file_extension?.toLowerCase() === 'webm' && !a.mime_type?.startsWith('video/'))
   );
   const videoAttachments = allAttachments.filter(
-    (a) => a.file_type === 'VIDEO' || a.file_extension?.match(/^(mp4|mov|webm|mkv|avi|m4v)$/i) || a.mime_type?.startsWith('video/')
+    (a) =>
+      !audioAttachments.includes(a) &&
+      (a.file_type === 'VIDEO' ||
+        a.mime_type?.startsWith('video/') ||
+        a.file_extension?.match(/^(mp4|mov|mkv|avi|m4v)$/i) ||
+        (a.file_extension?.toLowerCase() === 'webm' && a.mime_type?.startsWith('video/')))
   );
   const imageAttachments = allAttachments.filter((a) => a.file_type === 'IMAGE' && !audioAttachments.includes(a) && !videoAttachments.includes(a));
   const docAttachments = allAttachments.filter((a) => a.file_type === 'DOCUMENT' && !audioAttachments.includes(a) && !videoAttachments.includes(a));

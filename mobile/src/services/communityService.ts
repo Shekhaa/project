@@ -142,6 +142,12 @@ export const communityService = {
     return res.data;
   },
 
+  // Delete community (for owner or admin)
+  async deleteCommunity(slug: string) {
+    const res = await api.delete(`/communities/${slug}/`);
+    return res.data;
+  },
+
   // ==========================================
   // DISCUSSIONS API
   // ==========================================

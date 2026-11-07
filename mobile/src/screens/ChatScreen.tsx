@@ -40,6 +40,7 @@ import {
   Mic,
   Link2,
   UserPlus,
+  MoreVertical,
 } from 'lucide-react-native';
 
 interface ChatScreenProps {
@@ -193,7 +194,22 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         audioStreamRef.current = stream;
         audioChunksRef.current = [];
-        const recorder = new (window as any).MediaRecorder(stream);
+
+        let mimeType = 'audio/webm';
+        const MR = (window as any).MediaRecorder;
+        if (MR && typeof MR.isTypeSupported === 'function') {
+          if (MR.isTypeSupported('audio/webm;codecs=opus')) {
+            mimeType = 'audio/webm;codecs=opus';
+          } else if (MR.isTypeSupported('audio/webm')) {
+            mimeType = 'audio/webm';
+          } else if (MR.isTypeSupported('audio/mp4')) {
+            mimeType = 'audio/mp4';
+          } else if (MR.isTypeSupported('audio/ogg')) {
+            mimeType = 'audio/ogg';
+          }
+        }
+
+        const recorder = mimeType ? new MR(stream, { mimeType }) : new MR(stream);
         mediaRecorderRef.current = recorder;
 
         recorder.ondataavailable = (e: any) => {
@@ -211,7 +227,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           setRecordSeconds((s) => s + 1);
         }, 1000);
       } catch (err: any) {
-        Alert.alert('Microphone Access Needed', 'Please allow microphone access in your browser to record voice notes.');
+        if (Platform.OS === 'web') {
+          window.alert('Please allow microphone access in your browser to record voice notes.');
+        } else {
+          Alert.alert('Microphone Access Needed', 'Please allow microphone access in your browser to record voice notes.');
+        }
       }
     } else {
       setAttachmentPickerVisible(true);
@@ -219,13 +239,17 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   };
 
   const stopAndSendVoiceRecording = async () => {
-    if (!mediaRecorderRef.current) return;
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return;
     if (recordTimerRef.current) clearInterval(recordTimerRef.current);
 
-    mediaRecorderRef.current.onstop = () => {
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+    recorder.onstop = () => {
+      const actualMime = recorder.mimeType || 'audio/webm';
+      const ext = actualMime.includes('mp4') ? 'mp4' : actualMime.includes('ogg') ? 'ogg' : 'webm';
+      const cleanMime = actualMime.split(';')[0];
+      const audioBlob = new Blob(audioChunksRef.current, { type: cleanMime });
       const audioUrl = URL.createObjectURL(audioBlob);
-      const audioFile = new File([audioBlob], `voice_note_${Date.now()}.webm`, { type: 'audio/webm' });
+      const audioFile = new File([audioBlob], `voice_note_${Date.now()}.${ext}`, { type: cleanMime });
 
       if (audioStreamRef.current) {
         audioStreamRef.current.getTracks().forEach((track: any) => track.stop());
@@ -239,16 +263,16 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         size: audioBlob.size,
         sizeFormatted: `${(audioBlob.size / 1024).toFixed(1)} KB`,
         type: 'AUDIO',
-        extension: 'webm',
+        extension: ext,
         file: audioFile,
-        mimeType: 'audio/webm',
+        mimeType: cleanMime,
       };
 
       handleSendAttachments([voiceStaged], '');
     };
 
     try {
-      mediaRecorderRef.current.stop();
+      recorder.stop();
     } catch {}
     setIsRecording(false);
     setRecordSeconds(0);
@@ -410,54 +434,68 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
   const handleClearConversationFromSheet = (conv: Conversation) => {
     setActionConv(null);
-    Alert.alert(
-      'Clear Conversation',
-      'Are you sure you want to clear message history? Messages will be removed from your view, but other participants will keep their copies.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await chatService.clearChatHistory(conv.id);
-              if (activeConv?.id === conv.id) {
-                setMessages([]);
-              }
-              await loadInbox();
-            } catch (e) {
-              Alert.alert('Error', 'Could not clear chat history.');
-            }
-          },
-        },
-      ]
-    );
+    const doClear = async () => {
+      try {
+        await chatService.clearChatHistory(conv.id);
+        if (activeConv?.id === conv.id) {
+          setMessages([]);
+        }
+        await loadInbox();
+      } catch (e) {
+        if (Platform.OS === 'web') {
+          window.alert('Could not clear chat history.');
+        } else {
+          Alert.alert('Error', 'Could not clear chat history.');
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const ok = typeof window !== 'undefined' ? window.confirm('Are you sure you want to clear message history? Messages will be removed from your view, but other participants will keep their copies.') : true;
+      if (ok) doClear();
+    } else {
+      Alert.alert(
+        'Clear Conversation',
+        'Are you sure you want to clear message history? Messages will be removed from your view, but other participants will keep their copies.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Clear', style: 'destructive', onPress: doClear },
+        ]
+      );
+    }
   };
 
   const handleDeleteConversationFromSheet = (conv: Conversation) => {
     setActionConv(null);
-    Alert.alert(
-      'Delete Conversation',
-      'Are you sure you want to remove this conversation from your inbox?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await chatService.deleteConversation(conv.id);
-              if (activeConv?.id === conv.id) {
-                setActiveConv(null);
-              }
-              setConversations((prev) => prev.filter((c) => c.id !== conv.id));
-            } catch (e) {
-              Alert.alert('Error', 'Could not delete conversation.');
-            }
-          },
-        },
-      ]
-    );
+    const doDelete = async () => {
+      try {
+        await chatService.deleteConversation(conv.id);
+        if (activeConv?.id === conv.id) {
+          setActiveConv(null);
+        }
+        setConversations((prev) => prev.filter((c) => c.id !== conv.id));
+      } catch (e) {
+        if (Platform.OS === 'web') {
+          window.alert('Could not delete conversation.');
+        } else {
+          Alert.alert('Error', 'Could not delete conversation.');
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const ok = typeof window !== 'undefined' ? window.confirm('Are you sure you want to remove this conversation from your inbox?') : true;
+      if (ok) doDelete();
+    } else {
+      Alert.alert(
+        'Delete Conversation',
+        'Are you sure you want to remove this conversation from your inbox?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: doDelete },
+        ]
+      );
+    }
   };
 
   const handleUnsendMessage = async (msg: Message) => {
@@ -568,12 +606,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity
-              style={styles.headerActionBtn}
-              onPress={() => handleDeleteConversation(activeConv.id)}
-            >
-              <Trash2 size={20} color="#ef4444" />
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -968,6 +1000,19 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                     ) : null}
                   </View>
                 </View>
+
+                {/* Direct Action Menu (•••) for Delete / Clear */}
+                <TouchableOpacity
+                  style={{ padding: 8, marginLeft: 4, justifyContent: 'center', alignItems: 'center' }}
+                  onPress={(e) => {
+                    e?.stopPropagation?.();
+                    setActionConv(item);
+                  }}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  accessibilityLabel="Conversation options"
+                >
+                  <MoreVertical size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
               </TouchableOpacity>
             );
           }}

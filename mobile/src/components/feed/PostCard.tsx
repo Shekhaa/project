@@ -54,6 +54,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   onDeletePost,
   onArchivePost,
   onAuthorPress,
+  onBookmarkToggle,
 }) => {
   const { colors, isDark } = useTheme();
   const [menuVisible, setMenuVisible] = useState(false);

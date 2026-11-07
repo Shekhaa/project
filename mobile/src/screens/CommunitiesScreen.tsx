@@ -50,11 +50,12 @@ import {
   MessageCircle,
   Link2,
   UserPlus,
+  Mic,
 } from 'lucide-react-native';
 import { MediaGrid } from '../components/media/MediaGrid';
 import { DocumentCard } from '../components/media/DocumentCard';
 import { AttachmentPickerModal, StagedAttachment } from '../components/media/AttachmentPickerModal';
-import { parseSharedPostCard, SharedPostCardData } from '../components/chat/MessageBubble';
+import { MessageBubble, parseSharedPostCard, SharedPostCardData } from '../components/chat/MessageBubble';
 import { SharedPostViewerModal } from '../components/chat/SharedPostViewerModal';
 import { ImageViewerModal } from '../components/media/ImageViewerModal';
 import { DiscussTab } from '../components/discuss/DiscussTab';
@@ -96,6 +97,14 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   const [attachmentPickerVisible, setAttachmentPickerVisible] = useState(false);
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
   const [viewingSharedPost, setViewingSharedPost] = useState<SharedPostCardData | null>(null);
+
+  // Voice Recording State in Hub
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const mediaRecorderRef = useRef<any>(null);
+  const audioChunksRef = useRef<any[]>([]);
+  const audioStreamRef = useRef<any>(null);
+  const recordTimerRef = useRef<any>(null);
 
   // Members Modal State
   const [membersModalVisible, setMembersModalVisible] = useState(false);
@@ -257,6 +266,150 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       Alert.alert('Upload Failed', 'Could not upload selected attachments.');
     } finally {
       setSendingMessage(false);
+    }
+  };
+
+  const formatRecordTime = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const startVoiceRecording = async () => {
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStreamRef.current = stream;
+        audioChunksRef.current = [];
+
+        let mimeType = 'audio/webm';
+        const MR = (window as any).MediaRecorder;
+        if (MR && typeof MR.isTypeSupported === 'function') {
+          if (MR.isTypeSupported('audio/webm;codecs=opus')) {
+            mimeType = 'audio/webm;codecs=opus';
+          } else if (MR.isTypeSupported('audio/webm')) {
+            mimeType = 'audio/webm';
+          } else if (MR.isTypeSupported('audio/mp4')) {
+            mimeType = 'audio/mp4';
+          } else if (MR.isTypeSupported('audio/ogg')) {
+            mimeType = 'audio/ogg';
+          }
+        }
+
+        const recorder = mimeType ? new MR(stream, { mimeType }) : new MR(stream);
+        mediaRecorderRef.current = recorder;
+
+        recorder.ondataavailable = (e: any) => {
+          if (e.data && e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
+
+        recorder.start(100);
+        setIsRecording(true);
+        setRecordSeconds(0);
+
+        if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+        recordTimerRef.current = setInterval(() => {
+          setRecordSeconds((s) => s + 1);
+        }, 1000);
+      } catch (err: any) {
+        if (Platform.OS === 'web') {
+          window.alert('Please allow microphone access in your browser to record voice notes.');
+        } else {
+          Alert.alert('Microphone Access Needed', 'Please allow microphone access in your browser to record voice notes.');
+        }
+      }
+    } else {
+      setAttachmentPickerVisible(true);
+    }
+  };
+
+  const stopAndSendVoiceRecording = async () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return;
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+
+    recorder.onstop = () => {
+      const actualMime = recorder.mimeType || 'audio/webm';
+      const ext = actualMime.includes('mp4') ? 'mp4' : actualMime.includes('ogg') ? 'ogg' : 'webm';
+      const cleanMime = actualMime.split(';')[0];
+      const audioBlob = new Blob(audioChunksRef.current, { type: cleanMime });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audioFile = new File([audioBlob], `voice_note_${Date.now()}.${ext}`, { type: cleanMime });
+
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track: any) => track.stop());
+        audioStreamRef.current = null;
+      }
+
+      const voiceStaged: StagedAttachment = {
+        id: `temp_voice_${Date.now()}`,
+        uri: audioUrl,
+        name: `Voice Note (${formatRecordTime(recordSeconds || 1)})`,
+        size: audioBlob.size,
+        sizeFormatted: `${(audioBlob.size / 1024).toFixed(1)} KB`,
+        type: 'AUDIO',
+        extension: ext,
+        file: audioFile,
+        mimeType: cleanMime,
+      };
+
+      handleSendAttachments([voiceStaged], '');
+    };
+
+    try {
+      recorder.stop();
+    } catch {}
+    setIsRecording(false);
+    setRecordSeconds(0);
+  };
+
+  const cancelVoiceRecording = () => {
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+    if (mediaRecorderRef.current) {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {}
+      mediaRecorderRef.current = null;
+    }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach((track: any) => track.stop());
+      audioStreamRef.current = null;
+    }
+    audioChunksRef.current = [];
+    setIsRecording(false);
+    setRecordSeconds(0);
+  };
+
+  const handleDeleteCommunityFromList = (comm: Community) => {
+    const doDelete = async () => {
+      try {
+        await communityService.deleteCommunity(comm.slug);
+        loadCommunities();
+        if (Platform.OS === 'web') {
+          window.alert(`Community "${comm.name}" deleted.`);
+        } else {
+          Alert.alert('Deleted', `Community "${comm.name}" deleted.`);
+        }
+      } catch (e: any) {
+        const err = e.response?.data?.error || 'Could not delete community.';
+        if (Platform.OS === 'web') {
+          window.alert(err);
+        } else {
+          Alert.alert('Error', err);
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const ok = typeof window !== 'undefined' ? window.confirm(`Are you sure you want to delete "${comm.name}"? All group messages and discussions will be permanently deleted.`) : true;
+      if (ok) doDelete();
+    } else {
+      Alert.alert('Delete Community', `Are you sure you want to delete "${comm.name}"? This action cannot be undone.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: doDelete },
+      ]);
     }
   };
 
@@ -649,126 +802,21 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                       (item.sender_email && currentUser.email && item.sender_email.toLowerCase() === currentUser.email.toLowerCase())
                     : false;
 
-                  const senderName = item.sender_name || 'Campus Student';
-                  const initialLetter = senderName.trim()[0]?.toUpperCase() || '?';
-                  const { cleanText, cardData } = parseSharedPostCard(item.text);
-                  const imageAttachments = (item.attachments || []).filter((a: any) => a.file_type === 'IMAGE');
-                  const docAttachments = (item.attachments || []).filter((a: any) => a.file_type === 'DOCUMENT');
-                  const hasMedia = imageAttachments.length > 0 || docAttachments.length > 0 || Boolean(cardData);
-
                   return (
-                    <View
-                      style={[
-                        styles.bubbleRow,
-                        isMe ? styles.bubbleRowRight : styles.bubbleRowLeft,
-                      ]}
-                    >
-                      {!isMe && (
-                        <TouchableOpacity
-                          disabled={!item.sender}
-                          onPress={() => item.sender && onOpenProfile?.(item.sender)}
-                          activeOpacity={0.7}
-                          style={styles.senderAvatarMini}
-                        >
-                          <Text style={styles.senderAvatarMiniText}>{initialLetter}</Text>
-                        </TouchableOpacity>
-                      )}
-
-                      {/* Deliberate Long Press triggers context menu (NO single tap trigger!) */}
-                      <TouchableOpacity
-                        activeOpacity={0.92}
-                        delayLongPress={450}
-                        onLongPress={() => setActionMessage(item)}
-                        style={[
-                          styles.chatBubble,
-                          isMe ? styles.chatBubbleRight : styles.chatBubbleLeft,
-                          hasMedia && styles.chatBubbleWithMedia,
-                        ]}
-                      >
-                        {!isMe && (
-                          <TouchableOpacity
-                            disabled={!item.sender}
-                            onPress={() => item.sender && onOpenProfile?.(item.sender)}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.senderNameLabel}>{senderName}</Text>
-                          </TouchableOpacity>
-                        )}
-
-                        {/* Media Grid */}
-                        {item.attachments && item.attachments.filter((a: any) => a.file_type === 'IMAGE').length > 0 && (
-                          <View style={{ marginBottom: cleanText ? 6 : 2 }}>
-                            <MediaGrid images={item.attachments.filter((a: any) => a.file_type === 'IMAGE')} />
-                          </View>
-                        )}
-
-                        {/* Document Cards */}
-                        {item.attachments && item.attachments.filter((a: any) => a.file_type === 'DOCUMENT').length > 0 && (
-                          <View style={{ marginBottom: cleanText ? 6 : 2, gap: 4 }}>
-                            {item.attachments
-                              .filter((a: any) => a.file_type === 'DOCUMENT')
-                              .map((doc: any, idx: number) => (
-                                <DocumentCard key={doc.id || idx} attachment={doc} />
-                              ))}
-                          </View>
-                        )}
-
-                        {/* Clean Text */}
-                        {cleanText ? (
-                          <Text style={[styles.bubbleMsgText, isMe && styles.bubbleMsgTextRight]}>
-                            {cleanText}
-                          </Text>
-                        ) : null}
-
-                        {/* Interactive Shared Campus Post Card */}
-                        {cardData && (
-                          <TouchableOpacity
-                            style={styles.sharedPostCard}
-                            onPress={() => {
-                              if (onOpenPostDetail) {
-                                onOpenPostDetail(cardData.id);
-                              } else {
-                                setViewingSharedPost(cardData);
-                              }
-                            }}
-                            activeOpacity={0.88}
-                          >
-                            <View style={styles.sharedPostHeader}>
-                              <Text style={styles.sharedPostAuthor} numberOfLines={1}>
-                                {cardData.author_name}
-                              </Text>
-                              {cardData.community_name && (
-                                <Text style={styles.sharedPostCommunity} numberOfLines={1}>
-                                  🎓 {cardData.community_name}
-                                </Text>
-                              )}
-                            </View>
-                            {cardData.media_type === 'IMAGE' && cardData.media_url ? (
-                              <Image
-                                source={{ uri: cardData.media_url }}
-                                style={styles.sharedPostThumb}
-                                resizeMode="cover"
-                              />
-                            ) : null}
-                            {cardData.content ? (
-                              <Text style={styles.sharedPostSnippet} numberOfLines={2}>
-                                {cardData.content}
-                              </Text>
-                            ) : null}
-                            <View style={styles.sharedPostFooter}>
-                              <Text style={styles.sharedPostCta}>View Original Post ↗</Text>
-                            </View>
-                          </TouchableOpacity>
-                        )}
-
-                        <Text style={[styles.bubbleTime, isMe && styles.bubbleTimeRight]}>
-                          {new Date(item.created_at).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
+                    <MessageBubble
+                      message={item}
+                      isMe={isMe}
+                      isGroup={true}
+                      onLongPress={setActionMessage}
+                      onSenderPress={(senderId) => onOpenProfile?.(senderId)}
+                      onPostCardPress={(cardData) => {
+                        if (onOpenPostDetail) {
+                          onOpenPostDetail(cardData.id);
+                        } else {
+                          setViewingSharedPost(cardData);
+                        }
+                      }}
+                    />
                   );
                 }}
                 ListEmptyComponent={
@@ -783,49 +831,87 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
               />
             )}
 
-            {/* Chat Input Bar */}
-            <View style={[styles.chatInputBar, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
-              <TouchableOpacity
-                style={[styles.attachBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                onPress={() => setAttachmentPickerVisible(true)}
-                activeOpacity={0.7}
-                accessibilityLabel="Attach media or documents"
-              >
-                <Paperclip size={20} color={colors.textMuted} />
-              </TouchableOpacity>
+            {/* Chat Input Bar or Live Voice Note Recording Bar */}
+            {isRecording ? (
+              <View style={[styles.chatInputBar, { backgroundColor: colors.surface, borderTopColor: '#ef4444', justifyContent: 'space-between', paddingVertical: 10 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8, paddingLeft: 6 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#ef4444' }} />
+                  <Text style={{ color: '#ef4444', fontWeight: '700', fontSize: 13 }}>
+                    Recording Voice Note {formatRecordTime(recordSeconds)}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TouchableOpacity
+                    style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: colors.surfaceLight, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                    onPress={cancelVoiceRecording}
+                    activeOpacity={0.7}
+                  >
+                    <Trash2 size={15} color="#94a3b8" />
+                    <Text style={{ color: '#94a3b8', fontSize: 12, fontWeight: '600' }}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8, backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                    onPress={stopAndSendVoiceRecording}
+                    activeOpacity={0.8}
+                  >
+                    <Send size={14} color="#ffffff" />
+                    <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '700' }}>Send</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View style={[styles.chatInputBar, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
+                <TouchableOpacity
+                  style={[styles.attachBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                  onPress={() => setAttachmentPickerVisible(true)}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Attach media or documents"
+                >
+                  <Paperclip size={20} color={colors.textMuted} />
+                </TouchableOpacity>
 
-              <TextInput
-                style={[
-                  styles.chatTextInput,
-                  {
-                    backgroundColor: isDark ? '#141516' : '#f1f5f9',
-                    borderColor: colors.cardBorder,
-                    color: colors.textPrimary,
-                  },
-                ]}
-                placeholder={`Message ${activeCommunity.name}...`}
-                placeholderTextColor={colors.textMuted}
-                value={messageText}
-                onChangeText={setMessageText}
-                multiline
-              />
+                <TouchableOpacity
+                  style={[styles.attachBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                  onPress={startVoiceRecording}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Record voice note"
+                >
+                  <Mic size={20} color={colors.primary} />
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  styles.sendBtn,
-                  { backgroundColor: colors.primary },
-                  (!messageText.trim() || sendingMessage) && styles.sendBtnDisabled,
-                ]}
-                onPress={handleSendHubMessage}
-                disabled={!messageText.trim() || sendingMessage}
-              >
-                {sendingMessage ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Send size={18} color="#fff" />
-                )}
-              </TouchableOpacity>
-            </View>
+                <TextInput
+                  style={[
+                    styles.chatTextInput,
+                    {
+                      backgroundColor: isDark ? '#141516' : '#f1f5f9',
+                      borderColor: colors.cardBorder,
+                      color: colors.textPrimary,
+                    },
+                  ]}
+                  placeholder={`Message ${activeCommunity.name}...`}
+                  placeholderTextColor={colors.textMuted}
+                  value={messageText}
+                  onChangeText={setMessageText}
+                  multiline
+                />
+
+                <TouchableOpacity
+                  style={[
+                    styles.sendBtn,
+                    { backgroundColor: colors.primary },
+                    (!messageText.trim() || sendingMessage) && styles.sendBtnDisabled,
+                  ]}
+                  onPress={handleSendHubMessage}
+                  disabled={!messageText.trim() || sendingMessage}
+                >
+                  {sendingMessage ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Send size={18} color="#fff" />
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         )}
 
@@ -1133,19 +1219,80 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                 {!activeCommunity.is_system_managed && (
                   <TouchableOpacity
                     style={styles.sheetActionItem}
-                    onPress={async () => {
+                    onPress={() => {
                       setMoreMenuVisible(false);
-                      try {
-                        await communityService.toggleJoin(activeCommunity.slug);
-                        setActiveCommunity(null);
-                        loadCommunities();
-                      } catch (e) {
-                        Alert.alert('Error', 'Cannot leave community');
+                      const executeDelete = async () => {
+                        try {
+                          await communityService.deleteCommunity(activeCommunity.slug);
+                          setActiveCommunity(null);
+                          loadCommunities();
+                          if (Platform.OS === 'web') {
+                            window.alert(`Community "${activeCommunity.name}" deleted successfully.`);
+                          } else {
+                            Alert.alert('Deleted', `Community "${activeCommunity.name}" deleted successfully.`);
+                          }
+                        } catch (e: any) {
+                          const err = e.response?.data?.error || 'Could not delete community.';
+                          if (Platform.OS === 'web') {
+                            window.alert(err);
+                          } else {
+                            Alert.alert('Error', err);
+                          }
+                        }
+                      };
+
+                      if (Platform.OS === 'web') {
+                        const ok = typeof window !== 'undefined' ? window.confirm(`Are you sure you want to delete "${activeCommunity.name}"? All group messages and discussions will be permanently deleted.`) : true;
+                        if (ok) executeDelete();
+                      } else {
+                        Alert.alert(
+                          'Delete Community',
+                          `Are you sure you want to delete "${activeCommunity.name}"? This action cannot be undone.`,
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Delete', style: 'destructive', onPress: executeDelete },
+                          ]
+                        );
                       }
                     }}
                   >
                     <Trash2 size={16} color="#ef4444" />
-                    <Text style={[styles.sheetActionText, { color: '#ef4444' }]}>Leave Community</Text>
+                    <Text style={[styles.sheetActionText, { color: '#ef4444', fontWeight: '700' }]}>Delete Community</Text>
+                  </TouchableOpacity>
+                )}
+
+                {!activeCommunity.is_system_managed && (
+                  <TouchableOpacity
+                    style={styles.sheetActionItem}
+                    onPress={() => {
+                      setMoreMenuVisible(false);
+                      const executeLeave = async () => {
+                        try {
+                          await communityService.toggleJoin(activeCommunity.slug);
+                          setActiveCommunity(null);
+                          loadCommunities();
+                        } catch (e) {
+                          if (Platform.OS === 'web') {
+                            window.alert('Cannot leave community');
+                          } else {
+                            Alert.alert('Error', 'Cannot leave community');
+                          }
+                        }
+                      };
+
+                      if (Platform.OS === 'web') {
+                        const ok = typeof window !== 'undefined' ? window.confirm(`Leave ${activeCommunity.name}?`) : true;
+                        if (ok) executeLeave();
+                      } else {
+                        Alert.alert('Leave Community', `Are you sure you want to leave ${activeCommunity.name}?`, [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Leave', style: 'destructive', onPress: executeLeave },
+                        ]);
+                      }
+                    }}
+                  >
+                    <Trash2 size={16} color="#f59e0b" />
+                    <Text style={[styles.sheetActionText, { color: '#f59e0b' }]}>Leave Community</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -1320,6 +1467,18 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   <View style={styles.openCommunityBtn}>
                     <Text style={[styles.openCommunityBtnText, { color: colors.primary }]}>Open Hub Chat & Discussions →</Text>
                   </View>
+                  {!item.is_system_managed && item.community_type === 'CUSTOM' && (
+                    <TouchableOpacity
+                      style={{ padding: 6, marginLeft: 10 }}
+                      onPress={(e) => {
+                        e?.stopPropagation?.();
+                        handleDeleteCommunityFromList(item);
+                      }}
+                      accessibilityLabel="Delete community"
+                    >
+                      <Trash2 size={16} color="#ef4444" />
+                    </TouchableOpacity>
+                  )}
                 </View>
               </TouchableOpacity>
             );

@@ -116,42 +116,72 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
 
   if (!detail) return null;
 
-  const isQuestionAuthor = currentUser && detail.author === currentUser.id;
+  const isQuestionAuthor = currentUser && (
+    String(detail.author) === String(currentUser.id) ||
+    String((detail as any).author_id) === String(currentUser.id) ||
+    detail.author_name === currentUser.full_name ||
+    detail.author_name === currentUser.email?.split('@')[0]
+  );
   const canDeletePost = isQuestionAuthor || currentUser?.is_staff || currentUser?.is_superuser;
   const isQuestion = detail.discussion_type === 'QUESTION';
   const authorInitial = (detail.author_name || 'S').trim()[0]?.toUpperCase() || 'S';
 
   const handleDeleteDiscussion = () => {
     setMenuVisible(false);
-    Alert.alert(
-      'Delete Discussion',
-      'Are you sure you want to delete this discussion post? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await communityService.deleteDiscussion(communitySlug, detail.id);
-              onClose();
-              onDeleteDiscussion?.(detail.id);
-            } catch (err: any) {
-              Alert.alert('Error', err.response?.data?.error || 'Could not delete discussion.');
-            }
-          },
-        },
-      ]
-    );
+    const executeDelete = async () => {
+      try {
+        await communityService.deleteDiscussion(communitySlug, detail.id);
+        onClose();
+        onDeleteDiscussion?.(detail.id);
+      } catch (err: any) {
+        const errorMsg = err.response?.data?.error || 'Could not delete discussion.';
+        if (Platform.OS === 'web') {
+          window.alert(errorMsg);
+        } else {
+          Alert.alert('Error', errorMsg);
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const ok = typeof window !== 'undefined' ? window.confirm('Are you sure you want to delete this discussion post? This action cannot be undone.') : true;
+      if (ok) executeDelete();
+    } else {
+      Alert.alert(
+        'Delete Discussion',
+        'Are you sure you want to delete this discussion post? This action cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: executeDelete },
+        ]
+      );
+    }
   };
 
   const handleDeleteReply = async (reply: DiscussionReply) => {
-    try {
-      await communityService.deleteReply(communitySlug, detail.id, reply.id);
-      const updated = await communityService.getDiscussionDetail(communitySlug, detail.id);
-      setDetail(updated);
-    } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.error || 'Could not delete reply.');
+    const executeDeleteReply = async () => {
+      try {
+        await communityService.deleteReply(communitySlug, detail.id, reply.id);
+        const updated = await communityService.getDiscussionDetail(communitySlug, detail.id);
+        setDetail(updated);
+      } catch (err: any) {
+        const errorMsg = err.response?.data?.error || 'Could not delete reply.';
+        if (Platform.OS === 'web') {
+          window.alert(errorMsg);
+        } else {
+          Alert.alert('Error', errorMsg);
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const ok = typeof window !== 'undefined' ? window.confirm('Are you sure you want to delete this reply?') : true;
+      if (ok) executeDeleteReply();
+    } else {
+      Alert.alert('Delete Reply', 'Are you sure you want to delete this reply?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: executeDeleteReply },
+      ]);
     }
   };
 

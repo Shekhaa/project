@@ -353,11 +353,12 @@ class SendMessageView(APIView):
             is_hidden=True
         ).update(is_hidden=False)
 
+        att_first = attachment or (attachments[0] if attachments else None)
         msg = Message.objects.create(
             conversation=conv,
             sender=request.user,
             text=text,
-            attachment=attachment
+            attachment=att_first
         )
 
         # Handle unified attachments

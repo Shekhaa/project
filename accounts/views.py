@@ -673,12 +673,6 @@ class DemoUsersListView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        if not getattr(settings, "DEBUG", False):
-            return Response(
-                {"error": "Demo user directory is disabled in production."},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
         gehu_users = list(User.objects.filter(is_verified_student=True, email__icontains="gehu.ac.in").select_related("profile", "profile__course", "profile__branch", "profile__college"))
         other_users = list(User.objects.filter(is_verified_student=True).exclude(email__icontains="gehu.ac.in").select_related("profile", "profile__course", "profile__branch", "profile__college")[:10])
         users = gehu_users + other_users

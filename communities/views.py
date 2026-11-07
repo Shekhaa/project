@@ -82,11 +82,36 @@ class CreateCustomCommunityView(APIView):
         )
 
 
-class CommunityDetailView(generics.RetrieveAPIView):
+class CommunityDetailView(generics.RetrieveDestroyAPIView):
     serializer_class = CommunitySerializer
     permission_classes = [IsAuthenticated]
     lookup_field = "slug"
     queryset = Community.objects.all()
+
+    def delete(self, request, *args, **kwargs):
+        community = self.get_object()
+        # Do not allow deleting system-managed or academic hierarchy communities
+        if community.is_system_managed or community.community_type in ["COLLEGE", "COURSE", "BRANCH", "YEAR", "SECTION"]:
+            return Response(
+                {"error": "Academic hierarchy communities are system-managed and cannot be deleted."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        is_owner = (
+            community.owner == request.user or
+            CommunityMember.objects.filter(community=community, user=request.user, role="OWNER").exists() or
+            request.user.is_staff or
+            request.user.is_superuser
+        )
+        if not is_owner:
+            return Response(
+                {"error": "Only community owners or administrators can delete this community."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        community_name = community.name
+        community.delete()
+        return Response({"message": f"Community '{community_name}' deleted successfully."}, status=status.HTTP_200_OK)
 
 
 class JoinLeaveCommunityView(APIView):
