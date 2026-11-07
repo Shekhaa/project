@@ -4,6 +4,7 @@ import { AttachmentItem } from './chatService';
 export interface Post {
   id: number;
   author?: number;
+  is_author?: boolean;
   visibility?: 'GLOBAL' | 'COLLEGE' | 'FOLLOWERS' | 'CONNECTIONS' | 'COMMUNITY' | 'ONLY_ME';
   community?: number | null;
   community_name?: string;

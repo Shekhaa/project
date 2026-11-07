@@ -22,7 +22,30 @@ import { postService, Post } from '../services/postService';
 import { PostCard } from '../components/feed/PostCard';
 import { StudentProfileModal } from '../components/profile/StudentProfileModal';
 import { SocialListModal, SocialModalType } from '../components/profile/SocialListModal';
-import { ShieldCheck, Settings, LogOut, AlertCircle, Trash2, Sun, Moon, Monitor } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  ShieldCheck,
+  Settings,
+  LogOut,
+  AlertCircle,
+  Trash2,
+  Sun,
+  Moon,
+  Monitor,
+  Bookmark,
+  UserX,
+  Bell,
+  BellOff,
+  Sliders,
+  ChevronRight,
+  Check,
+  X,
+  Lock,
+  Eye,
+  EyeOff,
+  Square,
+  Circle,
+} from 'lucide-react-native';
 
 interface ProfileData {
   id: number;
@@ -124,6 +147,145 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   // Account Deletion State
   const [deletingAccount, setDeletingAccount] = useState(false);
+
+  // Avatar Shape State (Default 'SQUARE' / 0 Shape)
+  const [avatarShape, setAvatarShape] = useState<'SQUARE' | 'CIRCLE'>('SQUARE');
+
+  // Saves, Blocked, Info, Preferences & Notification Modals
+  const [savedModalVisible, setSavedModalVisible] = useState(false);
+  const [savedPosts, setSavedPosts] = useState<Post[]>([]);
+  const [loadingSaved, setLoadingSaved] = useState(false);
+
+  const [blockedModalVisible, setBlockedModalVisible] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
+  const [loadingBlocked, setLoadingBlocked] = useState(false);
+  const [unblockingId, setUnblockingId] = useState<number | null>(null);
+
+  const [accountInfoModalVisible, setAccountInfoModalVisible] = useState(false);
+  const [preferencesModalVisible, setPreferencesModalVisible] = useState(false);
+
+  // Notification Controls State
+  const [notifModalVisible, setNotifModalVisible] = useState(false);
+  const [notificationsBlocked, setNotificationsBlocked] = useState(false);
+  const [notifLikes, setNotifLikes] = useState(true);
+  const [notifComments, setNotifComments] = useState(true);
+  const [notifMessages, setNotifMessages] = useState(true);
+
+  // Initial load for shape & notification settings
+  useEffect(() => {
+    AsyncStorage.getItem('@campus_avatar_shape')
+      .then((val) => {
+        if (val === 'CIRCLE' || val === 'SQUARE') {
+          setAvatarShape(val);
+        } else {
+          setAvatarShape('SQUARE');
+        }
+      })
+      .catch(() => {});
+
+    AsyncStorage.getItem('@campus_connect_notifications_blocked')
+      .then((val) => {
+        setNotificationsBlocked(val === 'true');
+      })
+      .catch(() => {});
+
+    AsyncStorage.getItem('@campus_notif_likes')
+      .then((val) => {
+        if (val !== null) setNotifLikes(val === 'true');
+      })
+      .catch(() => {});
+
+    AsyncStorage.getItem('@campus_notif_comments')
+      .then((val) => {
+        if (val !== null) setNotifComments(val === 'true');
+      })
+      .catch(() => {});
+
+    AsyncStorage.getItem('@campus_notif_messages')
+      .then((val) => {
+        if (val !== null) setNotifMessages(val === 'true');
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleToggleAvatarShape = async (newShape: 'SQUARE' | 'CIRCLE') => {
+    setAvatarShape(newShape);
+    await AsyncStorage.setItem('@campus_avatar_shape', newShape).catch(() => {});
+  };
+
+  const loadSavedPosts = async () => {
+    setLoadingSaved(true);
+    try {
+      const savedJson = await AsyncStorage.getItem('campus_saved_posts');
+      const savedIds: number[] = savedJson ? JSON.parse(savedJson) : [];
+      if (savedIds.length === 0) {
+        setSavedPosts([]);
+      } else {
+        const fetches = savedIds.map((id) => postService.getPost(id).catch(() => null));
+        const results = await Promise.all(fetches);
+        const valid = results.filter((p): p is Post => p !== null);
+        setSavedPosts(valid);
+      }
+    } catch (e) {
+      console.log('Error loading saved posts', e);
+    } finally {
+      setLoadingSaved(false);
+    }
+  };
+
+  const handleRemoveSavedPost = async (postId: number) => {
+    try {
+      const savedJson = await AsyncStorage.getItem('campus_saved_posts');
+      let list: number[] = savedJson ? JSON.parse(savedJson) : [];
+      list = list.filter((id) => id !== postId);
+      await AsyncStorage.setItem('campus_saved_posts', JSON.stringify(list));
+      setSavedPosts((prev) => prev.filter((p) => p.id !== postId));
+      Alert.alert('Bookmark Removed', 'Post removed from your saved collection.');
+    } catch (e) {
+      console.log('Error removing saved post', e);
+    }
+  };
+
+  const loadBlockedList = async () => {
+    setLoadingBlocked(true);
+    try {
+      const data = await profileService.getBlockedUsers();
+      setBlockedUsers(data.results || data || []);
+    } catch (e) {
+      console.log('Error loading blocked users', e);
+    } finally {
+      setLoadingBlocked(false);
+    }
+  };
+
+  const handleUnblock = async (userId: number, name: string) => {
+    setUnblockingId(userId);
+    try {
+      await profileService.unblockUser(userId);
+      setBlockedUsers((prev) => prev.filter((u) => (u.user?.id || u.id) !== userId));
+      Alert.alert('Student Unblocked', `${name} has been unblocked.`);
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.message || 'Could not unblock student.');
+    } finally {
+      setUnblockingId(null);
+    }
+  };
+
+  const handleToggleNotificationsBlocked = async (val: boolean) => {
+    setNotificationsBlocked(val);
+    await AsyncStorage.setItem('@campus_connect_notifications_blocked', val ? 'true' : 'false').catch(() => {});
+    Alert.alert(
+      val ? 'Quiet Campus Mode Active 🔕' : 'Notifications Active 🔔',
+      val
+        ? 'All sound and alert notifications have been muted. You can un-mute anytime.'
+        : 'You will receive notifications for likes, comments, and direct messages.'
+    );
+  };
+
+  const handleToggleNotifSub = async (key: string, val: boolean, setter: (v: boolean) => void) => {
+    setter(val);
+    await AsyncStorage.setItem(key, val ? 'true' : 'false').catch(() => {});
+  };
 
   const loadAuditList = async () => {
     setAuditLoading(true);
@@ -458,10 +620,27 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         </View>
 
         <View style={styles.avatarRow}>
-          <View style={styles.avatarCircle}>
+          <TouchableOpacity
+            style={[
+              styles.avatarCircle,
+              {
+                borderRadius: avatarShape === 'SQUARE' ? 0 : 36,
+                borderWidth: avatarShape === 'SQUARE' ? 2 : 3,
+                borderColor: avatarShape === 'SQUARE' ? colors.primary : 'rgba(255,255,255,0.15)',
+              },
+            ]}
+            onPress={() => handleToggleAvatarShape(avatarShape === 'SQUARE' ? 'CIRCLE' : 'SQUARE')}
+            activeOpacity={0.8}
+            accessibilityLabel="Toggle profile picture shape"
+          >
             <Text style={styles.avatarInitials}>{initials}</Text>
             <View style={styles.onlineBadge} />
-          </View>
+            <View style={[styles.shapeBadgePill, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+              <Text style={[styles.shapeBadgeText, { color: colors.primary }]}>
+                {avatarShape === 'SQUARE' ? '0' : '○'}
+              </Text>
+            </View>
+          </TouchableOpacity>
           <View style={styles.heroIdentity}>
             <View style={styles.nameBadgeRow}>
               <Text style={[styles.fullName, { color: colors.textPrimary }]}>{currentUser.full_name || 'Campus Student'}</Text>
@@ -481,6 +660,20 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               @{profile?.username || currentUser.email.split('@')[0]}
             </Text>
             <Text style={[styles.emailText, { color: colors.textMuted }]}>{currentUser.email}</Text>
+
+            {/* 1-Tap Avatar Shape Switcher Pill */}
+            <TouchableOpacity
+              style={[
+                styles.avatarShapeTogglePill,
+                { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+              ]}
+              onPress={() => handleToggleAvatarShape(avatarShape === 'SQUARE' ? 'CIRCLE' : 'SQUARE')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.avatarShapeToggleText, { color: colors.textSecondary }]}>
+                Avatar Style: <Text style={{ color: colors.primary, fontWeight: '700' }}>{avatarShape === 'SQUARE' ? '⬛ 0 Shape (Square)' : '⚪ Round Circle'}</Text>
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -557,6 +750,123 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <Text style={[styles.switchButtonText, { color: colors.primary }]}>Switch Demo Account (12 Students)</Text>
           </TouchableOpacity>
         )}
+      </View>
+
+      {/* ⚡ Student Hub & Quick Access (My Saves, Blocked IDs, Account Info, Preferences, Notification Controls) */}
+      <View style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>⚡ Student Hub & Quick Access</Text>
+          <Text style={[styles.sectionBadgeText, { color: colors.primary }]}>Campus Core</Text>
+        </View>
+        <Text style={[styles.hubDescText, { color: colors.textSecondary }]}>
+          Manage your saved bookmarks, blocked accounts, credentials, safety preferences, and notifications.
+        </Text>
+
+        <View style={styles.hubGrid}>
+          {/* 1. My Saves */}
+          <TouchableOpacity
+            style={[styles.hubCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+            onPress={() => {
+              setSavedModalVisible(true);
+              loadSavedPosts();
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.hubIconBox, { backgroundColor: 'rgba(234, 179, 8, 0.12)' }]}>
+              <Bookmark size={20} color="#eab308" />
+            </View>
+            <View style={styles.hubCardTextCol}>
+              <Text style={[styles.hubCardTitle, { color: colors.textPrimary }]}>My Saves</Text>
+              <Text style={[styles.hubCardSubtitle, { color: colors.textMuted }]}>Bookmarked posts & study notes</Text>
+            </View>
+            <ChevronRight size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          {/* 2. My Blocked IDs */}
+          <TouchableOpacity
+            style={[styles.hubCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+            onPress={() => {
+              setBlockedModalVisible(true);
+              loadBlockedList();
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.hubIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
+              <UserX size={20} color="#ef4444" />
+            </View>
+            <View style={styles.hubCardTextCol}>
+              <Text style={[styles.hubCardTitle, { color: colors.textPrimary }]}>My Blocked IDs</Text>
+              <Text style={[styles.hubCardSubtitle, { color: colors.textMuted }]}>Manage muted & blocked students</Text>
+            </View>
+            <ChevronRight size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          {/* 3. My Account Info */}
+          <TouchableOpacity
+            style={[styles.hubCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+            onPress={() => setAccountInfoModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.hubIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.12)' }]}>
+              <ShieldCheck size={20} color="#3b82f6" />
+            </View>
+            <View style={styles.hubCardTextCol}>
+              <Text style={[styles.hubCardTitle, { color: colors.textPrimary }]}>My Account Info</Text>
+              <Text style={[styles.hubCardSubtitle, { color: colors.textMuted }]}>College credentials & Roll No.</Text>
+            </View>
+            <ChevronRight size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          {/* 4. My Preferences */}
+          <TouchableOpacity
+            style={[styles.hubCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+            onPress={() => setPreferencesModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.hubIconBox, { backgroundColor: 'rgba(168, 85, 247, 0.12)' }]}>
+              <Sliders size={20} color="#a855f7" />
+            </View>
+            <View style={styles.hubCardTextCol}>
+              <Text style={[styles.hubCardTitle, { color: colors.textPrimary }]}>My Preferences</Text>
+              <Text style={[styles.hubCardSubtitle, { color: colors.textMuted }]}>Privacy, DMs & Gender visibility</Text>
+            </View>
+            <ChevronRight size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          {/* 5. Notification Controls */}
+          <TouchableOpacity
+            style={[styles.hubCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+            onPress={() => setNotifModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <View
+              style={[
+                styles.hubIconBox,
+                {
+                  backgroundColor: notificationsBlocked
+                    ? 'rgba(239, 68, 68, 0.12)'
+                    : 'rgba(16, 185, 129, 0.12)',
+                },
+              ]}
+            >
+              {notificationsBlocked ? <BellOff size={20} color="#ef4444" /> : <Bell size={20} color="#10b981" />}
+            </View>
+            <View style={styles.hubCardTextCol}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.hubCardTitle, { color: colors.textPrimary }]}>Notification Settings</Text>
+                {notificationsBlocked && (
+                  <View style={styles.quietBadge}>
+                    <Text style={styles.quietBadgeText}>MUTED</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.hubCardSubtitle, { color: colors.textMuted }]}>
+                {notificationsBlocked ? 'All notifications muted' : 'Alerts, sound & push'}
+              </Text>
+            </View>
+            <ChevronRight size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Academic Identity Details */}
@@ -1532,6 +1842,550 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           setSocialModalVisible(true);
         }}
       />
+
+      {/* 🔖 My Saved Posts Modal */}
+      <Modal
+        visible={savedModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSavedModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
+            <View style={styles.modalHeaderRow}>
+              <View>
+                <Text style={[styles.customModalTitle, { color: colors.textPrimary }]}>🔖 My Saved Posts</Text>
+                <Text style={[styles.customModalSubtitle, { color: colors.textMuted }]}>
+                  {savedPosts.length} saved bookmarks
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.customCloseBtn} onPress={() => setSavedModalVisible(false)}>
+                <Text style={styles.closeBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loadingSaved ? (
+              <View style={styles.modalCenterBox}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.modalCenterText, { color: colors.textSecondary }]}>Loading saved posts...</Text>
+              </View>
+            ) : savedPosts.length === 0 ? (
+              <View style={styles.modalCenterBox}>
+                <Text style={{ fontSize: 36, marginBottom: 8 }}>🔖</Text>
+                <Text style={[styles.modalEmptyTitle, { color: colors.textPrimary }]}>No saved posts</Text>
+                <Text style={[styles.modalEmptySub, { color: colors.textMuted }]}>
+                  Tap the bookmark icon on any post in your campus feed to save it here for quick access later.
+                </Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.customModalScroll} showsVerticalScrollIndicator={false}>
+                <View style={{ gap: 12, paddingBottom: 32 }}>
+                  {savedPosts.map((post) => (
+                    <View
+                      key={post.id}
+                      style={[styles.savedCardBox, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                    >
+                      <View style={styles.savedCardHeader}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.savedAuthorName, { color: colors.textPrimary }]}>{post.author_name}</Text>
+                          <Text style={[styles.savedPostTime, { color: colors.textMuted }]}>
+                            {new Date(post.created_at).toLocaleDateString()}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.unsaveBtn}
+                          onPress={() => handleRemoveSavedPost(post.id)}
+                        >
+                          <Bookmark size={14} color="#eab308" fill="#eab308" />
+                          <Text style={styles.unsaveBtnText}>Unsave</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={[styles.savedContentText, { color: colors.textPrimary }]} numberOfLines={3}>
+                        {post.content}
+                      </Text>
+                      {post.media_url ? (
+                        <View style={styles.savedMediaIndicator}>
+                          <Text style={{ fontSize: 12, color: colors.primary }}>📎 Media attached</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* 🚫 My Blocked IDs Modal */}
+      <Modal
+        visible={blockedModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setBlockedModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
+            <View style={styles.modalHeaderRow}>
+              <View>
+                <Text style={[styles.customModalTitle, { color: colors.textPrimary }]}>🚫 Blocked Students</Text>
+                <Text style={[styles.customModalSubtitle, { color: colors.textMuted }]}>
+                  {blockedUsers.length} blocked accounts
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.customCloseBtn} onPress={() => setBlockedModalVisible(false)}>
+                <Text style={styles.closeBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loadingBlocked ? (
+              <View style={styles.modalCenterBox}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.modalCenterText, { color: colors.textSecondary }]}>Loading blocked students...</Text>
+              </View>
+            ) : blockedUsers.length === 0 ? (
+              <View style={styles.modalCenterBox}>
+                <Text style={{ fontSize: 36, marginBottom: 8 }}>🛡️</Text>
+                <Text style={[styles.modalEmptyTitle, { color: colors.textPrimary }]}>No Blocked Students</Text>
+                <Text style={[styles.modalEmptySub, { color: colors.textMuted }]}>
+                  You haven't blocked anyone. Students you block won't be able to message you or view your profile.
+                </Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.customModalScroll} showsVerticalScrollIndicator={false}>
+                <View style={{ gap: 10, paddingBottom: 32 }}>
+                  {blockedUsers.map((item) => {
+                    const targetUser = item.user || item;
+                    const isUnblocking = unblockingId === targetUser.id;
+                    return (
+                      <View
+                        key={targetUser.id}
+                        style={[styles.blockedUserRow, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                      >
+                        <View style={styles.blockedAvatarBox}>
+                          <Text style={styles.blockedAvatarInitial}>
+                            {(targetUser.full_name || targetUser.name || 'S')[0]?.toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.blockedUserName, { color: colors.textPrimary }]}>
+                            {targetUser.full_name || targetUser.name}
+                          </Text>
+                          <Text style={[styles.blockedUserHandle, { color: colors.primary }]}>
+                            @{targetUser.username || targetUser.email?.split('@')[0]}
+                          </Text>
+                          {targetUser.college_name ? (
+                            <Text style={[styles.blockedUserCollege, { color: colors.textMuted }]}>
+                              {targetUser.college_name}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <TouchableOpacity
+                          style={styles.unblockActionBtn}
+                          onPress={() => handleUnblock(targetUser.id, targetUser.full_name || targetUser.name)}
+                          disabled={isUnblocking}
+                        >
+                          {isUnblocking ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                          ) : (
+                            <Text style={styles.unblockActionText}>Unblock</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* 🏛️ My Account Info Modal */}
+      <Modal
+        visible={accountInfoModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setAccountInfoModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
+            <View style={styles.modalHeaderRow}>
+              <View>
+                <Text style={[styles.customModalTitle, { color: colors.textPrimary }]}>🏛️ Student Account Info</Text>
+                <Text style={[styles.customModalSubtitle, { color: colors.textMuted }]}>
+                  Verified academic enrollment credentials
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.customCloseBtn} onPress={() => setAccountInfoModalVisible(false)}>
+                <Text style={styles.closeBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.customModalScroll} showsVerticalScrollIndicator={false}>
+              <View style={{ gap: 12, paddingBottom: 32 }}>
+                {/* Verification Badge Hero */}
+                <View style={[styles.credentialHeroCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <ShieldCheck size={26} color={currentUser.verification_tier === 'SEMI_VERIFIED' || !profile?.verified ? '#f59e0b' : '#10b981'} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.credentialStatusTitle, { color: colors.textPrimary }]}>
+                        {currentUser.verification_tier === 'SEMI_VERIFIED' || !profile?.verified
+                          ? 'Semi-Verified (ID Pending)'
+                          : 'Fully Verified Student ✅'}
+                      </Text>
+                      <Text style={[styles.credentialStatusSub, { color: colors.textMuted }]}>
+                        {currentUser.verification_tier === 'SEMI_VERIFIED' || !profile?.verified
+                          ? 'Physical college ID scan is pending. Phone presence active on campus.'
+                          : 'Institutional credentials verified via official college ID & email.'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Details Breakdown */}
+                <View style={[styles.infoCardWrapper, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                  <View style={styles.infoModalRow}>
+                    <Text style={[styles.infoModalLabel, { color: colors.textMuted }]}>Legal Full Name</Text>
+                    <Text style={[styles.infoModalVal, { color: colors.textPrimary }]}>{currentUser.full_name || 'Campus Student'}</Text>
+                  </View>
+                  <View style={[styles.infoModalDivider, { backgroundColor: colors.cardBorder }]} />
+
+                  <View style={styles.infoModalRow}>
+                    <Text style={[styles.infoModalLabel, { color: colors.textMuted }]}>Campus Handle</Text>
+                    <Text style={[styles.infoModalVal, { color: colors.primary }]}>@{profile?.username || currentUser.email.split('@')[0]}</Text>
+                  </View>
+                  <View style={[styles.infoModalDivider, { backgroundColor: colors.cardBorder }]} />
+
+                  <View style={styles.infoModalRow}>
+                    <Text style={[styles.infoModalLabel, { color: colors.textMuted }]}>College / University</Text>
+                    <Text style={[styles.infoModalVal, { color: colors.textPrimary }]}>{profile?.college_name || 'Graphic Era University'}</Text>
+                  </View>
+                  <View style={[styles.infoModalDivider, { backgroundColor: colors.cardBorder }]} />
+
+                  <View style={styles.infoModalRow}>
+                    <Text style={[styles.infoModalLabel, { color: colors.textMuted }]}>Degree / Course</Text>
+                    <Text style={[styles.infoModalVal, { color: colors.textPrimary }]}>{profile?.course_name || 'B.Tech'}</Text>
+                  </View>
+                  <View style={[styles.infoModalDivider, { backgroundColor: colors.cardBorder }]} />
+
+                  <View style={styles.infoModalRow}>
+                    <Text style={[styles.infoModalLabel, { color: colors.textMuted }]}>Department / Branch</Text>
+                    <Text style={[styles.infoModalVal, { color: colors.textPrimary }]}>{profile?.branch_name || 'Computer Science & Engineering'}</Text>
+                  </View>
+                  <View style={[styles.infoModalDivider, { backgroundColor: colors.cardBorder }]} />
+
+                  <View style={styles.infoModalRow}>
+                    <Text style={[styles.infoModalLabel, { color: colors.textMuted }]}>Academic Cohort</Text>
+                    <Text style={[styles.infoModalVal, { color: colors.textPrimary }]}>{profile?.academic_year_name || 'Year 1'} • {profile?.section_name || 'Section A'}</Text>
+                  </View>
+                  <View style={[styles.infoModalDivider, { backgroundColor: colors.cardBorder }]} />
+
+                  <View style={styles.infoModalRow}>
+                    <Text style={[styles.infoModalLabel, { color: colors.textMuted }]}>Roll / Admission No.</Text>
+                    <Text style={[styles.infoModalVal, { color: colors.textPrimary }]}>{profile?.admission_number || 'GEU/24/CS/108'}</Text>
+                  </View>
+                  <View style={[styles.infoModalDivider, { backgroundColor: colors.cardBorder }]} />
+
+                  <View style={styles.infoModalRow}>
+                    <Text style={[styles.infoModalLabel, { color: colors.textMuted }]}>Institutional Email</Text>
+                    <Text style={[styles.infoModalVal, { color: colors.textPrimary }]}>{currentUser.email}</Text>
+                  </View>
+
+                  {Boolean(profile?.gender) && (
+                    <>
+                      <View style={[styles.infoModalDivider, { backgroundColor: colors.cardBorder }]} />
+                      <View style={styles.infoModalRow}>
+                        <Text style={[styles.infoModalLabel, { color: colors.textMuted }]}>Gender</Text>
+                        <Text style={[styles.infoModalVal, { color: colors.textPrimary }]}>
+                          {profile?.gender} {profile?.show_gender === false ? '(Hidden on profile)' : '(Public)'}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ⚙️ My Preferences Modal */}
+      <Modal
+        visible={preferencesModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setPreferencesModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
+            <View style={styles.modalHeaderRow}>
+              <View>
+                <Text style={[styles.customModalTitle, { color: colors.textPrimary }]}>⚙️ Preferences & Privacy</Text>
+                <Text style={[styles.customModalSubtitle, { color: colors.textMuted }]}>
+                  Campus safety, avatar style & messaging permissions
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.customCloseBtn} onPress={() => setPreferencesModalVisible(false)}>
+                <Text style={styles.closeBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.customModalScroll} showsVerticalScrollIndicator={false}>
+              <View style={{ gap: 16, paddingBottom: 32 }}>
+                {/* Avatar Shape Preference */}
+                <View style={[styles.prefBlock, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                  <Text style={[styles.prefBlockTitle, { color: colors.textPrimary }]}>Profile Picture Style</Text>
+                  <Text style={[styles.prefBlockSub, { color: colors.textMuted }]}>
+                    Choose between brutalist 0-radius square or classic circular avatar.
+                  </Text>
+                  <View style={styles.shapePrefRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.shapePrefCard,
+                        avatarShape === 'SQUARE' && styles.shapePrefCardActive,
+                        { borderColor: avatarShape === 'SQUARE' ? colors.primary : colors.cardBorder },
+                      ]}
+                      onPress={() => handleToggleAvatarShape('SQUARE')}
+                    >
+                      <View style={[styles.shapePreviewBox, { borderRadius: 0, backgroundColor: colors.primary }]}>
+                        <Text style={styles.shapePreviewLetter}>{initials}</Text>
+                      </View>
+                      <Text style={[styles.shapePrefLabel, avatarShape === 'SQUARE' && { color: colors.primary }]}>
+                        ⬛ 0 Shape (Square)
+                      </Text>
+                      <Text style={[styles.shapePrefDesc, { color: colors.textMuted }]}>Brutalist modern</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.shapePrefCard,
+                        avatarShape === 'CIRCLE' && styles.shapePrefCardActive,
+                        { borderColor: avatarShape === 'CIRCLE' ? colors.primary : colors.cardBorder },
+                      ]}
+                      onPress={() => handleToggleAvatarShape('CIRCLE')}
+                    >
+                      <View style={[styles.shapePreviewBox, { borderRadius: 24, backgroundColor: colors.primary }]}>
+                        <Text style={styles.shapePreviewLetter}>{initials}</Text>
+                      </View>
+                      <Text style={[styles.shapePrefLabel, avatarShape === 'CIRCLE' && { color: colors.primary }]}>
+                        ⚪ Round Circle
+                      </Text>
+                      <Text style={[styles.shapePrefDesc, { color: colors.textMuted }]}>Classic circle</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Account Privacy Toggle */}
+                <View style={[styles.prefBlock, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text style={[styles.prefBlockTitle, { color: colors.textPrimary }]}>Private Account</Text>
+                      <Text style={[styles.prefBlockSub, { color: colors.textMuted }]}>
+                        Only students you approve can follow and view your posts. Non-followers see a locked card.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={isPrivateAccount}
+                      onValueChange={handleTogglePrivateAccount}
+                      trackColor={{ false: colors.cardBorder, true: colors.primary }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                </View>
+
+                {/* Gender Visibility */}
+                <View style={[styles.prefBlock, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text style={[styles.prefBlockTitle, { color: colors.textPrimary }]}>Show Gender on Profile</Text>
+                      <Text style={[styles.prefBlockSub, { color: colors.textMuted }]}>
+                        Allow other students to view your gender on your profile card.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={editShowGender}
+                      onValueChange={(val) => {
+                        setEditShowGender(val);
+                        profileService.updateProfile({ show_gender: val }).catch(() => {});
+                      }}
+                      trackColor={{ false: colors.cardBorder, true: colors.primary }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                </View>
+
+                {/* Messaging Permissions */}
+                <View style={[styles.prefBlock, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                  <Text style={[styles.prefBlockTitle, { color: colors.textPrimary }]}>Who Can Message You</Text>
+                  <Text style={[styles.prefBlockSub, { color: colors.textMuted }]}>
+                    Control who can initiate direct message requests with you on campus.
+                  </Text>
+
+                  <View style={{ gap: 8, marginTop: 10 }}>
+                    {(
+                      [
+                        { key: 'EVERYONE', label: 'Everyone on Campus', desc: 'Any verified student' },
+                        { key: 'FOLLOWING', label: 'People You Follow', desc: 'Only students you follow' },
+                        { key: 'CONNECTIONS_ONLY', label: 'Connections Only', desc: 'Mutual campus connections' },
+                        { key: 'NOBODY', label: 'Nobody', desc: 'Completely close direct messaging' },
+                      ] as const
+                    ).map((opt) => {
+                      const isSelected = messagingPreference === opt.key;
+                      return (
+                        <TouchableOpacity
+                          key={opt.key}
+                          style={[
+                            styles.msgPrefOption,
+                            isSelected && styles.msgPrefOptionActive,
+                            { backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.12)' : colors.surface, borderColor: isSelected ? colors.primary : colors.cardBorder },
+                          ]}
+                          onPress={() => handleUpdateMessagingPreference(opt.key)}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.msgPrefLabel, { color: isSelected ? colors.primary : colors.textPrimary }]}>
+                              {opt.label}
+                            </Text>
+                            <Text style={[styles.msgPrefSub, { color: colors.textMuted }]}>{opt.desc}</Text>
+                          </View>
+                          {isSelected && <Check size={16} color={colors.primary} />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 🔔 My Notification Settings Modal */}
+      <Modal
+        visible={notifModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setNotifModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
+            <View style={styles.modalHeaderRow}>
+              <View>
+                <Text style={[styles.customModalTitle, { color: colors.textPrimary }]}>🔔 Notification Settings</Text>
+                <Text style={[styles.customModalSubtitle, { color: colors.textMuted }]}>
+                  Alert sounds, push notifications & quiet mode
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.customCloseBtn} onPress={() => setNotifModalVisible(false)}>
+                <Text style={styles.closeBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.customModalScroll} showsVerticalScrollIndicator={false}>
+              <View style={{ gap: 16, paddingBottom: 32 }}>
+                {/* Master Switch: Block All Notifications */}
+                <View
+                  style={[
+                    styles.prefBlock,
+                    notificationsBlocked && { backgroundColor: 'rgba(239, 68, 68, 0.08)', borderColor: 'rgba(239, 68, 68, 0.3)' },
+                    !notificationsBlocked && { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                  ]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.prefBlockTitle, { color: notificationsBlocked ? '#ef4444' : colors.textPrimary }]}>
+                          Block All Notifications
+                        </Text>
+                        {notificationsBlocked && (
+                          <View style={styles.quietBadge}>
+                            <Text style={styles.quietBadgeText}>MUTED</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={[styles.prefBlockSub, { color: colors.textMuted }]}>
+                        Quiet Campus Mode / Do Not Disturb. Completely silences all external push and browser notifications.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={notificationsBlocked}
+                      onValueChange={handleToggleNotificationsBlocked}
+                      trackColor={{ false: colors.cardBorder, true: '#ef4444' }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                </View>
+
+                {/* Sub-Switches */}
+                <View
+                  style={[
+                    styles.prefBlock,
+                    { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                    notificationsBlocked && { opacity: 0.5 },
+                  ]}
+                >
+                  <Text style={[styles.prefBlockTitle, { color: colors.textPrimary, marginBottom: 12 }]}>
+                    Granular Alerts
+                  </Text>
+
+                  {/* Likes */}
+                  <View style={styles.notifSubRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.notifSubLabel, { color: colors.textPrimary }]}>Likes & Endorsements</Text>
+                      <Text style={[styles.notifSubDesc, { color: colors.textMuted }]}>
+                        When students like your posts or endorse your credibility
+                      </Text>
+                    </View>
+                    <Switch
+                      value={notifLikes && !notificationsBlocked}
+                      disabled={notificationsBlocked}
+                      onValueChange={(v) => handleToggleNotifSub('@campus_notif_likes', v, setNotifLikes)}
+                      trackColor={{ false: colors.cardBorder, true: colors.primary }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                  <View style={[styles.infoModalDivider, { backgroundColor: colors.cardBorder }]} />
+
+                  {/* Comments */}
+                  <View style={styles.notifSubRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.notifSubLabel, { color: colors.textPrimary }]}>Comments & Discussion</Text>
+                      <Text style={[styles.notifSubDesc, { color: colors.textMuted }]}>
+                        When someone replies to your post or mentions you
+                      </Text>
+                    </View>
+                    <Switch
+                      value={notifComments && !notificationsBlocked}
+                      disabled={notificationsBlocked}
+                      onValueChange={(v) => handleToggleNotifSub('@campus_notif_comments', v, setNotifComments)}
+                      trackColor={{ false: colors.cardBorder, true: colors.primary }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                  <View style={[styles.infoModalDivider, { backgroundColor: colors.cardBorder }]} />
+
+                  {/* Direct Messages */}
+                  <View style={styles.notifSubRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.notifSubLabel, { color: colors.textPrimary }]}>Direct Messages & Requests</Text>
+                      <Text style={[styles.notifSubDesc, { color: colors.textMuted }]}>
+                        When a classmate sends you a DM or message request
+                      </Text>
+                    </View>
+                    <Switch
+                      value={notifMessages && !notificationsBlocked}
+                      disabled={notificationsBlocked}
+                      onValueChange={(v) => handleToggleNotifSub('@campus_notif_messages', v, setNotifMessages)}
+                      trackColor={{ false: colors.cardBorder, true: colors.primary }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -2592,5 +3446,333 @@ const styles = StyleSheet.create({
     color: '#f87171',
     fontSize: 12,
     fontWeight: '700',
+  },
+  // Avatar Shape & Hub Styles
+  shapeBadgePill: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  shapeBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  avatarShapeTogglePill: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  avatarShapeToggleText: {
+    fontSize: 11,
+  },
+  hubDescText: {
+    fontSize: 12,
+    marginBottom: 14,
+    lineHeight: 17,
+  },
+  hubGrid: {
+    gap: 10,
+  },
+  hubCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 12,
+  },
+  hubIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  hubCardTextCol: {
+    flex: 1,
+  },
+  hubCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  hubCardSubtitle: {
+    fontSize: 11,
+  },
+  quietBadge: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  quietBadgeText: {
+    color: '#ef4444',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  customModalSheet: {
+    width: '100%',
+    maxWidth: 620,
+    maxHeight: '88%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    borderTopWidth: 1,
+  },
+  customModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  customModalSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  customCloseBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+  },
+  modalCenterBox: {
+    paddingVertical: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  modalCenterText: {
+    marginTop: 10,
+    fontSize: 13,
+  },
+  modalEmptyTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  modalEmptySub: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  customModalScroll: {
+    marginTop: 14,
+  },
+  savedCardBox: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+  },
+  savedCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  savedAuthorName: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  savedPostTime: {
+    fontSize: 11,
+  },
+  unsaveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(234, 179, 8, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  unsaveBtnText: {
+    color: '#eab308',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  savedContentText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  savedMediaIndicator: {
+    marginTop: 8,
+  },
+  blockedUserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 12,
+  },
+  blockedAvatarBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: '#ef4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  blockedAvatarInitial: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  blockedUserName: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  blockedUserHandle: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  blockedUserCollege: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  unblockActionBtn: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    minWidth: 70,
+    alignItems: 'center',
+  },
+  unblockActionText: {
+    color: '#ef4444',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  credentialHeroCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+  },
+  credentialStatusTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  credentialStatusSub: {
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  infoCardWrapper: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+  },
+  infoModalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  infoModalLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  infoModalVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    maxWidth: '55%',
+    textAlign: 'right',
+  },
+  infoModalDivider: {
+    height: 1,
+    width: '100%',
+    marginVertical: 4,
+  },
+  prefBlock: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+  },
+  prefBlockTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  prefBlockSub: {
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 17,
+  },
+  shapePrefRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+  },
+  shapePrefCard: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    alignItems: 'center',
+  },
+  shapePrefCardActive: {
+    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+  },
+  shapePreviewBox: {
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  shapePreviewLetter: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  shapePrefLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  shapePrefDesc: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  msgPrefOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  msgPrefOptionActive: {
+    borderColor: colors.primary,
+  },
+  msgPrefLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  msgPrefSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  notifSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  notifSubLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  notifSubDesc: {
+    fontSize: 11,
+    marginTop: 2,
   },
 });

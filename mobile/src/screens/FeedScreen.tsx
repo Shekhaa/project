@@ -49,6 +49,28 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Restore persisted feed scope from AsyncStorage on mount
+  useEffect(() => {
+    let isMounted = true;
+    AsyncStorage.getItem('@campus_connect_feed_scope').then((val) => {
+      if (!isMounted || !val) return;
+      if (['ALL', 'GLOBAL', 'COLLEGE', 'FOLLOWING', 'MEDIA', 'RESOURCES', 'SAVED'].includes(val)) {
+        setSelectedScope(val as any);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleSelectScope = (scope: 'ALL' | 'GLOBAL' | 'COLLEGE' | 'FOLLOWING' | 'MEDIA' | 'RESOURCES' | 'SAVED' | undefined) => {
+    setSelectedScope(scope);
+    setSelectedCommunityId(undefined);
+    if (scope) {
+      AsyncStorage.setItem('@campus_connect_feed_scope', scope).catch(() => {});
+    }
+  };
+
   // Instagram-style Pagination State
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -282,9 +304,6 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         <View style={styles.brandRow}>
           <Text style={[styles.brandTitle, { color: colors.textPrimary }]}>Campus</Text>
           <Text style={[styles.brandAccent, { color: colors.primary }]}>Connect</Text>
-          <View style={[styles.campusBadge, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.campusBadgeText, { color: colors.textSecondary }]}>GEU/GEHU</Text>
-          </View>
         </View>
 
         <View style={styles.navActions}>
@@ -490,8 +509,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
                     key={opt.key}
                     style={[styles.filterOptionRow, isActive && styles.filterOptionRowActive]}
                     onPress={() => {
-                      setSelectedScope(opt.key as any);
-                      setSelectedCommunityId(undefined);
+                      handleSelectScope(opt.key as any);
                       setFilterModalVisible(false);
                     }}
                   >
@@ -544,8 +562,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             <TouchableOpacity
               style={styles.resetFilterBtn}
               onPress={() => {
-                setSelectedScope('ALL');
-                setSelectedCommunityId(undefined);
+                handleSelectScope('ALL');
                 setFilterModalVisible(false);
               }}
             >

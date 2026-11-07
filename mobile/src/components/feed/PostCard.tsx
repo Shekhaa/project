@@ -30,6 +30,7 @@ import {
   ShieldCheck,
   Sparkles,
   Image as ImageIcon,
+  Play,
 } from 'lucide-react-native';
 
 interface PostCardProps {
@@ -105,10 +106,14 @@ export const PostCard: React.FC<PostCardProps> = ({
     return '🎭';
   };
 
-  const isAuthor = currentUser && (
-    (currentUser.email && post.author_name === currentUser.email.split('@')[0]) ||
-    (currentUser.full_name && post.author_name === currentUser.full_name) ||
-    (currentUser.username && post.author_username === currentUser.username)
+  const isAuthor = Boolean(
+    post.is_author ||
+    (currentUser && (
+      (post.author && currentUser.id && post.author === currentUser.id) ||
+      (currentUser.email && post.author_name === currentUser.email.split('@')[0]) ||
+      (currentUser.full_name && post.author_name === currentUser.full_name) ||
+      (currentUser.username && post.author_username === currentUser.username)
+    ))
   );
 
   const formatTimestamp = (dateStr: string) => {
@@ -171,6 +176,15 @@ export const PostCard: React.FC<PostCardProps> = ({
   const allImages = [...imageAttachments, ...legacyImages];
   const singleMediaUrl = post.media_url ? getFullMediaUrl(post.media_url) : null;
   const docAttachments = (post.attachments || []).filter((a) => a.file_type === 'DOCUMENT');
+
+  const videoAttachment = (post.attachments || []).find(
+    (a) => a.file_type === 'VIDEO' || a.file_extension?.match(/^(mp4|webm|mov|mkv|avi|m4v)$/i)
+  );
+  const isVideoMedia =
+    post.media_type === 'VIDEO' ||
+    Boolean(videoAttachment) ||
+    Boolean(singleMediaUrl && singleMediaUrl.match(/\.(mp4|webm|mov|mkv|avi|m4v)(\?.*)?$/i));
+  const postVideoUrl = videoAttachment ? getFullMediaUrl(videoAttachment.file_url) : (isVideoMedia ? singleMediaUrl : null);
 
   return (
     <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
@@ -238,8 +252,27 @@ export const PostCard: React.FC<PostCardProps> = ({
         </TouchableOpacity>
       ) : null}
 
-      {/* Post Attachments (Unified Media & Academic Documents) */}
-      {allImages.length > 0 ? (
+      {/* Post Attachments (Playable Video, Images, & Academic Documents) */}
+      {postVideoUrl ? (
+        <View style={{ marginHorizontal: 12, marginVertical: 6, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' }}>
+          {Platform.OS === 'web' ? (
+            <video
+              src={postVideoUrl}
+              controls
+              playsInline
+              style={{ width: '100%', maxHeight: 380, objectFit: 'contain', display: 'block', borderRadius: 12 }}
+            />
+          ) : (
+            <TouchableOpacity
+              style={[styles.imageContainer, { height: 200, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }]}
+              onPress={() => Linking.openURL(postVideoUrl)}
+            >
+              <Play size={40} color="#fff" />
+              <Text style={{ color: '#fff', marginTop: 8, fontWeight: '600' }}>Play Video</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : allImages.length > 0 ? (
         <View style={{ marginHorizontal: 12, marginVertical: 6 }}>
           <MediaGrid images={allImages} />
         </View>

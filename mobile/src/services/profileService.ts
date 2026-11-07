@@ -207,6 +207,12 @@ export const profileService = {
     return res.data;
   },
 
+  // Fetch Blocked Students List
+  async getBlockedUsers(): Promise<{ count: number; results: any[] }> {
+    const res = await api.get('/profile/blocked/');
+    return res.data;
+  },
+
   // Scan Physical College ID Card via OCR & Anti-Fraud
   async scanIdCard(imageBase64: string) {
     const res = await api.post('/profile/scan-id-card/', { image_base64: imageBase64 });

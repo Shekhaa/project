@@ -1,6 +1,8 @@
 import { api } from '../config/api';
 import { Platform } from 'react-native';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 export type NotificationType =
   | 'LIKE'
   | 'COMMENT'
@@ -74,12 +76,21 @@ class NotificationService {
   /**
    * Show external system notification (appears outside phone screen, in notification tray / desktop / browser)
    */
-  showExternalNotification(
+  async showExternalNotification(
     title: string,
     body: string,
     data?: any,
     onClick?: (data: any) => void
   ) {
+    try {
+      const isBlocked = await AsyncStorage.getItem('@campus_connect_notifications_blocked');
+      if (isBlocked === 'true') {
+        return; // Notifications blocked by student
+      }
+    } catch {
+      // ignore
+    }
+
     if (Platform.OS === 'web' && typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'granted') {
         try {

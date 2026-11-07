@@ -104,6 +104,47 @@ const AudioPlayerPill: React.FC<{ url: string; fileName: string; isMe: boolean }
   );
 };
 
+const VideoPlayerPill: React.FC<{ url: string; fileName: string; isMe: boolean }> = ({ url, fileName, isMe }) => {
+  const fullUrl = getFullMediaUrl(url);
+  if (Platform.OS === 'web') {
+    return (
+      <View style={{ borderRadius: 12, overflow: 'hidden', marginVertical: 4, maxWidth: 280, backgroundColor: '#000' }}>
+        <video
+          src={fullUrl}
+          controls
+          playsInline
+          style={{ width: '100%', maxHeight: 240, objectFit: 'contain', display: 'block', borderRadius: 12 }}
+        />
+        {fileName && (
+          <Text style={{ fontSize: 11, color: isMe ? 'rgba(255,255,255,0.7)' : '#64748b', paddingHorizontal: 8, paddingVertical: 4 }}>
+            🎬 {fileName}
+          </Text>
+        )}
+      </View>
+    );
+  }
+  return (
+    <TouchableOpacity
+      style={[styles.audioPill, isMe ? styles.audioPillMe : styles.audioPillThem]}
+      onPress={() => Linking.openURL(fullUrl)}
+    >
+      <Play size={18} color="#fff" />
+      <Text style={[styles.audioNameText, isMe ? styles.audioNameMe : styles.audioNameThem]}>
+        🎬 Video ({fileName || 'Watch Video'})
+      </Text>
+    </TouchableOpacity>
+  );
+};
+
+export const parseAnonMessage = (text: string): { isAnon: boolean; mascot: string; messageBody: string } => {
+  if (!text || !text.startsWith('[ANON_MSG:')) return { isAnon: false, mascot: '', messageBody: text };
+  const endIdx = text.indexOf(']');
+  if (endIdx === -1) return { isAnon: false, mascot: '', messageBody: text };
+  const mascot = text.substring(10, endIdx).trim();
+  const messageBody = text.substring(endIdx + 1).trim();
+  return { isAnon: true, mascot, messageBody };
+};
+
 export const parseSharedPostCard = (text: string): { cleanText: string; cardData: SharedPostCardData | null } => {
   if (!text) return { cleanText: '', cardData: null };
   const marker = '[CAMPUS_POST_CARD:';
@@ -163,11 +204,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   const allAttachments = [...attachments, ...legacyAttachment];
   const audioAttachments = allAttachments.filter(
-    (a) => a.file_type === 'AUDIO' || a.file_extension?.match(/^(mp3|wav|m4a|aac|ogg)$/i)
+    (a) => a.file_type === 'AUDIO' || a.file_extension?.match(/^(mp3|wav|m4a|aac|ogg|webm|opus)$/i) || a.mime_type?.startsWith('audio/')
   );
-  const imageAttachments = allAttachments.filter((a) => a.file_type === 'IMAGE' && !audioAttachments.includes(a));
-  const docAttachments = allAttachments.filter((a) => a.file_type === 'DOCUMENT' && !audioAttachments.includes(a));
-  const hasMedia = imageAttachments.length > 0 || docAttachments.length > 0 || audioAttachments.length > 0 || Boolean(cardData);
+  const videoAttachments = allAttachments.filter(
+    (a) => a.file_type === 'VIDEO' || a.file_extension?.match(/^(mp4|mov|webm|mkv|avi|m4v)$/i) || a.mime_type?.startsWith('video/')
+  );
+  const imageAttachments = allAttachments.filter((a) => a.file_type === 'IMAGE' && !audioAttachments.includes(a) && !videoAttachments.includes(a));
+  const docAttachments = allAttachments.filter((a) => a.file_type === 'DOCUMENT' && !audioAttachments.includes(a) && !videoAttachments.includes(a));
+  const hasMedia = imageAttachments.length > 0 || docAttachments.length > 0 || audioAttachments.length > 0 || videoAttachments.length > 0 || Boolean(cardData);
+
+  const anonInfo = parseAnonMessage(cleanText);
+  const displayText = anonInfo.isAnon ? anonInfo.messageBody : cleanText;
 
   return (
     <View style={[styles.row, isMe ? styles.rowMe : styles.rowThem]}>
@@ -179,7 +226,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           activeOpacity={0.7}
           style={styles.groupAvatar}
         >
-          <Text style={styles.groupAvatarText}>{senderInitial}</Text>
+          <Text style={styles.groupAvatarText}>{anonInfo.isAnon ? '🎭' : senderInitial}</Text>
         </TouchableOpacity>
       )}
 
@@ -193,8 +240,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         onLongPress={() => onLongPress ? onLongPress(message) : onPress && onPress(message)}
         activeOpacity={0.92}
       >
+        {/* Anonymous Mascot Header */}
+        {anonInfo.isAnon && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: isMe ? '#e9d5ff' : '#9333ea' }}>
+              🎭 {anonInfo.mascot} • Green Verified Student
+            </Text>
+          </View>
+        )}
+
         {/* Group Sender Name Header */}
-        {!isMe && isGroup && message.sender_name && (
+        {!isMe && isGroup && !anonInfo.isAnon && message.sender_name && (
           <TouchableOpacity
             disabled={!message.sender}
             onPress={() => message.sender && onSenderPress?.(message.sender)}
@@ -206,14 +262,23 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
         {/* Media Images Grid */}
         {imageAttachments.length > 0 && (
-          <View style={{ marginBottom: cleanText ? 6 : 2 }}>
+          <View style={{ marginBottom: displayText ? 6 : 2 }}>
             <MediaGrid images={imageAttachments} />
+          </View>
+        )}
+
+        {/* Playable Videos */}
+        {videoAttachments.length > 0 && (
+          <View style={{ marginBottom: displayText ? 6 : 2, gap: 4 }}>
+            {videoAttachments.map((vid, idx) => (
+              <VideoPlayerPill key={vid.id || idx} url={vid.file_url} fileName={vid.file_name} isMe={isMe} />
+            ))}
           </View>
         )}
 
         {/* Academic Documents */}
         {docAttachments.length > 0 && (
-          <View style={{ marginBottom: cleanText ? 6 : 2, gap: 4 }}>
+          <View style={{ marginBottom: displayText ? 6 : 2, gap: 4 }}>
             {docAttachments.map((doc, idx) => (
               <DocumentCard key={doc.id || idx} attachment={doc} />
             ))}
@@ -222,7 +287,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
         {/* Voice / Audio Notes */}
         {audioAttachments.length > 0 && (
-          <View style={{ marginBottom: cleanText ? 6 : 2, gap: 4 }}>
+          <View style={{ marginBottom: displayText ? 6 : 2, gap: 4 }}>
             {audioAttachments.map((aud, idx) => (
               <AudioPlayerPill key={aud.id || idx} url={aud.file_url} fileName={aud.file_name} isMe={isMe} />
             ))}
@@ -230,7 +295,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         )}
 
         {/* Text Message */}
-        {cleanText ? <Text style={styles.bubbleText}>{cleanText}</Text> : null}
+        {displayText ? <Text style={styles.bubbleText}>{displayText}</Text> : null}
 
         {/* Interactive Shared Post Card */}
         {cardData && (
@@ -285,10 +350,18 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           </TouchableOpacity>
         )}
 
-        {/* Message Footer (Time) */}
-        <Text style={[styles.timeText, isMe ? styles.timeMe : styles.timeThem]}>
-          {formatTime(message.created_at)}
-        </Text>
+        {/* Message Footer (Time & WhatsApp Delivery Status) */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: isMe ? 'flex-end' : 'flex-start', marginTop: 2 }}>
+          <Text style={[styles.timeText, isMe ? styles.timeMe : styles.timeThem]}>
+            {formatTime(message.created_at)}
+          </Text>
+          {isMe && (message as any).status === 'sending' && (
+            <Text style={{ fontSize: 10, marginLeft: 4, color: 'rgba(255,255,255,0.7)' }}>⏱️</Text>
+          )}
+          {isMe && (message as any).status === 'failed' && (
+            <Text style={{ fontSize: 10, marginLeft: 4, color: '#f87171' }}>⚠️</Text>
+          )}
+        </View>
       </TouchableOpacity>
     </View>
   );

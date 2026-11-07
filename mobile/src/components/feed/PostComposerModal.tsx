@@ -324,10 +324,10 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
 
       const formData = new FormData();
       formData.append('visibility', postScope);
-      if (postScope === 'COMMUNITY') {
+      if (!isAnonymous && postScope === 'COMMUNITY') {
         const targetCommunity = selectedCommunity || communities[0]?.id || 1;
         formData.append('community', String(targetCommunity));
-      } else if (selectedCommunity) {
+      } else if (!isAnonymous && selectedCommunity) {
         formData.append('community', String(selectedCommunity));
       }
       formData.append('content', content.trim());
@@ -470,16 +470,18 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.scopePill, postScope === 'COMMUNITY' && styles.scopePillActive]}
-                onPress={() => setPostScope('COMMUNITY')}
-                activeOpacity={0.8}
-              >
-                <Users size={14} color={postScope === 'COMMUNITY' ? '#38bdf8' : '#94a3b8'} />
-                <Text style={[styles.scopePillText, postScope === 'COMMUNITY' && styles.scopePillTextActive]}>
-                  Specific Community / Hub
-                </Text>
-              </TouchableOpacity>
+              {!isAnonymous && (
+                <TouchableOpacity
+                  style={[styles.scopePill, postScope === 'COMMUNITY' && styles.scopePillActive]}
+                  onPress={() => setPostScope('COMMUNITY')}
+                  activeOpacity={0.8}
+                >
+                  <Users size={14} color={postScope === 'COMMUNITY' ? '#38bdf8' : '#94a3b8'} />
+                  <Text style={[styles.scopePillText, postScope === 'COMMUNITY' && styles.scopePillTextActive]}>
+                    Specific Community / Hub
+                  </Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity
                 style={[styles.scopePill, postScope === 'ONLY_ME' && styles.scopePillActive]}
@@ -494,7 +496,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
             </View>
 
             {/* When Specific Community is chosen: search and select community */}
-            {postScope === 'COMMUNITY' && (
+            {!isAnonymous && postScope === 'COMMUNITY' && (
               <View style={styles.commSearchContainer}>
                 <View style={styles.commSearchBar}>
                   <Search size={14} color="#64748b" style={{ marginRight: 6 }} />
@@ -688,7 +690,12 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
             </View>
             <Switch
               value={isAnonymous}
-              onValueChange={setIsAnonymous}
+              onValueChange={(val) => {
+                setIsAnonymous(val);
+                if (val && postScope === 'COMMUNITY') {
+                  setPostScope('COLLEGE');
+                }
+              }}
               trackColor={{ false: '#334155', true: '#7c3aed' }}
               thumbColor={isAnonymous ? '#c084fc' : '#94a3b8'}
             />

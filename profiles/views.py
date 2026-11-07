@@ -910,3 +910,30 @@ class UnblockUserView(APIView):
 
         return Response({"is_blocked": False, "message": "Unblocked user successfully."})
 
+
+class BlockedUsersListView(APIView):
+    """
+    GET /api/profile/blocked/
+    Returns list of students blocked by the requesting user.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        blocked_qs = UserBlock.objects.filter(blocker=request.user).select_related("blocked", "blocked__profile", "blocked__profile__college")
+        results = []
+        for b in blocked_qs:
+            target = b.blocked
+            prof = getattr(target, "profile", None)
+            college_name = prof.college.name if (prof and prof.college) else ""
+            avatar_url = prof.profile_picture.url if (prof and prof.profile_picture) else None
+            results.append({
+                "id": target.id,
+                "full_name": target.full_name or (prof.username if prof else target.email.split("@")[0]),
+                "username": prof.username if prof else "",
+                "email": target.email,
+                "avatar": avatar_url,
+                "college_name": college_name,
+                "blocked_at": b.created_at,
+            })
+        return Response({"count": len(results), "results": results})
+

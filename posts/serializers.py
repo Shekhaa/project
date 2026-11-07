@@ -87,6 +87,7 @@ class CommentSerializer(serializers.ModelSerializer):
 
 class PostSerializer(serializers.ModelSerializer):
     author = serializers.SerializerMethodField()
+    is_author = serializers.SerializerMethodField()
     images = PostImageSerializer(many=True, read_only=True)
     attachments = MediaAttachmentSerializer(many=True, read_only=True)
     total_likes = serializers.SerializerMethodField()
@@ -111,6 +112,7 @@ class PostSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "author",
+            "is_author",
             "visibility",
             "community",
             "community_name",
@@ -143,6 +145,7 @@ class PostSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "author",
+            "is_author",
             "community_name",
             "community_slug",
             "author_college_name",
@@ -176,6 +179,12 @@ class PostSerializer(serializers.ModelSerializer):
         if obj.is_anonymous:
             return None
         return obj.author_id
+
+    def get_is_author(self, obj):
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            return obj.author_id == request.user.id
+        return False
 
     def get_author_name(self, obj):
         # Zero-leak sanitization

@@ -6,13 +6,22 @@ from django.conf import settings
 def attachment_upload_path(instance, filename):
     ext = os.path.splitext(filename)[1].lower()
     random_filename = f"{uuid.uuid4().hex}{ext}"
-    subfolder = "images" if instance.file_type == "IMAGE" else "documents"
+    if instance.file_type == "IMAGE":
+        subfolder = "images"
+    elif instance.file_type == "AUDIO":
+        subfolder = "audio"
+    elif instance.file_type == "VIDEO":
+        subfolder = "videos"
+    else:
+        subfolder = "documents"
     return os.path.join("attachments", subfolder, random_filename)
 
 class MediaAttachment(models.Model):
     TYPE_CHOICES = (
         ("IMAGE", "Image / Photo"),
         ("DOCUMENT", "Academic Document"),
+        ("AUDIO", "Voice Note / Audio"),
+        ("VIDEO", "Video Recording / Media"),
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

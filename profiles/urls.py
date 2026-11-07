@@ -21,6 +21,7 @@ from .views import (
     UpdatePrivacySettingsView,
     BlockUserView,
     UnblockUserView,
+    BlockedUsersListView,
 )
 
 urlpatterns = [
@@ -51,5 +52,6 @@ urlpatterns = [
     path("settings/privacy/", UpdatePrivacySettingsView.as_view(), name="profile-privacy-settings"),
     path("block/<int:user_id>/", BlockUserView.as_view(), name="profile-block-user"),
     path("unblock/<int:user_id>/", UnblockUserView.as_view(), name="profile-unblock-user"),
+    path("blocked/", BlockedUsersListView.as_view(), name="profile-blocked-list"),
 ]
 

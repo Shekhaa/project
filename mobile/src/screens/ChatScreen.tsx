@@ -81,6 +81,17 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
   const [attachmentPickerVisible, setAttachmentPickerVisible] = useState(false);
 
+  // Live Voice Note Recording State (Instagram / WhatsApp style)
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const mediaRecorderRef = useRef<any>(null);
+  const audioChunksRef = useRef<any[]>([]);
+  const recordTimerRef = useRef<any>(null);
+  const audioStreamRef = useRef<any>(null);
+
+  // Anonymous Messaging (Green Verified Only)
+  const [isAnonMode, setIsAnonMode] = useState(false);
+
   // Group Invite & Add Members Modals (Instagram Style)
   const [addMembersModalVisible, setAddMembersModalVisible] = useState(false);
   const [inviteLinkModalVisible, setInviteLinkModalVisible] = useState(false);
@@ -170,18 +181,139 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   };
 
+  const formatRecordTime = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const startVoiceRecording = async () => {
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStreamRef.current = stream;
+        audioChunksRef.current = [];
+        const recorder = new (window as any).MediaRecorder(stream);
+        mediaRecorderRef.current = recorder;
+
+        recorder.ondataavailable = (e: any) => {
+          if (e.data && e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
+
+        recorder.start(100);
+        setIsRecording(true);
+        setRecordSeconds(0);
+
+        if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+        recordTimerRef.current = setInterval(() => {
+          setRecordSeconds((s) => s + 1);
+        }, 1000);
+      } catch (err: any) {
+        Alert.alert('Microphone Access Needed', 'Please allow microphone access in your browser to record voice notes.');
+      }
+    } else {
+      setAttachmentPickerVisible(true);
+    }
+  };
+
+  const stopAndSendVoiceRecording = async () => {
+    if (!mediaRecorderRef.current) return;
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+
+    mediaRecorderRef.current.onstop = () => {
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audioFile = new File([audioBlob], `voice_note_${Date.now()}.webm`, { type: 'audio/webm' });
+
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track: any) => track.stop());
+        audioStreamRef.current = null;
+      }
+
+      const voiceStaged: StagedAttachment = {
+        id: `temp_voice_${Date.now()}`,
+        uri: audioUrl,
+        name: `Voice Note (${formatRecordTime(recordSeconds || 1)})`,
+        size: audioBlob.size,
+        sizeFormatted: `${(audioBlob.size / 1024).toFixed(1)} KB`,
+        type: 'AUDIO',
+        extension: 'webm',
+        file: audioFile,
+        mimeType: 'audio/webm',
+      };
+
+      handleSendAttachments([voiceStaged], '');
+    };
+
+    try {
+      mediaRecorderRef.current.stop();
+    } catch {}
+    setIsRecording(false);
+    setRecordSeconds(0);
+  };
+
+  const cancelVoiceRecording = () => {
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+    if (mediaRecorderRef.current) {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {}
+      mediaRecorderRef.current = null;
+    }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach((track: any) => track.stop());
+      audioStreamRef.current = null;
+    }
+    audioChunksRef.current = [];
+    setIsRecording(false);
+    setRecordSeconds(0);
+  };
+
+  const toggleAnonMode = () => {
+    if (currentUser?.verification_tier !== 'FULLY_VERIFIED') {
+      Alert.alert(
+        'Green Badge Required 🛡️',
+        'Anonymous campus messaging is exclusive to Green-Verified students to maintain a trusted campus community. Please verify your student ID.'
+      );
+      return;
+    }
+    setIsAnonMode(!isAnonMode);
+  };
+
   const handleSendMessage = async () => {
     if (!activeConv || !inputMessage.trim() || sending) return;
-    const textToSend = inputMessage.trim();
+    let textToSend = inputMessage.trim();
+    if (isAnonMode) {
+      const mascots = ['Anonymous Owl', 'Anonymous Fox', 'Anonymous Tiger', 'Anonymous Panda', 'Anonymous Falcon'];
+      const chosenMascot = mascots[Math.floor(Math.random() * mascots.length)];
+      textToSend = `[ANON_MSG: ${chosenMascot}] ${textToSend}`;
+    }
     setInputMessage('');
+
+    const tempId = `temp_${Date.now()}`;
+    const optimisticMsg: Message = {
+      id: tempId as any,
+      conversation: activeConv.id as any,
+      sender: currentUser?.id,
+      sender_name: isAnonMode ? 'Anonymous Mascot' : (currentUser?.full_name || 'You'),
+      text: textToSend,
+      attachments: [],
+      created_at: new Date().toISOString(),
+      is_read: false,
+      status: 'sending' as any,
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
 
     try {
       setSending(true);
       const sent = await chatService.sendMessage(activeConv.id, textToSend);
-      setMessages((prev) => [...prev, sent]);
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...sent, status: 'sent' } : m)));
     } catch (e) {
-      Alert.alert('Error', 'Could not deliver message.');
-      setInputMessage(textToSend);
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as any } : m)));
+      Alert.alert('Delivery Failed', 'Could not deliver message.');
     } finally {
       setSending(false);
     }
@@ -189,18 +321,52 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
   const handleSendAttachments = async (staged: StagedAttachment[], caption: string) => {
     if (!activeConv) return;
+    const tempId = `temp_att_msg_${Date.now()}`;
+    let finalCaption = caption || '';
+    if (isAnonMode && finalCaption) {
+      const mascots = ['Anonymous Owl', 'Anonymous Fox', 'Anonymous Tiger', 'Anonymous Panda', 'Anonymous Falcon'];
+      const chosenMascot = mascots[Math.floor(Math.random() * mascots.length)];
+      finalCaption = `[ANON_MSG: ${chosenMascot}] ${finalCaption}`;
+    }
+
+    const optimisticMsg: Message = {
+      id: tempId as any,
+      conversation: activeConv.id as any,
+      sender: currentUser?.id,
+      sender_name: isAnonMode ? 'Anonymous Mascot' : (currentUser?.full_name || 'You'),
+      text: finalCaption,
+      created_at: new Date().toISOString(),
+      attachments: staged.map((item, idx) => ({
+        id: `temp_att_${idx}`,
+        file_url: item.uri,
+        download_url: item.uri,
+        file_name: item.name,
+        file_type: item.type as any,
+        file_extension: item.extension || item.name.split('.').pop() || '',
+        mime_type: item.mimeType || '',
+        file_size: item.size || 0,
+        file_size_formatted: item.sizeFormatted || '',
+        created_at: new Date().toISOString(),
+      })),
+      is_read: false,
+      status: 'sending' as any,
+    };
+
+    // Instant optimistic delivery into thread so user is never frozen!
+    setMessages((prev) => [...prev, optimisticMsg]);
+
     try {
       const filesToSend = staged.map((item) => ({
         file: item.file,
         uri: item.uri,
         name: item.name,
-        type: item.type === 'IMAGE' ? 'image/jpeg' : 'application/octet-stream',
+        type: item.mimeType || (item.type === 'IMAGE' ? 'image/jpeg' : (item.type === 'AUDIO' ? 'audio/webm' : (item.type === 'VIDEO' ? 'video/mp4' : 'application/octet-stream'))),
       }));
-      const sent = await chatService.sendMessageWithAttachments(activeConv.id, caption, filesToSend);
-      setMessages((prev) => [...prev, sent]);
+      const sent = await chatService.sendMessageWithAttachments(activeConv.id, finalCaption, filesToSend);
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...sent, status: 'sent' } : m)));
     } catch (err: any) {
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as any } : m)));
       Alert.alert('Upload Failed', err.response?.data?.error || err.message || 'Could not send attachments.');
-      throw err;
     }
   };
 
@@ -443,47 +609,105 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           />
         )}
 
-        {/* Bottom Message Input Bar */}
-        <View style={[styles.inputArea, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
-          <TouchableOpacity
-            style={styles.attachBtn}
-            onPress={() => setAttachmentPickerVisible(true)}
-            activeOpacity={0.7}
-            accessibilityLabel="Share media or document"
-          >
-            <Paperclip size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
+        {/* Anonymous Mode Active Indicator Banner */}
+        {isAnonMode && (
+          <View style={{ paddingHorizontal: 14, paddingVertical: 6, backgroundColor: isDark ? 'rgba(147, 51, 234, 0.15)' : 'rgba(147, 51, 234, 0.1)', borderTopWidth: 1, borderColor: 'rgba(147, 51, 234, 0.25)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 11, color: isDark ? '#c084fc' : '#7e22ce', fontWeight: '600' }}>
+              🎭 Anonymous DM Active • Your real name is hidden. Sent as an Anonymous Mascot.
+            </Text>
+            <TouchableOpacity onPress={() => setIsAnonMode(false)}>
+              <X size={14} color={isDark ? '#c084fc' : '#7e22ce'} />
+            </TouchableOpacity>
+          </View>
+        )}
 
-          <TouchableOpacity
-            style={styles.attachBtn}
-            onPress={() => setAttachmentPickerVisible(true)}
-            activeOpacity={0.7}
-            accessibilityLabel="Send voice note or audio"
-          >
-            <Mic size={20} color={colors.primary} />
-          </TouchableOpacity>
+        {/* Bottom Message Input Bar / Live Voice Recording Bar */}
+        {isRecording ? (
+          <View style={[styles.recordingBar, { backgroundColor: isDark ? '#1f1315' : '#fef2f2', borderColor: '#ef4444' }]}>
+            <View style={styles.recordingLeft}>
+              <View style={styles.pulsingRedDot} />
+              <Text style={[styles.recordingText, { color: '#ef4444' }]}>
+                🔴 Recording Voice Note {formatRecordTime(recordSeconds)}
+              </Text>
+            </View>
+            <View style={styles.recordingActions}>
+              <TouchableOpacity
+                style={styles.cancelRecordBtn}
+                onPress={cancelVoiceRecording}
+                activeOpacity={0.7}
+              >
+                <Trash2 size={16} color="#94a3b8" />
+                <Text style={styles.cancelRecordText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.sendRecordBtn}
+                onPress={stopAndSendVoiceRecording}
+                activeOpacity={0.8}
+              >
+                <Send size={15} color="#ffffff" />
+                <Text style={styles.sendRecordText}>Send</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <View style={[styles.inputArea, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
+            <TouchableOpacity
+              style={styles.attachBtn}
+              onPress={() => setAttachmentPickerVisible(true)}
+              activeOpacity={0.7}
+              accessibilityLabel="Share media or document"
+            >
+              <Paperclip size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
 
-          <TextInput
-            style={[styles.messageInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
-            placeholder="Type a message..."
-            placeholderTextColor={colors.textMuted}
-            value={inputMessage}
-            onChangeText={setInputMessage}
-            multiline
-            maxLength={1000}
-          />
-          <TouchableOpacity
-            style={[styles.sendButton, (!inputMessage.trim() || sending) && styles.sendButtonDisabled]}
-            onPress={handleSendMessage}
-            disabled={!inputMessage.trim() || sending}
-          >
-            {sending ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Send size={18} color="#fff" />
-            )}
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              style={styles.attachBtn}
+              onPress={startVoiceRecording}
+              activeOpacity={0.7}
+              accessibilityLabel="Hold or tap to record voice note"
+            >
+              <Mic size={20} color={colors.primary} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.anonToggleBtn,
+                {
+                  backgroundColor: isAnonMode ? (isDark ? 'rgba(147, 51, 234, 0.25)' : 'rgba(147, 51, 234, 0.12)') : colors.surfaceLight,
+                  borderColor: isAnonMode ? '#a855f7' : colors.cardBorder,
+                },
+              ]}
+              onPress={toggleAnonMode}
+              activeOpacity={0.8}
+              accessibilityLabel="Toggle anonymous message"
+            >
+              <Text style={[styles.anonToggleText, { color: isAnonMode ? '#a855f7' : colors.textMuted }]}>
+                🎭 {isAnonMode ? 'Anon ON' : 'Anon'}
+              </Text>
+            </TouchableOpacity>
+
+            <TextInput
+              style={[styles.messageInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
+              placeholder={isAnonMode ? "Type anonymous message..." : "Type a message..."}
+              placeholderTextColor={colors.textMuted}
+              value={inputMessage}
+              onChangeText={setInputMessage}
+              multiline
+              maxLength={1000}
+            />
+            <TouchableOpacity
+              style={[styles.sendButton, (!inputMessage.trim() || sending) && styles.sendButtonDisabled]}
+              onPress={handleSendMessage}
+              disabled={!inputMessage.trim() || sending}
+            >
+              {sending ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Send size={18} color="#fff" />
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* WhatsApp-Style Media & Document Attachment Drawer */}
         <AttachmentPickerModal
@@ -1260,5 +1484,75 @@ const styles = StyleSheet.create({
   actionSheetText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  recordingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+  },
+  recordingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pulsingRedDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#ef4444',
+  },
+  recordingText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  recordingActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cancelRecordBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: 'rgba(148, 163, 184, 0.15)',
+    gap: 4,
+  },
+  cancelRecordText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  sendRecordBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: '#10b981',
+    gap: 4,
+  },
+  sendRecordText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  anonToggleBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginRight: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  anonToggleText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

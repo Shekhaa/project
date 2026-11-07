@@ -11,9 +11,13 @@ from .models import MediaAttachment
 # Upload Restrictions
 MAX_IMAGE_SIZE = 15 * 1024 * 1024  # 15 MB
 MAX_DOC_SIZE = 25 * 1024 * 1024    # 25 MB
+MAX_AUDIO_SIZE = 25 * 1024 * 1024  # 25 MB
+MAX_VIDEO_SIZE = 100 * 1024 * 1024 # 100 MB
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 ALLOWED_DOC_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".csv", ".zip"}
+ALLOWED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".webm", ".opus"}
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
 
 # Magic bytes signature validation
 MAGIC_SIGNATURES = {
@@ -57,12 +61,20 @@ class AttachmentService:
             file_type = "IMAGE"
             if size > MAX_IMAGE_SIZE:
                 raise ValidationError(f"Image '{sanitized_name}' exceeds 15 MB limit.")
+        elif ext in ALLOWED_AUDIO_EXTENSIONS:
+            file_type = "AUDIO"
+            if size > MAX_AUDIO_SIZE:
+                raise ValidationError(f"Audio '{sanitized_name}' exceeds 25 MB limit.")
+        elif ext in ALLOWED_VIDEO_EXTENSIONS:
+            file_type = "VIDEO"
+            if size > MAX_VIDEO_SIZE:
+                raise ValidationError(f"Video '{sanitized_name}' exceeds 100 MB limit.")
         elif ext in ALLOWED_DOC_EXTENSIONS:
             file_type = "DOCUMENT"
             if size > MAX_DOC_SIZE:
                 raise ValidationError(f"Document '{sanitized_name}' exceeds 25 MB limit.")
         else:
-            allowed_all = ", ".join(sorted(ALLOWED_IMAGE_EXTENSIONS | ALLOWED_DOC_EXTENSIONS))
+            allowed_all = ", ".join(sorted(ALLOWED_IMAGE_EXTENSIONS | ALLOWED_DOC_EXTENSIONS | ALLOWED_AUDIO_EXTENSIONS | ALLOWED_VIDEO_EXTENSIONS))
             raise ValidationError(f"Unsupported file type '{ext}'. Allowed types: {allowed_all}")
 
         # Magic byte inspection (read first 512 bytes safely)
@@ -85,7 +97,14 @@ class AttachmentService:
         # Determine MIME type
         mime_type, _ = mimetypes.guess_type(sanitized_name)
         if not mime_type:
-            mime_type = "image/jpeg" if file_type == "IMAGE" else "application/octet-stream"
+            if file_type == "IMAGE":
+                mime_type = "image/jpeg"
+            elif file_type == "AUDIO":
+                mime_type = "audio/webm" if ext == ".webm" else "audio/mpeg"
+            elif file_type == "VIDEO":
+                mime_type = "video/webm" if ext == ".webm" else "video/mp4"
+            else:
+                mime_type = "application/octet-stream"
 
         return {
             "file": uploaded_file,

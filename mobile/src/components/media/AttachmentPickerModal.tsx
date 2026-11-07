@@ -23,6 +23,7 @@ import {
   Zap,
   Mic,
   Music,
+  Video,
 } from 'lucide-react-native';
 import { ImageCropperModal, smartAutoCropImage } from './ImageCropperModal';
 
@@ -32,10 +33,11 @@ export interface StagedAttachment {
   name: string;
   size: number;
   sizeFormatted: string;
-  type: 'IMAGE' | 'DOCUMENT' | 'AUDIO';
+  type: 'IMAGE' | 'DOCUMENT' | 'AUDIO' | 'VIDEO';
   extension: string;
   file?: any; // Native File on Web
   caption?: string;
+  mimeType?: string;
 }
 
 interface AttachmentPickerModalProps {
@@ -126,21 +128,63 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
       const files: File[] = Array.from(e.target.files || []);
       const newItems: StagedAttachment[] = files.map((file) => {
         const ext = file.name.split('.').pop()?.toLowerCase() || '';
-        const isImage = !isDoc && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
+        const isVid = file.type.startsWith('video/') || ['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v'].includes(ext);
+        const isAud = file.type.startsWith('audio/') || ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus'].includes(ext);
+        const isImage = !isDoc && !isVid && !isAud && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
+        let fileType: 'IMAGE' | 'DOCUMENT' | 'AUDIO' | 'VIDEO' = 'DOCUMENT';
+        if (isVid) fileType = 'VIDEO';
+        else if (isAud) fileType = 'AUDIO';
+        else if (isImage) fileType = 'IMAGE';
+
         return {
           id: Math.random().toString(36).substring(7),
           uri: URL.createObjectURL(file),
           name: file.name,
           size: file.size,
           sizeFormatted: formatBytes(file.size),
-          type: isImage ? 'IMAGE' : 'DOCUMENT',
+          type: fileType,
           extension: ext,
           file,
+          mimeType: file.type,
         };
       });
       setStagedFiles((prev) => [...prev, ...newItems]);
     };
     input.click();
+  };
+
+  const handlePickVideos = async () => {
+    if (Platform.OS === 'web') {
+      handlePickWeb('video/*', false);
+      return;
+    }
+    try {
+      const ImagePicker = require('expo-image-picker');
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        allowsMultipleSelection: true,
+        quality: 1,
+      });
+      if (!result.canceled && result.assets) {
+        const newItems: StagedAttachment[] = result.assets.map((asset: any) => {
+          const fileName = asset.fileName || `video_${Date.now()}.mp4`;
+          const ext = fileName.split('.').pop()?.toLowerCase() || 'mp4';
+          return {
+            id: Math.random().toString(36).substring(7),
+            uri: asset.uri,
+            name: fileName,
+            size: asset.fileSize || 0,
+            sizeFormatted: formatBytes(asset.fileSize || 0),
+            type: 'VIDEO',
+            extension: ext,
+            mimeType: 'video/mp4',
+          };
+        });
+        setStagedFiles((prev) => [...prev, ...newItems]);
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Could not pick video.');
+    }
   };
 
   const handlePickPhotos = async () => {
@@ -281,18 +325,16 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
 
   const handleSend = async () => {
     if (stagedFiles.length === 0 && !messageText.trim()) return;
+    const filesToSend = [...stagedFiles];
+    const textToSend = messageText.trim();
+    // Instantly close drawer so user can immediately see optimistic delivery in chat list
+    setStagedFiles([]);
+    setMessageText('');
+    onClose();
     try {
-      setUploading(true);
-      setUploadProgress(10);
-      await onSend(stagedFiles, messageText.trim());
-      setStagedFiles([]);
-      setMessageText('');
-      onClose();
+      await onSend(filesToSend, textToSend);
     } catch (err: any) {
-      Alert.alert('Upload Failed', err.message || 'Failed to send attachments.');
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
+      console.warn('Background upload failed', err);
     }
   };
 
@@ -335,6 +377,17 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
                 <ImageIcon size={22} color="#ffffff" />
               </View>
               <Text style={styles.actionLabel}>Photos</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionPill}
+              onPress={handlePickVideos}
+              disabled={uploading}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: '#ef4444' }]}>
+                <Video size={22} color="#ffffff" />
+              </View>
+              <Text style={styles.actionLabel}>Videos</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -403,6 +456,11 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
                         >
                           <Crop size={11} color="#ffffff" />
                         </TouchableOpacity>
+                      </View>
+                    ) : file.type === 'VIDEO' ? (
+                      <View style={[styles.docPlaceholder, { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.35)' }]}>
+                        <Video size={24} color="#f87171" />
+                        <Text style={[styles.docExtBadge, { backgroundColor: '#ef4444' }]}>VIDEO</Text>
                       </View>
                     ) : file.type === 'AUDIO' ? (
                       <View style={[styles.docPlaceholder, { backgroundColor: 'rgba(139, 92, 246, 0.15)', borderColor: 'rgba(139, 92, 246, 0.35)' }]}>
