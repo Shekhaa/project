@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { AttachmentItem } from '../../services/chatService';
 import { ImageViewerModal } from './ImageViewerModal';
+import { getFullMediaUrl } from '../../config/api';
 
 interface MediaGridProps {
   images: AttachmentItem[];
@@ -17,14 +18,20 @@ interface MediaGridProps {
 }
 
 export const MediaGrid: React.FC<MediaGridProps> = ({
-  images,
+  images: rawImages,
   maxDisplay = 4,
   containerWidth,
 }) => {
   const [viewerVisible, setViewerVisible] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  if (!images || images.length === 0) return null;
+  if (!rawImages || rawImages.length === 0) return null;
+
+  const images = rawImages.map((img) => ({
+    ...img,
+    file_url: getFullMediaUrl(img.file_url),
+    download_url: getFullMediaUrl(img.download_url || img.file_url),
+  }));
 
   const total = images.length;
   const displayItems = images.slice(0, maxDisplay);

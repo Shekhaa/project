@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,15 +10,18 @@ import {
   Platform,
   Linking,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../theme/ThemeContext';
 import { colors } from '../../theme/colors';
 import { Post } from '../../services/postService';
 import { MediaGrid } from '../media/MediaGrid';
 import { DocumentCard } from '../media/DocumentCard';
+import { getFullMediaUrl } from '../../config/api';
 import {
   Heart,
   MessageCircle,
   Share2,
+  Bookmark,
   MoreVertical,
   Trash2,
   Archive,
@@ -26,6 +29,7 @@ import {
   Download,
   ShieldCheck,
   Sparkles,
+  Image as ImageIcon,
 } from 'lucide-react-native';
 
 interface PostCardProps {
@@ -37,6 +41,7 @@ interface PostCardProps {
   onDeletePost?: (postId: number) => void;
   onArchivePost?: (postId: number) => void;
   onAuthorPress?: (authorId: number) => void;
+  onBookmarkToggle?: (postId: number, isBookmarked: boolean) => void;
 }
 
 export const PostCard: React.FC<PostCardProps> = ({
@@ -51,6 +56,54 @@ export const PostCard: React.FC<PostCardProps> = ({
 }) => {
   const { colors, isDark } = useTheme();
   const [menuVisible, setMenuVisible] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const [isBookmarked, setIsBookmarked] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    AsyncStorage.getItem('campus_saved_posts').then((val) => {
+      if (!isMounted || !val) return;
+      try {
+        const list = JSON.parse(val);
+        if (Array.isArray(list) && list.includes(post.id)) {
+          setIsBookmarked(true);
+        }
+      } catch {}
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [post.id]);
+
+  const handleToggleBookmark = async () => {
+    try {
+      const val = await AsyncStorage.getItem('campus_saved_posts');
+      let list: number[] = val ? JSON.parse(val) : [];
+      const willBookmark = !isBookmarked;
+      if (willBookmark) {
+        if (!list.includes(post.id)) list.push(post.id);
+      } else {
+        list = list.filter((id) => id !== post.id);
+      }
+      await AsyncStorage.setItem('campus_saved_posts', JSON.stringify(list));
+      setIsBookmarked(willBookmark);
+      onBookmarkToggle?.(post.id, willBookmark);
+    } catch (err) {
+      console.log('Error saving bookmark', err);
+    }
+  };
+
+  const getAnonymousMascot = (name?: string) => {
+    const str = (name || '').toLowerCase();
+    if (str.includes('owl')) return '🦉';
+    if (str.includes('fox')) return '🦊';
+    if (str.includes('tiger')) return '🐯';
+    if (str.includes('falcon') || str.includes('eagle')) return '🦅';
+    if (str.includes('bear')) return '🐻';
+    if (str.includes('wolf')) return '🐺';
+    if (str.includes('panda')) return '🐼';
+    return '🎭';
+  };
 
   const isAuthor = currentUser && (
     (currentUser.email && post.author_name === currentUser.email.split('@')[0]) ||
@@ -83,16 +136,41 @@ export const PostCard: React.FC<PostCardProps> = ({
       Alert.alert('Document', 'Document file is being processed.');
       return;
     }
+    const fullUrl = getFullMediaUrl(url);
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.open(url, '_blank');
+      window.open(fullUrl, '_blank');
     } else {
-      Linking.openURL(url).catch(() => {
+      Linking.openURL(fullUrl).catch(() => {
         Alert.alert('Cannot Open File', 'Could not open document URL.');
       });
     }
   };
 
   const authorInitial = (post.author_name || 'S').charAt(0).toUpperCase();
+
+  // Unified Media Attachments with backend host resolution
+  const imageAttachments = (post.attachments || [])
+    .filter((a) => a.file_type === 'IMAGE' && a.file_url)
+    .map((a) => ({ ...a, file_url: getFullMediaUrl(a.file_url) }));
+
+  const legacyImages = (post.images || [])
+    .filter((img) => img.image)
+    .map((img) => ({
+      id: String(img.id),
+      file_url: getFullMediaUrl(img.image),
+      download_url: getFullMediaUrl(img.image),
+      file_name: 'Campus image',
+      file_type: 'IMAGE' as const,
+      file_extension: 'jpg',
+      mime_type: 'image/jpeg',
+      file_size: 0,
+      file_size_formatted: '',
+      created_at: img.uploaded_at || post.created_at,
+    }));
+
+  const allImages = [...imageAttachments, ...legacyImages];
+  const singleMediaUrl = post.media_url ? getFullMediaUrl(post.media_url) : null;
+  const docAttachments = (post.attachments || []).filter((a) => a.file_type === 'DOCUMENT');
 
   return (
     <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
@@ -106,10 +184,12 @@ export const PostCard: React.FC<PostCardProps> = ({
         >
           {post.is_anonymous ? (
             <View style={[styles.avatar, styles.anonAvatar]}>
-              <Text style={styles.avatarText}>🎭</Text>
+              <Text style={styles.avatarText}>
+                {getAnonymousMascot(post.author_name || (post as any).anonymous_alias)}
+              </Text>
             </View>
           ) : post.author_avatar ? (
-            <Image source={{ uri: post.author_avatar }} style={styles.avatar} />
+            <Image source={{ uri: getFullMediaUrl(post.author_avatar) }} style={styles.avatar} />
           ) : (
             <View style={[styles.avatar, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
               <Text style={[styles.avatarText, { color: colors.textPrimary }]}>{authorInitial}</Text>
@@ -159,63 +239,54 @@ export const PostCard: React.FC<PostCardProps> = ({
       ) : null}
 
       {/* Post Attachments (Unified Media & Academic Documents) */}
-      {(() => {
-        const imageAttachments = (post.attachments || []).filter((a) => a.file_type === 'IMAGE');
-        const docAttachments = (post.attachments || []).filter((a) => a.file_type === 'DOCUMENT');
+      {allImages.length > 0 ? (
+        <View style={{ marginHorizontal: 12, marginVertical: 6 }}>
+          <MediaGrid images={allImages} />
+        </View>
+      ) : singleMediaUrl && (post.media_type === 'IMAGE' || !post.media_type) && !imageError ? (
+        <TouchableOpacity
+          style={[styles.imageContainer, { backgroundColor: isDark ? '#141516' : '#f1f5f9' }]}
+          onPress={() => onCommentPress(post)}
+          activeOpacity={0.95}
+        >
+          <Image
+            source={{ uri: singleMediaUrl }}
+            style={styles.postImage}
+            resizeMode="cover"
+            onError={() => setImageError(true)}
+          />
+        </TouchableOpacity>
+      ) : null}
 
-        return (
-          <>
-            {/* Unified Images Grid */}
-            {imageAttachments.length > 0 ? (
-              <View style={{ marginHorizontal: 12, marginVertical: 6 }}>
-                <MediaGrid images={imageAttachments} />
-              </View>
-            ) : post.media_type === 'IMAGE' && post.media_url ? (
-              <TouchableOpacity
-                style={styles.imageContainer}
-                onPress={() => onCommentPress(post)}
-                activeOpacity={0.95}
-              >
-                <Image
-                  source={{ uri: post.media_url }}
-                  style={styles.postImage}
-                  resizeMode="cover"
-                />
-              </TouchableOpacity>
-            ) : null}
-
-            {/* Unified Academic Documents */}
-            {docAttachments.length > 0 ? (
-              <View style={{ marginHorizontal: 12, marginVertical: 6, gap: 6 }}>
-                {docAttachments.map((doc, idx) => (
-                  <DocumentCard key={doc.id || idx} attachment={doc} />
-                ))}
-              </View>
-            ) : post.media_type === 'DOCUMENT' ? (
-              <TouchableOpacity
-                style={styles.documentCard}
-                onPress={() => handleOpenDocument(post.document || post.media_url)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.documentIconBox}>
-                  <FileText size={24} color="#ef4444" />
-                </View>
-                <View style={styles.documentInfo}>
-                  <Text style={styles.documentTitle} numberOfLines={1}>
-                    {post.document_name || 'Campus Academic Document.pdf'}
-                  </Text>
-                  <Text style={styles.documentSize}>
-                    {post.document_size || 'PDF Document'} • Tap to preview
-                  </Text>
-                </View>
-                <View style={styles.downloadBadge}>
-                  <Download size={16} color={colors.primary} />
-                </View>
-              </TouchableOpacity>
-            ) : null}
-          </>
-        );
-      })()}
+      {/* Unified Academic Documents */}
+      {docAttachments.length > 0 ? (
+        <View style={{ marginHorizontal: 12, marginVertical: 6, gap: 6 }}>
+          {docAttachments.map((doc, idx) => (
+            <DocumentCard key={doc.id || idx} attachment={doc} />
+          ))}
+        </View>
+      ) : post.media_type === 'DOCUMENT' ? (
+        <TouchableOpacity
+          style={styles.documentCard}
+          onPress={() => handleOpenDocument(post.document || post.media_url)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.documentIconBox}>
+            <FileText size={24} color="#ef4444" />
+          </View>
+          <View style={styles.documentInfo}>
+            <Text style={styles.documentTitle} numberOfLines={1}>
+              {post.document_name || 'Campus Academic Document.pdf'}
+            </Text>
+            <Text style={styles.documentSize}>
+              {post.document_size || 'PDF Document'} • Tap to preview
+            </Text>
+          </View>
+          <View style={styles.downloadBadge}>
+            <Download size={16} color={colors.primary} />
+          </View>
+        </TouchableOpacity>
+      ) : null}
 
       {/* Footer Action Bar */}
       <View style={styles.footer}>
@@ -258,6 +329,20 @@ export const PostCard: React.FC<PostCardProps> = ({
             activeOpacity={0.7}
           >
             <Share2 size={19} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          {/* Bookmark / Save */}
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={handleToggleBookmark}
+            activeOpacity={0.7}
+            accessibilityLabel={isBookmarked ? 'Remove saved bookmark' : 'Bookmark post'}
+          >
+            <Bookmark
+              size={19}
+              color={isBookmarked ? '#f59e0b' : colors.textSecondary}
+              fill={isBookmarked ? '#f59e0b' : 'transparent'}
+            />
           </TouchableOpacity>
         </View>
 
@@ -437,7 +522,6 @@ const styles = StyleSheet.create({
   imageContainer: {
     width: '100%',
     aspectRatio: 4 / 3,
-    backgroundColor: colors.surfaceLight,
     marginTop: 6,
     overflow: 'hidden',
   },

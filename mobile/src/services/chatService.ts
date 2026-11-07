@@ -31,7 +31,7 @@ export interface AttachmentItem {
   file_url: string;
   download_url: string;
   file_name: string;
-  file_type: 'IMAGE' | 'DOCUMENT';
+  file_type: 'IMAGE' | 'DOCUMENT' | 'AUDIO';
   file_extension: string;
   mime_type: string;
   file_size: number;

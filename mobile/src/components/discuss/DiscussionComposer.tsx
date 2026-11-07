@@ -12,7 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { X, Paperclip, FileText, Check, Send } from 'lucide-react-native';
+import { X, Paperclip, FileText, Check, Send, AlertCircle } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { AttachmentPickerModal, StagedAttachment } from '../media/AttachmentPickerModal';
 import { chatService } from '../../services/chatService';
@@ -40,20 +40,36 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
   const [type, setType] = useState<'GENERAL' | 'QUESTION' | 'RESOURCE' | 'ANNOUNCEMENT'>('QUESTION');
   const [tags, setTags] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [stagedFiles, setStagedFiles] = useState<StagedAttachment[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
 
+  const notify = (titleStr: string, msg: string) => {
+    setErrorMessage(`${titleStr}: ${msg}`);
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      // Non-blocking fallback for web
+      console.warn(`[DiscussionComposer] ${titleStr}: ${msg}`);
+    } else {
+      Alert.alert(titleStr, msg);
+    }
+  };
+
   const handleSubmit = async () => {
-    if (!title.trim()) {
-      Alert.alert('Title Required', 'Please enter a title for your discussion (e.g. "DBMS End Term Notes").');
+    setErrorMessage(null);
+
+    const cleanTitle = title.trim();
+    const cleanContent = content.trim();
+
+    if (!cleanTitle) {
+      notify('Title Required', 'Please enter a title for your post (e.g. "DBMS Unit 3 Notes").');
       return;
     }
-    if (title.trim().length < 4) {
-      Alert.alert('Title Too Short', 'Discussion title must be at least 4 characters long.');
+    if (cleanTitle.length < 2) {
+      notify('Title Too Short', 'Discussion title must be at least 2 characters long.');
       return;
     }
-    if (!content.trim()) {
-      Alert.alert('Details Required', 'Please provide some details, notes, or explanation for your post.');
+    if (!cleanContent) {
+      notify('Details Required', 'Please enter some details or notes for your post.');
       return;
     }
 
@@ -68,8 +84,8 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
       }
 
       await onSubmit({
-        title: title.trim(),
-        content: content.trim(),
+        title: cleanTitle,
+        content: cleanContent,
         discussion_type: type,
         tags: tags.trim(),
         attachment_ids,
@@ -81,9 +97,11 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
       setType('QUESTION');
       setTags('');
       setStagedFiles([]);
+      setErrorMessage(null);
       onClose();
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Could not publish discussion.');
+      const errText = e.response?.data?.error || e.message || 'Could not publish discussion.';
+      notify('Publication Failed', errText);
     } finally {
       setSubmitting(false);
     }
@@ -105,9 +123,10 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
             style={[
               styles.publishBtn,
               { backgroundColor: colors.primary },
-              (!title.trim() || submitting) && styles.publishBtnDisabled,
+              submitting && styles.publishBtnDisabled,
             ]}
             onPress={handleSubmit}
+            activeOpacity={0.8}
           >
             {submitting ? (
               <ActivityIndicator color="#fff" size="small" />
@@ -118,6 +137,13 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
         </View>
 
         <ScrollView style={styles.formContent} keyboardShouldPersistTaps="handled">
+          {/* Inline Error Banner */}
+          {errorMessage ? (
+            <View style={styles.errorBanner}>
+              <AlertCircle size={16} color="#ef4444" style={{ marginRight: 8 }} />
+              <Text style={styles.errorBannerText}>{errorMessage}</Text>
+            </View>
+          ) : null}
           {/* Discussion Type Selector */}
           <Text style={[styles.label, { color: colors.textSecondary }]}>Post Type</Text>
           <View style={styles.typeRow}>
@@ -176,7 +202,10 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
             placeholder="e.g. How to prepare for DBMS end term exam?"
             placeholderTextColor={colors.textMuted}
             value={title}
-            onChangeText={setTitle}
+            onChangeText={(t) => {
+              setTitle(t);
+              if (errorMessage) setErrorMessage(null);
+            }}
             maxLength={250}
           />
 
@@ -194,7 +223,10 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
             placeholder="Explain your problem, question, or share helpful college notes/syllabus details..."
             placeholderTextColor={colors.textMuted}
             value={content}
-            onChangeText={setContent}
+            onChangeText={(c) => {
+              setContent(c);
+              if (errorMessage) setErrorMessage(null);
+            }}
             multiline
             numberOfLines={6}
             textAlignVertical="top"
@@ -266,7 +298,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
             style={[
               styles.bigSubmitBtn,
               { backgroundColor: colors.primary },
-              (!title.trim() || submitting) && styles.bigSubmitBtnDisabled,
+              submitting && styles.bigSubmitBtnDisabled,
             ]}
             onPress={handleSubmit}
             activeOpacity={0.85}
@@ -298,6 +330,23 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
 };
 
 const styles = StyleSheet.create({
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    color: '#ef4444',
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
   container: {
     flex: 1,
     maxWidth: 680,

@@ -21,6 +21,7 @@ import {
   Download,
 } from 'lucide-react-native';
 import { AttachmentItem } from '../../services/chatService';
+import { getFullMediaUrl } from '../../config/api';
 
 interface ImageViewerModalProps {
   visible: boolean;
@@ -49,7 +50,8 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
   if (!visible || images.length === 0) return null;
 
   const currentItem = images[currentIndex] || images[0];
-  const imageUrl = (currentItem as any).file_url || (currentItem as any).uri || '';
+  const rawUrl = (currentItem as any).file_url || (currentItem as any).uri || '';
+  const imageUrl = getFullMediaUrl(rawUrl);
   const caption = (currentItem as any).caption || '';
   const fileName = (currentItem as any).file_name || (currentItem as any).name || 'Image';
   const fileSize = (currentItem as any).file_size_formatted || '';

@@ -21,6 +21,8 @@ import {
   Trash2,
   Crop,
   Zap,
+  Mic,
+  Music,
 } from 'lucide-react-native';
 import { ImageCropperModal, smartAutoCropImage } from './ImageCropperModal';
 
@@ -30,7 +32,7 @@ export interface StagedAttachment {
   name: string;
   size: number;
   sizeFormatted: string;
-  type: 'IMAGE' | 'DOCUMENT';
+  type: 'IMAGE' | 'DOCUMENT' | 'AUDIO';
   extension: string;
   file?: any; // Native File on Web
   caption?: string;
@@ -216,6 +218,63 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
     }
   };
 
+  const handlePickAudio = async () => {
+    if (Platform.OS === 'web') {
+      if (typeof document === 'undefined') return;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'audio/*,.mp3,.wav,.m4a,.aac,.ogg';
+      input.multiple = true;
+      input.onchange = (e: any) => {
+        const files: File[] = Array.from(e.target.files || []);
+        const newItems: StagedAttachment[] = files.map((file) => {
+          const ext = file.name.split('.').pop()?.toLowerCase() || 'mp3';
+          return {
+            id: Math.random().toString(36).substring(7),
+            uri: URL.createObjectURL(file),
+            name: file.name,
+            size: file.size,
+            sizeFormatted: formatBytes(file.size),
+            type: 'AUDIO',
+            extension: ext,
+            file,
+          };
+        });
+        setStagedFiles((prev) => [...prev, ...newItems]);
+      };
+      input.click();
+      return;
+    }
+
+    try {
+      const DocumentPicker = require('expo-document-picker');
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'audio/*',
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets) {
+        const newItems: StagedAttachment[] = result.assets.map((asset: any) => {
+          const fileName = asset.name || 'voice_note.m4a';
+          const ext = fileName.split('.').pop()?.toLowerCase() || 'm4a';
+          return {
+            id: Math.random().toString(36).substring(7),
+            uri: asset.uri,
+            name: fileName,
+            size: asset.size || 0,
+            sizeFormatted: formatBytes(asset.size || 0),
+            type: 'AUDIO',
+            extension: ext,
+          };
+        });
+        setStagedFiles((prev) => [...prev, ...newItems]);
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Could not pick audio file.');
+    }
+  };
+
   const handleRemoveAttachment = (id: string) => {
     setStagedFiles((prev) => prev.filter((item) => item.id !== id));
   };
@@ -288,6 +347,17 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
               </View>
               <Text style={styles.actionLabel}>Document</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionPill}
+              onPress={handlePickAudio}
+              disabled={uploading}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: '#8b5cf6' }]}>
+                <Mic size={22} color="#ffffff" />
+              </View>
+              <Text style={styles.actionLabel}>Audio Note</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Selected Files Preview List */}
@@ -333,6 +403,11 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
                         >
                           <Crop size={11} color="#ffffff" />
                         </TouchableOpacity>
+                      </View>
+                    ) : file.type === 'AUDIO' ? (
+                      <View style={[styles.docPlaceholder, { backgroundColor: 'rgba(139, 92, 246, 0.15)', borderColor: 'rgba(139, 92, 246, 0.35)' }]}>
+                        <Music size={24} color="#a78bfa" />
+                        <Text style={[styles.docExtBadge, { backgroundColor: '#8b5cf6' }]}>AUDIO</Text>
                       </View>
                     ) : (
                       <View style={styles.docPlaceholder}>

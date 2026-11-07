@@ -219,7 +219,7 @@ class StartDirectChatView(APIView):
             sender=request.user,
             notification_type="MESSAGE_REQUEST",
             title="Message Request ✉️",
-            message=f"{sender_name}: {initial_text[:60]}",
+            message=f"{sender_name} sent you a message request.",
             data={"conversation_id": str(existing.id), "message_request_id": str(msg_req.id)}
         )
 

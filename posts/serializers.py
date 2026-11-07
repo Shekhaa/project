@@ -10,9 +10,19 @@ ANONYMOUS_MASCOTS = [
 ]
 
 class PostImageSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+
     class Meta:
         model = PostImage
         fields = ["id", "image", "uploaded_at"]
+
+    def get_image(self, obj):
+        if not obj.image:
+            return None
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.image.url)
+        return obj.image.url
 
 
 class CommentSerializer(serializers.ModelSerializer):
@@ -93,6 +103,8 @@ class PostSerializer(serializers.ModelSerializer):
     comments_count = serializers.SerializerMethodField()
     has_liked = serializers.SerializerMethodField()
     author_college_name = serializers.CharField(source="author.profile.college.name", read_only=True)
+    media_url = serializers.SerializerMethodField()
+    document = serializers.SerializerMethodField()
 
     class Meta:
         model = Post
@@ -180,8 +192,29 @@ class PostSerializer(serializers.ModelSerializer):
         if obj.is_anonymous:
             return None
         if hasattr(obj.author, "profile") and obj.author.profile.profile_picture:
-            return obj.author.profile.profile_picture.url
+            url = obj.author.profile.profile_picture.url
+            request = self.context.get("request")
+            if request and not url.startswith("http"):
+                return request.build_absolute_uri(url)
+            return url
         return None
+
+    def get_media_url(self, obj):
+        if not obj.media_url:
+            return None
+        request = self.context.get("request")
+        if request and not str(obj.media_url).startswith("http"):
+            return request.build_absolute_uri(obj.media_url)
+        return obj.media_url
+
+    def get_document(self, obj):
+        if not obj.document:
+            return None
+        url = obj.document.url if hasattr(obj.document, "url") else str(obj.document)
+        request = self.context.get("request")
+        if request and not url.startswith("http"):
+            return request.build_absolute_uri(url)
+        return url
 
     def get_author_verification_tier(self, obj):
         if obj.is_anonymous:

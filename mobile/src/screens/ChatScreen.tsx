@@ -37,6 +37,7 @@ import {
   Users,
   Copy,
   Paperclip,
+  Mic,
   Link2,
   UserPlus,
 } from 'lucide-react-native';
@@ -451,6 +452,15 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             accessibilityLabel="Share media or document"
           >
             <Paperclip size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.attachBtn}
+            onPress={() => setAttachmentPickerVisible(true)}
+            activeOpacity={0.7}
+            accessibilityLabel="Send voice note or audio"
+          >
+            <Mic size={20} color={colors.primary} />
           </TouchableOpacity>
 
           <TextInput

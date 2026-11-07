@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 import { api } from '../../config/api';
 import { X, Search, UserCheck } from 'lucide-react-native';
 
@@ -24,6 +25,7 @@ export const DirectorySearchModal: React.FC<DirectorySearchModalProps> = ({
   onClose,
   onSelectUser,
 }) => {
+  const { colors, isDark } = useTheme();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,18 +64,18 @@ export const DirectorySearchModal: React.FC<DirectorySearchModalProps> = ({
     const name = item.full_name || item.email?.split('@')[0] || 'Student';
     return (
       <TouchableOpacity
-        style={styles.userRow}
+        style={[styles.userRow, { borderBottomColor: colors.cardBorder }]}
         onPress={() => onSelectUser(item)}
         activeOpacity={0.7}
       >
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>
+        <View style={[styles.avatar, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+          <Text style={[styles.avatarText, { color: colors.textPrimary }]}>{name.charAt(0).toUpperCase()}</Text>
         </View>
         <View style={styles.userInfo}>
-          <Text style={styles.userName}>{name}</Text>
-          <Text style={styles.userEmail}>{item.email}</Text>
+          <Text style={[styles.userName, { color: colors.textPrimary }]}>{name}</Text>
+          <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{item.email}</Text>
         </View>
-        <View style={styles.chatAction}>
+        <View style={[styles.chatAction, { backgroundColor: colors.primary }]}>
           <Text style={styles.chatActionText}>Chat</Text>
         </View>
       </TouchableOpacity>
@@ -82,23 +84,23 @@ export const DirectorySearchModal: React.FC<DirectorySearchModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
             <X size={22} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Campus Directory</Text>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Campus Directory</Text>
           <View style={{ width: 30 }} />
         </View>
 
         {/* Search Bar */}
-        <View style={styles.searchBar}>
+        <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
           <Search size={18} color={colors.textSecondary} style={{ marginRight: 8 }} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.textPrimary }]}
             placeholder="Search verified students by name or email..."
-            placeholderTextColor={colors.textSecondary}
+            placeholderTextColor={colors.textMuted}
             value={query}
             onChangeText={setQuery}
             autoFocus
@@ -117,10 +119,10 @@ export const DirectorySearchModal: React.FC<DirectorySearchModalProps> = ({
         ) : results.length === 0 ? (
           <View style={styles.centerBox}>
             <UserCheck size={36} color={colors.textSecondary} />
-            <Text style={styles.emptyTitle}>
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
               {query.length > 0 ? 'No students found' : 'Find your classmates'}
             </Text>
-            <Text style={styles.emptySub}>
+            <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
               Search by name or college email to start a private conversation.
             </Text>
           </View>

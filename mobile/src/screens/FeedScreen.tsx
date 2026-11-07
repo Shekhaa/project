@@ -12,6 +12,7 @@ import {
   Platform,
   Modal,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../theme/ThemeContext';
 import { colors } from '../theme/colors';
 import { postService, Post } from '../services/postService';
@@ -42,7 +43,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const [posts, setPosts] = useState<Post[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [selectedCommunityId, setSelectedCommunityId] = useState<number | undefined>(undefined);
-  const [selectedScope, setSelectedScope] = useState<'ALL' | 'GLOBAL' | 'COLLEGE' | 'FOLLOWING' | 'MEDIA' | 'RESOURCES' | undefined>('ALL');
+  const [selectedScope, setSelectedScope] = useState<'ALL' | 'GLOBAL' | 'COLLEGE' | 'FOLLOWING' | 'MEDIA' | 'RESOURCES' | 'SAVED' | undefined>('ALL');
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,6 +128,22 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       setLoading(true);
       setError(null);
       setPage(1);
+
+      if (selectedScope === 'SAVED') {
+        const savedJson = await AsyncStorage.getItem('campus_saved_posts');
+        const savedIds: number[] = savedJson ? JSON.parse(savedJson) : [];
+        const [feedData, commsData] = await Promise.all([
+          postService.getFeed(undefined, 1),
+          communityService.getMyCommunities(),
+        ]);
+        const allPosts = feedData.results || [];
+        const bookmarked = allPosts.filter((p) => savedIds.includes(p.id));
+        setPosts(bookmarked);
+        setHasMore(false);
+        setCommunities(commsData || []);
+        return;
+      }
+
       const feedQuery = selectedCommunityId
         ? { communityId: selectedCommunityId }
         : selectedScope && selectedScope !== 'ALL'
@@ -249,6 +266,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         return 'Photos & Media';
       case 'RESOURCES':
         return 'Study Resources';
+      case 'SAVED':
+        return 'Saved & Bookmarked 🔖';
       case 'GLOBAL':
         return 'Global Campus';
       default:
@@ -460,6 +479,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
               {[
                 { key: 'ALL', label: 'Global Campus Feed (Default)', desc: 'Cross-college feed with privacy safeguards', icon: '🌐' },
                 { key: 'COLLEGE', label: 'My College Only', desc: 'Updates & questions from your campus', icon: '🏛️' },
+                { key: 'SAVED', label: 'Saved & Bookmarked', desc: 'Posts & resources you saved for later', icon: '🔖' },
                 { key: 'FOLLOWING', label: 'Following Students', desc: 'Posts from creators and peers you follow', icon: '👤' },
                 { key: 'MEDIA', label: 'Photos & Campus Gallery', desc: 'Photos, events & campus lifestyle', icon: '🖼️' },
                 { key: 'RESOURCES', label: 'Study Resources & Notes', desc: 'PDFs, notes, documents & syllabus', icon: '📄' },

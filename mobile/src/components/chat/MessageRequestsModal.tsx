@@ -14,6 +14,7 @@ import {
 import { X, Check, ShieldAlert, UserCheck, MessageSquare, Search, ShieldCheck } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { chatService, MessageRequestItem, Conversation } from '../../services/chatService';
+import { getFullMediaUrl } from '../../config/api';
 
 interface MessageRequestsModalProps {
   visible: boolean;
@@ -148,7 +149,7 @@ export const MessageRequestsModal: React.FC<MessageRequestsModalProps> = ({
       <View style={styles.card}>
         <View style={styles.cardTop}>
           {item.sender.avatar ? (
-            <Image source={{ uri: item.sender.avatar }} style={styles.avatar} />
+            <Image source={{ uri: getFullMediaUrl(item.sender.avatar) }} style={styles.avatar} />
           ) : (
             <View style={styles.avatarFallback}>
               <Text style={styles.avatarInitial}>{initial}</Text>
@@ -171,12 +172,13 @@ export const MessageRequestsModal: React.FC<MessageRequestsModalProps> = ({
           </View>
         </View>
 
-        {/* Initial message bubble */}
-        {item.initial_message ? (
-          <View style={styles.messageBox}>
-            <Text style={styles.messageText}>{item.initial_message}</Text>
-          </View>
-        ) : null}
+        {/* Message Request Note - safe teaser without leaking prematurely */}
+        <View style={styles.messageBox}>
+          <Text style={styles.messageRequestBadge}>✉️ Sent you a message request</Text>
+          <Text style={styles.messageRequestHint}>
+            Accept to unlock conversation, reveal initial message and reply.
+          </Text>
+        </View>
 
         {/* Action Buttons */}
         <View style={styles.actionsRow}>
@@ -413,6 +415,17 @@ const styles = StyleSheet.create({
     marginTop: 10,
     borderLeftWidth: 3,
     borderLeftColor: colors.primary,
+  },
+  messageRequestBadge: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  messageRequestHint: {
+    color: '#94a3b8',
+    fontSize: 11.5,
+    lineHeight: 16,
   },
   messageText: {
     color: '#cbd5e1',

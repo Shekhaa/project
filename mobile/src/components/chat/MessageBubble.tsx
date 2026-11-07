@@ -1,16 +1,20 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Image,
+  Platform,
+  Linking,
+  Alert,
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { Message, AttachmentItem } from '../../services/chatService';
-import { ExternalLink, Heart, MessageCircle } from 'lucide-react-native';
+import { ExternalLink, Heart, MessageCircle, Play, Pause, Mic, Volume2 } from 'lucide-react-native';
 import { MediaGrid } from '../media/MediaGrid';
 import { DocumentCard } from '../media/DocumentCard';
+import { getFullMediaUrl } from '../../config/api';
 
 export interface SharedPostCardData {
   id: number;
@@ -32,6 +36,73 @@ interface MessageBubbleProps {
   onPostCardPress?: (cardData: SharedPostCardData) => void;
   onSenderPress?: (senderId: number) => void;
 }
+
+const AudioPlayerPill: React.FC<{ url: string; fileName: string; isMe: boolean }> = ({ url, fileName, isMe }) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef<any>(null);
+
+  const togglePlay = () => {
+    const fullUrl = getFullMediaUrl(url);
+    if (Platform.OS === 'web' && typeof Audio !== 'undefined') {
+      if (!audioRef.current) {
+        audioRef.current = new Audio(fullUrl);
+        audioRef.current.onended = () => setIsPlaying(false);
+        audioRef.current.onerror = () => setIsPlaying(false);
+      }
+      if (isPlaying) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+      }
+    } else {
+      Linking.openURL(fullUrl).catch(() => {
+        Alert.alert('Cannot Play Audio', 'Could not open audio file.');
+      });
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause();
+        } catch {}
+      }
+    };
+  }, []);
+
+  return (
+    <TouchableOpacity
+      style={[styles.audioPill, isMe ? styles.audioPillMe : styles.audioPillThem]}
+      onPress={togglePlay}
+      activeOpacity={0.8}
+    >
+      <View style={[styles.playBtnCircle, isMe ? styles.playBtnCircleMe : styles.playBtnCircleThem]}>
+        {isPlaying ? <Pause size={14} color="#fff" /> : <Play size={14} color="#fff" style={{ marginLeft: 2 }} />}
+      </View>
+      <View style={styles.audioMetaCol}>
+        <View style={styles.waveformRow}>
+          {[40, 75, 55, 95, 60, 80, 45, 90, 65, 85, 50, 70, 60, 85, 40].map((h, i) => (
+            <View
+              key={i}
+              style={[
+                styles.waveformBar,
+                { height: (h * 16) / 100 },
+                isPlaying
+                  ? { backgroundColor: isMe ? '#ffffff' : '#6366f1' }
+                  : { backgroundColor: isMe ? 'rgba(255,255,255,0.45)' : 'rgba(99,102,241,0.35)' },
+              ]}
+            />
+          ))}
+        </View>
+        <Text style={[styles.audioNameText, isMe ? styles.audioNameMe : styles.audioNameThem]} numberOfLines={1}>
+          {isPlaying ? 'Playing Voice Note...' : fileName || 'Audio Note • Tap to play'}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+};
 
 export const parseSharedPostCard = (text: string): { cleanText: string; cardData: SharedPostCardData | null } => {
   if (!text) return { cleanText: '', cardData: null };
@@ -91,9 +162,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   }] : [];
 
   const allAttachments = [...attachments, ...legacyAttachment];
-  const imageAttachments = allAttachments.filter((a) => a.file_type === 'IMAGE');
-  const docAttachments = allAttachments.filter((a) => a.file_type === 'DOCUMENT');
-  const hasMedia = imageAttachments.length > 0 || docAttachments.length > 0 || Boolean(cardData);
+  const audioAttachments = allAttachments.filter(
+    (a) => a.file_type === 'AUDIO' || a.file_extension?.match(/^(mp3|wav|m4a|aac|ogg)$/i)
+  );
+  const imageAttachments = allAttachments.filter((a) => a.file_type === 'IMAGE' && !audioAttachments.includes(a));
+  const docAttachments = allAttachments.filter((a) => a.file_type === 'DOCUMENT' && !audioAttachments.includes(a));
+  const hasMedia = imageAttachments.length > 0 || docAttachments.length > 0 || audioAttachments.length > 0 || Boolean(cardData);
 
   return (
     <View style={[styles.row, isMe ? styles.rowMe : styles.rowThem]}>
@@ -142,6 +216,15 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           <View style={{ marginBottom: cleanText ? 6 : 2, gap: 4 }}>
             {docAttachments.map((doc, idx) => (
               <DocumentCard key={doc.id || idx} attachment={doc} />
+            ))}
+          </View>
+        )}
+
+        {/* Voice / Audio Notes */}
+        {audioAttachments.length > 0 && (
+          <View style={{ marginBottom: cleanText ? 6 : 2, gap: 4 }}>
+            {audioAttachments.map((aud, idx) => (
+              <AudioPlayerPill key={aud.id || idx} url={aud.file_url} fileName={aud.file_name} isMe={isMe} />
             ))}
           </View>
         )}
@@ -360,5 +443,61 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 11,
     fontWeight: '700',
+  },
+  audioPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    minWidth: 200,
+    maxWidth: 260,
+  },
+  audioPillMe: {
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  audioPillThem: {
+    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+    borderColor: 'rgba(99, 102, 241, 0.25)',
+  },
+  playBtnCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  playBtnCircleMe: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  playBtnCircleThem: {
+    backgroundColor: '#6366f1',
+  },
+  audioMetaCol: {
+    flex: 1,
+  },
+  waveformRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    height: 18,
+    marginBottom: 4,
+  },
+  waveformBar: {
+    width: 3,
+    borderRadius: 2,
+  },
+  audioNameText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  audioNameMe: {
+    color: '#ffffff',
+  },
+  audioNameThem: {
+    color: colors.textPrimary,
   },
 });

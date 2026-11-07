@@ -22,6 +22,25 @@ const getBaseUrl = (): string => {
 };
 
 export const API_BASE_URL = getBaseUrl();
+export const BACKEND_ROOT_URL = API_BASE_URL.replace(/\/api\/?$/, '');
+
+/**
+ * Resolves any relative media/document path to the absolute backend host URL.
+ * Ensures images and files load properly on Vercel deployments and mobile native.
+ */
+export const getFullMediaUrl = (path?: string | null): string => {
+  if (!path) return '';
+  if (
+    path.startsWith('http://') ||
+    path.startsWith('https://') ||
+    path.startsWith('data:') ||
+    path.startsWith('blob:')
+  ) {
+    return path;
+  }
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${BACKEND_ROOT_URL}${cleanPath}`;
+};
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
