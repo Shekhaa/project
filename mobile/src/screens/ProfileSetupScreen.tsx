@@ -28,6 +28,9 @@ import {
   Search,
   X,
   GraduationCap,
+  Eye,
+  EyeOff,
+  KeyRound,
 } from 'lucide-react-native';
 
 interface ProfileSetupScreenProps {
@@ -184,6 +187,11 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   const [branchModalVisible, setBranchModalVisible] = useState(false);
   const [courseSearch, setCourseSearch] = useState('');
 
+  // Account Password (for future logins)
+  const [accountPassword, setAccountPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -235,6 +243,17 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
       return;
     }
 
+    if (accountPassword.trim()) {
+      if (accountPassword.trim().length < 6) {
+        Alert.alert('Weak Password', 'Please choose a password with at least 6 characters.');
+        return;
+      }
+      if (accountPassword.trim() !== confirmPassword.trim()) {
+        Alert.alert('Password Mismatch', 'The passwords you entered do not match. Please re-enter.');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const res = await profileService.completeProfile({
@@ -246,6 +265,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
         course_name: courseName,
         branch_name: branchName,
         bio: bio.trim(),
+        password: accountPassword.trim() || undefined,
       });
 
       if (res.user) {
@@ -541,6 +561,52 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
             numberOfLines={3}
             maxLength={300}
           />
+        </View>
+
+        {/* 5. Set Account Password (for future logins when signed out) */}
+        <View style={styles.inputGroup}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <KeyRound size={15} color={colors.primary} />
+            <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 0 }]}>
+              Create Account Password *
+            </Text>
+          </View>
+          <Text style={[styles.inputSubtext, { color: colors.textMuted, marginTop: 4 }]}>
+            Set a password to easily log in with your Username or Roll Number whenever you sign out.
+          </Text>
+
+          {/* Password Input */}
+          <View style={[styles.passwordFieldRow, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+            <TextInput
+              style={[styles.passwordInput, { color: colors.textPrimary }]}
+              value={accountPassword}
+              onChangeText={setAccountPassword}
+              placeholder="Enter new password (min. 6 chars)"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+              {showPassword ? (
+                <EyeOff size={18} color={colors.textSecondary} />
+              ) : (
+                <Eye size={18} color={colors.textSecondary} />
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Confirm Password Input */}
+          <View style={[styles.passwordFieldRow, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder, marginTop: 10 }]}>
+            <TextInput
+              style={[styles.passwordInput, { color: colors.textPrimary }]}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Confirm password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+            />
+          </View>
         </View>
 
         {/* Finish Button */}
@@ -1012,5 +1078,20 @@ const styles = StyleSheet.create({
   courseOptionMeta: {
     fontSize: 11,
     marginTop: 2,
+  },
+  passwordFieldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+  },
+  passwordInput: {
+    flex: 1,
+    fontSize: 13,
+    paddingVertical: 12,
+  },
+  eyeBtn: {
+    padding: 6,
   },
 });

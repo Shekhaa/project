@@ -238,13 +238,19 @@ class LoginView(APIView):
         # 2. Match by username
         if not user:
             user = User.objects.filter(profile__username__iexact=identifier).first()
-        # 3. Match by phone
+        # 3. Match by roll number / admission number
+        if not user:
+            user = User.objects.filter(profile__admission_number__iexact=identifier).first()
+        # 4. Match by email prefix (e.g. 2313812137 -> 2313812137@geu.ac.in)
+        if not user and "@" not in identifier:
+            user = User.objects.filter(email__istartswith=f"{identifier}@").first()
+        # 5. Match by phone
         if not user and clean_phone and len(clean_phone) == 10:
             user = User.objects.filter(phone_number=clean_phone).first()
 
         if not user or not user.check_password(password):
             return Response(
-                {"error": "Invalid login credentials. Please check your username/email and password."},
+                {"error": "Invalid login credentials. Please check your username/college ID and password."},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 

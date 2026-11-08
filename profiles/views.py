@@ -122,6 +122,11 @@ class CompleteProfileView(APIView):
                 user.is_phone_verified = True
                 user_fields_to_update.extend(["phone_number", "is_phone_verified"])
 
+        password = data.get("password")
+        if password and len(str(password).strip()) >= 6:
+            user.set_password(str(password).strip())
+            user_fields_to_update.append("password")
+
         if user_fields_to_update:
             user.save(update_fields=user_fields_to_update)
 

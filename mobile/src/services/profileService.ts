@@ -15,6 +15,7 @@ export interface CompleteProfilePayload {
   section?: number;
   admission_number?: string;
   bio?: string;
+  password?: string;
 }
 
 export interface PublicProfile {
