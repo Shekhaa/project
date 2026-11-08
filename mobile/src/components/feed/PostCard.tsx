@@ -45,7 +45,7 @@ interface PostCardProps {
   onBookmarkToggle?: (postId: number, isBookmarked: boolean) => void;
 }
 
-export const PostCard: React.FC<PostCardProps> = ({
+const PostCardComponent: React.FC<PostCardProps> = ({
   post,
   currentUser,
   onLike,
@@ -679,3 +679,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+export const PostCard = React.memo(PostCardComponent);

@@ -5,7 +5,8 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
-from django.db.models import Count, Q, Exists, OuterRef
+from django.db.models import Count, Q, Exists, OuterRef, Subquery, IntegerField
+from django.db.models.functions import Coalesce
 from django.contrib.auth import get_user_model
 from communities.models import Community, CommunityMember
 from notifications.views import create_notification
@@ -17,6 +18,31 @@ from .pagination import FeedPagination
 
 User = get_user_model()
 
+
+def annotate_post_metrics(queryset, user=None):
+    """
+    Annotates Post queryset with indexed Subquery counts for likes and comments,
+    and Exists() for user_has_liked, completely eliminating Cartesian product join overhead.
+    """
+    likes_sub = Subquery(
+        PostLike.objects.filter(post=OuterRef("pk")).values("post").annotate(c=Count("id")).values("c")[:1],
+        output_field=IntegerField()
+    )
+    comments_sub = Subquery(
+        Comment.objects.filter(post=OuterRef("pk")).values("post").annotate(c=Count("id")).values("c")[:1],
+        output_field=IntegerField()
+    )
+    qs = queryset.annotate(
+        likes_count=Coalesce(likes_sub, 0),
+        comments_count=Coalesce(comments_sub, 0),
+    )
+    if user and user.is_authenticated:
+        qs = qs.annotate(
+            user_has_liked=Exists(PostLike.objects.filter(post=OuterRef("pk"), user=user))
+        )
+    return qs
+
+
 class FeedView(generics.ListAPIView):
     """
     GET /api/posts/feed/
@@ -24,7 +50,7 @@ class FeedView(generics.ListAPIView):
     Enforces relationship and profile privacy filters:
     - Excludes posts from blocked users.
     - Excludes posts from private accounts unless viewer is an approved follower or author.
-    - Scopes: ALL, GLOBAL, COLLEGE, FOLLOWERS, CONNECTIONS, COMMUNITY.
+    - Scopes: ALL, GLOBAL, COLLEGE, FOLLOWERS, CONNECTIONS, COMMUNITY, MEDIA, RESOURCES.
     """
     permission_classes = [IsAuthenticated]
     serializer_class = PostSerializer
@@ -40,25 +66,14 @@ class FeedView(generics.ListAPIView):
 
         # 1. Social graph relationship IDs
         followed_ids = list(Follow.objects.filter(follower=user, status="ACCEPTED").values_list("following_id", flat=True))
-        conn_u1 = list(Connection.objects.filter(user2=user, status="ACCEPTED").values_list("user1_id", flat=True))
-        conn_u2 = list(Connection.objects.filter(user1=user, status="ACCEPTED").values_list("user2_id", flat=True))
-        connected_ids = list(set(conn_u1) | set(conn_u2))
 
-        # 2. Blocked user IDs (bidirectional)
-        blocked_by_me = list(UserBlock.objects.filter(blocker=user).values_list("blocked_id", flat=True))
-        blocked_me = list(UserBlock.objects.filter(blocked=user).values_list("blocker_id", flat=True))
-        all_blocked_ids = set(blocked_by_me) | set(blocked_me)
-
-        # 3. Private accounts where viewer is NOT an approved follower
-        approved_or_self = set(followed_ids) | {user.id}
-        private_unapproved_authors = list(
-            StudentProfile.objects.filter(is_private_account=True)
-            .exclude(user_id__in=approved_or_self)
-            .values_list("user_id", flat=True)
-        )
+        # 2. Blocked user IDs (bidirectional) - single fast query
+        blocked_rows = UserBlock.objects.filter(Q(blocker=user) | Q(blocked=user)).values_list("blocker_id", "blocked_id")
+        all_blocked_ids = {uid for pair in blocked_rows for uid in pair if uid != user.id}
 
         scope_param = self.request.query_params.get("scope", "").upper()
         community_param = self.request.query_params.get("community")
+        ids_param = self.request.query_params.get("ids")
 
         # Base permitted visibility filter for current user
         college_q = Q(visibility="COLLEGE", author__profile__college=user_college) if user_college else Q(visibility="COLLEGE")
@@ -70,14 +85,25 @@ class FeedView(generics.ListAPIView):
             Q(community_id__in=user_community_ids)
         )
 
-        if community_param:
+        if ids_param:
+            try:
+                id_list = [int(x.strip()) for x in ids_param.split(",") if x.strip().isdigit()]
+            except Exception:
+                id_list = []
+            qs_filter = Q(id__in=id_list) & base_permitted
+        elif community_param:
             qs_filter = Q(community_id=community_param) & base_permitted
         elif scope_param == "GLOBAL":
             qs_filter = Q(visibility="GLOBAL")
         elif scope_param == "COLLEGE":
             qs_filter = college_q
-        elif scope_param in ["FOLLOWERS", "FOLLOWING", "CONNECTIONS"]:
+        elif scope_param in ["FOLLOWERS", "FOLLOWING"]:
             qs_filter = Q(visibility="FOLLOWERS", author_id__in=followed_ids) | Q(visibility="FOLLOWERS", author=user)
+        elif scope_param == "CONNECTIONS":
+            conn_u1 = list(Connection.objects.filter(user2=user, status="ACCEPTED").values_list("user1_id", flat=True))
+            conn_u2 = list(Connection.objects.filter(user1=user, status="ACCEPTED").values_list("user2_id", flat=True))
+            connected_ids = list(set(conn_u1) | set(conn_u2))
+            qs_filter = Q(visibility="CONNECTIONS", author_id__in=connected_ids) | Q(visibility="CONNECTIONS", author=user)
         elif scope_param == "MEDIA":
             media_q = Q(media_type__in=["IMAGE", "VIDEO"]) | Q(images__isnull=False) | Q(attachments__file_type="IMAGE")
             qs_filter = base_permitted & media_q
@@ -95,21 +121,21 @@ class FeedView(generics.ListAPIView):
                 qs_filter,
                 is_deleted=False
             )
-            .exclude(author_id__in=all_blocked_ids)
-            .exclude(author_id__in=private_unapproved_authors)
             .select_related("author", "author__profile", "author__profile__college", "community")
-            .prefetch_related("images", "attachments", "comments")
-            .annotate(
-                likes_count=Count("likes", distinct=True),
-                comments_count=Count("comments", distinct=True)
-            )
+            .prefetch_related("images", "attachments")
             .order_by("-created_at")
         )
-        if user.is_authenticated:
-            qs = qs.annotate(
-                user_has_liked=Exists(PostLike.objects.filter(post=OuterRef("pk"), user=user))
-            )
-        return qs
+
+        if all_blocked_ids:
+            qs = qs.exclude(author_id__in=all_blocked_ids)
+
+        # Private account safeguard: exclude private posts unless viewer is the author or followed
+        private_filter = Q(author__profile__is_private_account=True) & ~Q(author=user)
+        if followed_ids:
+            private_filter &= ~Q(author_id__in=followed_ids)
+        qs = qs.exclude(private_filter)
+
+        return annotate_post_metrics(qs, user=user)
 
 
 class CommunityFeedView(generics.ListAPIView):
@@ -128,18 +154,10 @@ class CommunityFeedView(generics.ListAPIView):
         qs = (
             Post.objects.filter(community=community, is_deleted=False)
             .select_related("author", "author__profile", "author__profile__college", "community")
-            .prefetch_related("images", "attachments", "comments")
-            .annotate(
-                likes_count=Count("likes", distinct=True),
-                comments_count=Count("comments", distinct=True)
-            )
+            .prefetch_related("images", "attachments")
             .order_by("-created_at")
         )
-        if self.request.user.is_authenticated:
-            qs = qs.annotate(
-                user_has_liked=Exists(PostLike.objects.filter(post=OuterRef("pk"), user=self.request.user))
-            )
-        return qs
+        return annotate_post_metrics(qs, user=self.request.user)
 
 
 class CreatePostView(APIView):
@@ -235,12 +253,12 @@ class PostDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
-        post = get_object_or_404(
-            Post.objects.select_related("author", "author__profile", "author__profile__college", "community")
-            .prefetch_related("images", "attachments", "comments"),
-            id=pk,
-            is_deleted=False
+        base_qs = (
+            Post.objects.filter(id=pk, is_deleted=False)
+            .select_related("author", "author__profile", "author__profile__college", "community")
+            .prefetch_related("images", "attachments")
         )
+        post = get_object_or_404(annotate_post_metrics(base_qs, user=request.user))
         user = request.user
         is_author = (post.author_id == user.id)
 
@@ -523,12 +541,9 @@ class UserPostsView(generics.ListAPIView):
             if not same_college:
                 qs = qs.exclude(visibility="COLLEGE")
 
-        return (
+        qs = (
             qs.select_related("author", "author__profile", "community")
-            .prefetch_related("images", "attachments", "comments")
-            .annotate(
-                likes_count=Count("likes", distinct=True),
-                comments_count=Count("comments", distinct=True)
-            )
+            .prefetch_related("images", "attachments")
             .order_by("-created_at")
         )
+        return annotate_post_metrics(qs, user=viewer)

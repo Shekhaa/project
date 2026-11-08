@@ -74,7 +74,11 @@ export interface PaginatedPosts {
 export const postService = {
   // Feed for enrolled communities with page pagination and scope support
   async getFeed(
-    options?: { communityId?: number; scope?: 'GLOBAL' | 'COLLEGE' | 'FOLLOWING' | 'CONNECTIONS' | 'COMMUNITY' | 'MEDIA' | 'RESOURCES' } | number,
+    options?: {
+      communityId?: number;
+      scope?: 'GLOBAL' | 'COLLEGE' | 'FOLLOWING' | 'CONNECTIONS' | 'COMMUNITY' | 'MEDIA' | 'RESOURCES';
+      ids?: number[];
+    } | number,
     page: number = 1
   ): Promise<PaginatedPosts> {
     const params: any = { page };
@@ -83,6 +87,7 @@ export const postService = {
     } else if (options) {
       if (options.communityId) params.community = options.communityId;
       if (options.scope) params.scope = options.scope;
+      if (options.ids && options.ids.length > 0) params.ids = options.ids.join(',');
     }
     const res = await api.get('/posts/feed/', { params });
     if (res.data && res.data.results) {

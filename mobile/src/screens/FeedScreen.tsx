@@ -26,6 +26,19 @@ import { notificationService, NotificationItem } from '../services/notificationS
 import { api } from '../config/api';
 import { Plus, Bell, RefreshCw, Sparkles, SlidersHorizontal, Check, X, Sun, Moon } from 'lucide-react-native';
 
+const SCOPE_TABS: Array<{
+  key: 'ALL' | 'COLLEGE' | 'FOLLOWING' | 'SAVED' | 'MEDIA' | 'RESOURCES';
+  label: string;
+  icon: string;
+}> = [
+  { key: 'ALL', label: 'All Campus', icon: '🌐' },
+  { key: 'COLLEGE', label: 'My College', icon: '🏛️' },
+  { key: 'FOLLOWING', label: 'Following', icon: '👥' },
+  { key: 'SAVED', label: 'Saved', icon: '🔖' },
+  { key: 'MEDIA', label: 'Photos', icon: '🖼️' },
+  { key: 'RESOURCES', label: 'Notes', icon: '📄' },
+];
+
 interface FeedScreenProps {
   currentUser?: any;
   composerTrigger?: number;
@@ -134,7 +147,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
 
   useEffect(() => {
     syncNotifications();
-    const interval = setInterval(syncNotifications, 20000);
+    const interval = setInterval(syncNotifications, 45000);
     return () => clearInterval(interval);
   }, [syncNotifications]);
 
@@ -145,24 +158,38 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     }
   }, [composerTrigger]);
 
-  const loadData = useCallback(async () => {
+  const loadCommunities = useCallback(async () => {
     try {
-      setLoading(true);
+      const commsData = await communityService.getMyCommunities();
+      setCommunities(commsData || []);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    loadCommunities();
+  }, [loadCommunities]);
+
+  const loadData = useCallback(async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
       setPage(1);
 
       if (selectedScope === 'SAVED') {
         const savedJson = await AsyncStorage.getItem('campus_saved_posts');
         const savedIds: number[] = savedJson ? JSON.parse(savedJson) : [];
-        const [feedData, commsData] = await Promise.all([
-          postService.getFeed(undefined, 1),
-          communityService.getMyCommunities(),
-        ]);
-        const allPosts = feedData.results || [];
-        const bookmarked = allPosts.filter((p) => savedIds.includes(p.id));
-        setPosts(bookmarked);
-        setHasMore(false);
-        setCommunities(commsData || []);
+        if (savedIds.length === 0) {
+          setPosts([]);
+          setHasMore(false);
+          return;
+        }
+        const feedData = await postService.getFeed({ ids: savedIds }, 1);
+        setPosts(feedData.results || []);
+        setHasMore(Boolean(feedData.next));
         return;
       }
 
@@ -172,13 +199,9 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         ? { scope: selectedScope }
         : undefined;
 
-      const [feedData, commsData] = await Promise.all([
-        postService.getFeed(feedQuery, 1),
-        communityService.getMyCommunities(),
-      ]);
+      const feedData = await postService.getFeed(feedQuery, 1);
       setPosts(feedData.results || []);
       setHasMore(Boolean(feedData.next));
-      setCommunities(commsData || []);
     } catch (e: any) {
       console.log('Error loading feed data', e);
       const msg = e?.response?.data?.detail || e?.response?.data?.error || e?.message || 'Could not sync campus feed. Please check your connection.';
@@ -194,8 +217,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   }, [loadData]);
 
   const handleRefresh = async () => {
-    setRefreshing(true);
-    await loadData();
+    loadCommunities();
+    await loadData(true);
   };
 
   const handleLoadMore = async () => {
@@ -203,13 +226,22 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     try {
       setLoadingMore(true);
       const nextPage = page + 1;
-      const feedQuery = selectedCommunityId
-        ? { communityId: selectedCommunityId }
-        : selectedScope && selectedScope !== 'ALL'
-        ? { scope: selectedScope }
-        : undefined;
 
-      const feedData = await postService.getFeed(feedQuery, nextPage);
+      let feedData;
+      if (selectedScope === 'SAVED') {
+        const savedJson = await AsyncStorage.getItem('campus_saved_posts');
+        const savedIds: number[] = savedJson ? JSON.parse(savedJson) : [];
+        if (savedIds.length === 0) return;
+        feedData = await postService.getFeed({ ids: savedIds }, nextPage);
+      } else {
+        const feedQuery = selectedCommunityId
+          ? { communityId: selectedCommunityId }
+          : selectedScope && selectedScope !== 'ALL'
+          ? { scope: selectedScope }
+          : undefined;
+        feedData = await postService.getFeed(feedQuery, nextPage);
+      }
+
       setPosts((prev) => [...prev, ...(feedData.results || [])]);
       setHasMore(Boolean(feedData.next));
       setPage(nextPage);
@@ -220,7 +252,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     }
   };
 
-  const handleLikePost = async (postId: number) => {
+  const handleLikePost = useCallback(async (postId: number) => {
     // Optimistic UI update
     setPosts((prev) =>
       prev.map((p) => {
@@ -250,9 +282,9 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       // Revert if error
       loadData();
     }
-  };
+  }, [loadData]);
 
-  const handleDeletePost = async (postId: number) => {
+  const handleDeletePost = useCallback(async (postId: number) => {
     try {
       await postService.deletePost(postId);
       setPosts((prev) => prev.filter((p) => p.id !== postId));
@@ -260,9 +292,9 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     } catch (e) {
       Alert.alert('Error', 'Could not delete post.');
     }
-  };
+  }, []);
 
-  const handleArchivePost = async (postId: number) => {
+  const handleArchivePost = useCallback(async (postId: number) => {
     try {
       await postService.archivePost(postId);
       setPosts((prev) => prev.filter((p) => p.id !== postId));
@@ -270,7 +302,13 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     } catch (e) {
       Alert.alert('Error', 'Could not archive post.');
     }
-  };
+  }, []);
+
+  const handleBookmarkToggle = useCallback((postId: number, isBookmarked: boolean) => {
+    if (selectedScope === 'SAVED' && !isBookmarked) {
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+    }
+  }, [selectedScope]);
 
   const isFiltered = (selectedScope && selectedScope !== 'ALL') || selectedCommunityId !== undefined;
 
@@ -352,11 +390,56 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         </View>
       </View>
 
-      {/* Active Filter Pill Bar if filtered */}
-      {isFiltered && (
+      {/* Horizontal Fast Scope Pill Switcher */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.scopeTabsContainer}
+        style={[styles.scopeTabsScroll, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}
+      >
+        {SCOPE_TABS.map((tab) => {
+          const isActive =
+            selectedCommunityId === undefined &&
+            (selectedScope === tab.key || (!selectedScope && tab.key === 'ALL'));
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={[
+                styles.scopeTabPill,
+                {
+                  backgroundColor: isActive
+                    ? (isDark ? 'rgba(94, 106, 210, 0.25)' : '#e0e7ff')
+                    : (isDark ? 'rgba(255, 255, 255, 0.05)' : '#f1f5f9'),
+                  borderColor: isActive ? colors.primary : colors.cardBorder,
+                },
+              ]}
+              onPress={() => handleSelectScope(tab.key)}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: 13 }}>{tab.icon}</Text>
+              <Text
+                style={[
+                  styles.scopeTabLabel,
+                  {
+                    color: isActive
+                      ? (isDark ? '#c7d2fe' : '#4338ca')
+                      : colors.textSecondary,
+                    fontWeight: isActive ? '700' : '500',
+                  },
+                ]}
+              >
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {/* Active Filter Pill Bar if filtered by a specific community */}
+      {selectedCommunityId !== undefined && (
         <View style={[styles.activeFilterBar, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
           <Text style={[styles.activeFilterText, { color: colors.textSecondary }]}>
-            Feed: <Text style={styles.activeFilterHighlight}>{getActiveFilterLabel()}</Text>
+            Community: <Text style={styles.activeFilterHighlight}>{getActiveFilterLabel()}</Text>
           </Text>
           <TouchableOpacity
             style={styles.clearFilterBtn}
@@ -447,6 +530,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
               onDeletePost={handleDeletePost}
               onArchivePost={handleArchivePost}
               onAuthorPress={onOpenProfile}
+              onBookmarkToggle={handleBookmarkToggle}
             />
           )}
           ListEmptyComponent={renderEmpty}
@@ -683,6 +767,28 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 3.5,
     backgroundColor: colors.primary,
+  },
+  scopeTabsScroll: {
+    borderTopWidth: 1,
+  },
+  scopeTabsContainer: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  scopeTabPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 13,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  scopeTabLabel: {
+    fontSize: 12.5,
   },
   activeFilterBar: {
     flexDirection: 'row',

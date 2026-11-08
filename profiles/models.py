@@ -257,6 +257,10 @@ class UserBlock(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["blocker", "blocked"], name="unique_user_block"),
         ]
+        indexes = [
+            models.Index(fields=["blocked"], name="userblock_blocked_idx"),
+            models.Index(fields=["blocker"], name="userblock_blocker_idx"),
+        ]
 
     @classmethod
     def is_blocked(cls, u1, u2):

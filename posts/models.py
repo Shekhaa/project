@@ -60,6 +60,9 @@ class Post(models.Model):
             models.Index(fields=["visibility", "-created_at"], name="post_visibility_created_idx"),
             models.Index(fields=["is_deleted", "-created_at"], name="post_deleted_created_idx"),
             models.Index(fields=["author", "-created_at"], name="post_author_created_idx"),
+            models.Index(fields=["is_deleted", "visibility", "-created_at"], name="post_del_vis_created_idx"),
+            models.Index(fields=["is_deleted", "community", "-created_at"], name="post_del_comm_created_idx"),
+            models.Index(fields=["is_deleted", "author", "-created_at"], name="post_del_author_created_idx"),
         ]
 
     def __str__(self):
