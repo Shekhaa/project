@@ -100,7 +100,18 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
       setErrorMessage(null);
       onClose();
     } catch (e: any) {
-      const errText = e.response?.data?.error || e.message || 'Could not publish discussion.';
+      let errText = e.response?.data?.error;
+      if (!errText && e.response?.data) {
+        if (typeof e.response.data === 'string') {
+          errText = e.response.data;
+        } else if (typeof e.response.data === 'object') {
+          const firstKey = Object.keys(e.response.data)[0];
+          const val = e.response.data[firstKey];
+          errText = Array.isArray(val) ? val.join(' ') : String(val);
+        }
+      }
+      errText = errText || e.message || 'Could not publish discussion.';
+      setErrorMessage(errText);
       notify('Publication Failed', errText);
     } finally {
       setSubmitting(false);

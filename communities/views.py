@@ -233,15 +233,23 @@ class CommunityDiscussionsView(APIView):
         serializer = DiscussionCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        attachment_ids = serializer.validated_data.pop("attachment_ids", [])
+        raw_attachment_ids = serializer.validated_data.pop("attachment_ids", [])
         discussion = serializer.save(community=community, author=request.user)
 
-        # Attach media attachments if provided
-        if attachment_ids:
-            MediaAttachment.objects.filter(
-                id__in=attachment_ids,
-                uploaded_by=request.user
-            ).update(discussion=discussion)
+        # Attach media attachments if provided (safely filter valid UUIDs)
+        if raw_attachment_ids:
+            import uuid
+            valid_uuids = []
+            for att_id in raw_attachment_ids:
+                try:
+                    valid_uuids.append(uuid.UUID(str(att_id)))
+                except (ValueError, TypeError):
+                    pass
+            if valid_uuids:
+                MediaAttachment.objects.filter(
+                    id__in=valid_uuids,
+                    uploaded_by=request.user
+                ).update(discussion=discussion)
 
         # Parse @mentions and notify mentioned community members
         mention_tags = set(re.findall(r'@([a-zA-Z0-9_\.]+)', f"{discussion.title} {discussion.content}"))

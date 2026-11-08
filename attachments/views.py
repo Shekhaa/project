@@ -18,34 +18,49 @@ class AttachmentDownloadView(APIView):
     """
     GET /api/attachments/<uuid:attachment_id>/download/
     Secure authenticated file download and in-app preview endpoint.
-    Enforces authorization:
-    - Post attachment: User must be a member of the post's community.
-    - Chat attachment: User must be a member of the chat conversation.
+    Supports Bearer header and ?token=<jwt> parameter for direct browser downloads.
+    Allows viewing/downloading attachments for public campus posts and discussions.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = []
 
     def get(self, request, attachment_id):
         attachment = get_object_or_404(MediaAttachment, id=attachment_id)
 
+        user = request.user
+        if not user or not user.is_authenticated:
+            token = request.query_params.get("token")
+            if token:
+                try:
+                    from rest_framework_simplejwt.tokens import AccessToken
+                    from django.contrib.auth import get_user_model
+                    validated_token = AccessToken(token)
+                    user_id = validated_token.payload.get("user_id")
+                    user = get_user_model().objects.filter(id=user_id).first()
+                except Exception:
+                    pass
+
         # 1. Check authorization for Community Post attachment
         if attachment.post:
-            is_member = CommunityMember.objects.filter(
-                community=attachment.post.community,
-                user=request.user
-            ).exists()
-            if not is_member and attachment.post.author != request.user and not request.user.is_staff:
-                return Response(
-                    {"error": "Access denied. You must be an enrolled member of this community to download attachments."},
-                    status=status.HTTP_403_FORBIDDEN
-                )
+            if attachment.post.visibility not in ["GLOBAL", "COLLEGE"]:
+                if not user or not user.is_authenticated:
+                    return Response({"error": "Authentication credentials required."}, status=status.HTTP_401_UNAUTHORIZED)
+                if attachment.post.community:
+                    is_member = CommunityMember.objects.filter(community=attachment.post.community, user=user).exists()
+                    if not is_member and attachment.post.author_id != user.id and not getattr(user, "is_staff", False):
+                        return Response(
+                            {"error": "Access denied. You must be an enrolled member of this community to download attachments."},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
 
         # 2. Check authorization for Chat Message attachment
         if attachment.message:
+            if not user or not user.is_authenticated:
+                return Response({"error": "Authentication credentials required."}, status=status.HTTP_401_UNAUTHORIZED)
             is_chat_member = ConversationMember.objects.filter(
                 conversation=attachment.message.conversation,
-                user=request.user
+                user=user
             ).exists()
-            if not is_chat_member and not request.user.is_staff:
+            if not is_chat_member and not getattr(user, "is_staff", False):
                 return Response(
                     {"error": "Access denied. You are not a participant in this conversation."},
                     status=status.HTTP_403_FORBIDDEN
@@ -53,38 +68,46 @@ class AttachmentDownloadView(APIView):
 
         # 3. Check authorization for Community Discussion attachment
         if attachment.discussion:
-            is_comm_member = CommunityMember.objects.filter(
-                community=attachment.discussion.community,
-                user=request.user
-            ).exists()
-            if not is_comm_member and attachment.discussion.author != request.user and not request.user.is_staff:
-                return Response(
-                    {"error": "Access denied. You must be an enrolled member of this community to download attachments."},
-                    status=status.HTTP_403_FORBIDDEN
-                )
+            if attachment.discussion.community.is_private:
+                if not user or not user.is_authenticated:
+                    return Response({"error": "Authentication credentials required."}, status=status.HTTP_401_UNAUTHORIZED)
+                is_comm_member = CommunityMember.objects.filter(community=attachment.discussion.community, user=user).exists()
+                if not is_comm_member and attachment.discussion.author_id != user.id and not getattr(user, "is_staff", False):
+                    return Response(
+                        {"error": "Access denied. You must be an enrolled member of this community to download attachments."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
 
         # 4. Check authorization for standalone unlinked attachment
         if not attachment.post and not attachment.message and not attachment.discussion:
-            if attachment.uploaded_by != request.user and not request.user.is_staff:
+            if not user or not user.is_authenticated or (attachment.uploaded_by_id != user.id and not getattr(user, "is_staff", False)):
                 return Response(
                     {"error": "Access denied. You do not have permission to access this attachment."},
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-        if not attachment.file or not os.path.exists(attachment.file.path):
+        if not attachment.file:
             raise Http404("File not found on storage server.")
 
-        # Determine if we should serve inline (preview in browser/app) or force download
         inline_preview = request.query_params.get("preview", "false").lower() == "true"
         as_attachment = not (inline_preview and attachment.file_extension in ["pdf", "jpg", "jpeg", "png", "webp", "gif"])
 
-        response = FileResponse(
-            open(attachment.file.path, "rb"),
-            content_type=attachment.mime_type or "application/octet-stream",
-            as_attachment=as_attachment,
-            filename=attachment.file_name
-        )
-        return response
+        try:
+            if os.path.exists(attachment.file.path):
+                return FileResponse(
+                    open(attachment.file.path, "rb"),
+                    content_type=attachment.mime_type or "application/octet-stream",
+                    as_attachment=as_attachment,
+                    filename=attachment.file_name
+                )
+        except Exception:
+            pass
+
+        if hasattr(attachment.file, "url"):
+            from django.shortcuts import redirect
+            return redirect(attachment.file.url)
+
+        raise Http404("File not found.")
 
 
 class AttachmentUploadView(APIView):

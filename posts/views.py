@@ -180,8 +180,15 @@ class CreatePostView(APIView):
         if isinstance(community_id, list):
             community_id = community_id[0]
 
-        # Auto-resolve community if not specified
-        if not community_id:
+        is_anonymous = request.data.get("is_anonymous")
+        if isinstance(is_anonymous, list):
+            is_anonymous = is_anonymous[0]
+        is_anonymous_bool = str(is_anonymous).lower() in ["true", "1"]
+
+        # Auto-resolve community if not specified (omit when posting anonymously)
+        if is_anonymous_bool:
+            community_id = None
+        elif not community_id:
             user_college = getattr(getattr(user, "profile", None), "college", None)
             if user_college:
                 college_comm = Community.objects.filter(name=user_college.name, community_type="COLLEGE").first()
@@ -190,8 +197,7 @@ class CreatePostView(APIView):
 
         post_data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
         post_data["visibility"] = visibility
-        if community_id:
-            post_data["community"] = community_id
+        post_data["community"] = community_id
 
         serializer = PostSerializer(data=post_data, context={"request": request})
         serializer.is_valid(raise_exception=True)

@@ -170,7 +170,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   };
 
-  const loadMessages = async (convId: string, isSilent = false) => {
+  const loadMessages = async (convId?: string, isSilent = false) => {
+    if (!convId || convId === 'undefined' || convId === 'null') return;
     try {
       if (!isSilent) setLoadingMessages(true);
       const msgs = await chatService.getMessages(convId);

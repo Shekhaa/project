@@ -116,13 +116,21 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
 
   if (!detail) return null;
 
-  const isQuestionAuthor = currentUser && (
-    String(detail.author) === String(currentUser.id) ||
-    String((detail as any).author_id) === String(currentUser.id) ||
-    detail.author_name === currentUser.full_name ||
-    detail.author_name === currentUser.email?.split('@')[0]
+  const authorId = typeof detail.author === 'object' && detail.author !== null
+    ? String((detail.author as any).id || '')
+    : String(detail.author || (detail as any).author_id || '');
+
+  const currentUserId = String(currentUser?.id || '');
+
+  const isQuestionAuthor = Boolean(
+    currentUser && (
+      (authorId && currentUserId && authorId === currentUserId) ||
+      (detail.author_name && currentUser.full_name && detail.author_name.toLowerCase() === currentUser.full_name.toLowerCase()) ||
+      (detail.author_name && currentUser.email && detail.author_name.toLowerCase() === currentUser.email.split('@')[0].toLowerCase()) ||
+      (detail.author_name && (currentUser as any).username && detail.author_name.toLowerCase() === (currentUser as any).username.toLowerCase())
+    )
   );
-  const canDeletePost = isQuestionAuthor || currentUser?.is_staff || currentUser?.is_superuser;
+  const canDeletePost = Boolean(isQuestionAuthor || currentUser?.is_staff || currentUser?.is_superuser);
   const isQuestion = detail.discussion_type === 'QUESTION';
   const authorInitial = (detail.author_name || 'S').trim()[0]?.toUpperCase() || 'S';
 
@@ -288,7 +296,16 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
             Discussion
           </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            {canDeletePost && (
+              <TouchableOpacity
+                onPress={handleDeleteDiscussion}
+                style={[styles.headerBtn, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#fee2e2' }]}
+                accessibilityLabel="Delete discussion"
+              >
+                <Trash2 size={16} color="#ef4444" />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               onPress={() => setMenuVisible(true)}
               style={styles.headerBtn}

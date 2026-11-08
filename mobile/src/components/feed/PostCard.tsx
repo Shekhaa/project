@@ -107,10 +107,16 @@ const PostCardComponent: React.FC<PostCardProps> = ({
     return '🎭';
   };
 
+  const postAuthorId = typeof post.author === 'object' && post.author !== null
+    ? (post.author as any).id
+    : post.author;
+
   const isAuthor = Boolean(
     post.is_author ||
+    currentUser?.is_staff ||
+    currentUser?.is_superuser ||
     (currentUser && (
-      (post.author && currentUser.id && post.author === currentUser.id) ||
+      (postAuthorId && currentUser.id && String(postAuthorId) === String(currentUser.id)) ||
       (currentUser.email && post.author_name === currentUser.email.split('@')[0]) ||
       (currentUser.full_name && post.author_name === currentUser.full_name) ||
       (currentUser.username && post.author_username === currentUser.username)

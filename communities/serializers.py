@@ -185,7 +185,7 @@ class DiscussionDetailSerializer(DiscussionSerializer):
 
 class DiscussionCreateSerializer(serializers.ModelSerializer):
     attachment_ids = serializers.ListField(
-        child=serializers.UUIDField(),
+        child=serializers.CharField(),
         required=False,
         write_only=True
     )
@@ -196,8 +196,8 @@ class DiscussionCreateSerializer(serializers.ModelSerializer):
 
     def validate_title(self, value):
         val = value.strip()
-        if len(val) < 4:
-            raise serializers.ValidationError("Title must be at least 4 characters long.")
+        if len(val) < 2:
+            raise serializers.ValidationError("Title must be at least 2 characters long.")
         return val
 
 

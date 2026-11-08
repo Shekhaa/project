@@ -3,6 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.core.files.base import ContentFile
 from django.conf import settings
 from django.shortcuts import get_object_or_404
@@ -176,18 +177,71 @@ class MyProfileView(APIView):
 
 class EditProfileView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def patch(self, request):
         profile = getattr(request.user, "profile", None)
         if not profile:
             return Response({"error": "Profile does not exist."}, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = StudentProfileSerializer(profile, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
+        # 1. Update User full_name if provided
+        full_name = request.data.get("full_name")
+        if full_name is not None and str(full_name).strip():
+            request.user.full_name = str(full_name).strip()
+            request.user.save(update_fields=["full_name"])
+
+        # 2. Update profile picture if uploaded via multipart
+        if "profile_picture" in request.FILES:
+            profile.profile_picture = request.FILES["profile_picture"]
+
+        # 3. Update profile picture if passed as base64 string
+        pic_b64 = request.data.get("profile_picture_base64") or request.data.get("image_base64")
+        if pic_b64 and isinstance(pic_b64, str):
+            try:
+                if "," in pic_b64:
+                    pic_b64 = pic_b64.split(",", 1)[1]
+                decoded_image = base64.b64decode(pic_b64)
+                profile.profile_picture.save(
+                    f"avatar_{request.user.id}_{int(request.user.id)}.jpg",
+                    ContentFile(decoded_image),
+                    save=False
+                )
+            except Exception:
+                pass
+
+        # 4. Update bio / caption
+        bio = request.data.get("bio")
+        if bio is None:
+            bio = request.data.get("caption")
+        if bio is not None:
+            profile.bio = str(bio).strip()
+
+        # 5. Update username if provided
+        username = request.data.get("username")
+        if username is not None and str(username).strip():
+            clean_u = str(username).strip().lower()
+            if clean_u != profile.username:
+                if StudentProfile.objects.filter(username=clean_u).exclude(id=profile.id).exists():
+                    return Response({"error": "This username is already taken by another student."}, status=status.HTTP_400_BAD_REQUEST)
+                profile.username = clean_u
+
+        # 6. Update other fields
+        for field in ["gender", "show_gender", "anonymous_enabled"]:
+            if field in request.data:
+                setattr(profile, field, request.data[field])
+
+        profile.save()
+
+        serializer = StudentProfileSerializer(profile, context={"request": request})
         return Response({
             "message": "Profile updated successfully.",
-            "profile": serializer.data
+            "profile": serializer.data,
+            "user": {
+                "id": request.user.id,
+                "email": request.user.email,
+                "full_name": request.user.full_name,
+                "profile_picture": profile.profile_picture.url if profile.profile_picture else None,
+            }
         })
 
 

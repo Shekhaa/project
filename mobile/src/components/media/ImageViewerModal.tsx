@@ -21,7 +21,8 @@ import {
   Download,
 } from 'lucide-react-native';
 import { AttachmentItem } from '../../services/chatService';
-import { getFullMediaUrl } from '../../config/api';
+import { getFullMediaUrl, api } from '../../config/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface ImageViewerModalProps {
   visible: boolean;
@@ -39,11 +40,13 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [scale, setScale] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setCurrentIndex(Math.min(Math.max(0, initialIndex), Math.max(0, images.length - 1)));
       setScale(1);
+      setHasError(false);
     }
   }, [visible, initialIndex, images.length]);
 
@@ -63,6 +66,7 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
     if (currentIndex > 0) {
       setCurrentIndex(currentIndex - 1);
       setScale(1);
+      setHasError(false);
     }
   };
 
@@ -70,6 +74,7 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
     if (currentIndex < images.length - 1) {
       setCurrentIndex(currentIndex + 1);
       setScale(1);
+      setHasError(false);
     }
   };
 
@@ -86,25 +91,45 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
   };
 
   const handleDownload = async () => {
-    const downloadUrl = (currentItem as any).download_url || imageUrl;
+    let downloadUrl = (currentItem as any).download_url || imageUrl;
     if (!downloadUrl) return;
 
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined') {
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.download = fileName;
-        link.target = '_blank';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    downloadUrl = getFullMediaUrl(downloadUrl);
+
+    try {
+      const token = await AsyncStorage.getItem('access_token');
+      if (token && !downloadUrl.includes('token=')) {
+        const separator = downloadUrl.includes('?') ? '&' : '?';
+        downloadUrl = `${downloadUrl}${separator}token=${encodeURIComponent(token)}`;
       }
-    } else {
-      try {
+
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        try {
+          const res = await api.get(downloadUrl, { responseType: 'blob' });
+          const blob = new Blob([res.data]);
+          const blobUrl = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = fileName || 'downloaded-image.jpg';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(blobUrl);
+          return;
+        } catch {
+          const link = document.createElement('a');
+          link.href = downloadUrl;
+          link.download = fileName || 'downloaded-image.jpg';
+          link.target = '_blank';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      } else {
         await Linking.openURL(downloadUrl);
-      } catch (err) {
-        console.warn('Could not trigger download:', err);
       }
+    } catch (err) {
+      console.warn('Could not trigger download:', err);
     }
   };
 
@@ -190,7 +215,15 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
             />
           )}
 
-          {imageUrl ? (
+          {hasError ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>Could not load image preview</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={handleDownload} activeOpacity={0.8}>
+                <Download size={16} color="#ffffff" />
+                <Text style={styles.retryBtnText}>Download File</Text>
+              </TouchableOpacity>
+            </View>
+          ) : imageUrl ? (
             <Image
               source={{ uri: imageUrl }}
               style={[
@@ -200,8 +233,15 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
                 },
               ]}
               resizeMode="contain"
-              onLoadStart={() => setLoading(true)}
+              onLoadStart={() => {
+                setLoading(true);
+                setHasError(false);
+              }}
               onLoadEnd={() => setLoading(false)}
+              onError={() => {
+                setLoading(false);
+                setHasError(true);
+              }}
             />
           ) : (
             <Text style={styles.errorText}>Image unavailable</Text>
@@ -314,6 +354,25 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#94a3b8',
     fontSize: 14,
+  },
+  errorBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#0284c7',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   navArrow: {
     position: 'absolute',

@@ -23,6 +23,7 @@ import { PostCard } from '../components/feed/PostCard';
 import { StudentProfileModal } from '../components/profile/StudentProfileModal';
 import { SocialListModal, SocialModalType } from '../components/profile/SocialListModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getFullMediaUrl } from '../config/api';
 import {
   ShieldCheck,
   Settings,
@@ -45,6 +46,9 @@ import {
   EyeOff,
   Square,
   Circle,
+  Edit3,
+  Camera,
+  Upload,
 } from 'lucide-react-native';
 
 interface ProfileData {
@@ -130,6 +134,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [editGender, setEditGender] = useState('Male');
   const [editShowGender, setEditShowGender] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [editAvatarBase64, setEditAvatarBase64] = useState<string | null>(null);
+  const [editAvatarPreview, setEditAvatarPreview] = useState<string | null>(null);
 
   // Change Password State
   const [oldPassword, setOldPassword] = useState('');
@@ -407,6 +413,31 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     }
   };
 
+  const handlePickPhoto = () => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = (e: any) => {
+        const file = e.target.files?.[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (uploadEvent: any) => {
+            const base64Str = uploadEvent.target.result as string;
+            setEditAvatarBase64(base64Str);
+            setEditAvatarPreview(base64Str);
+          };
+          reader.readAsDataURL(file);
+        }
+      };
+      input.click();
+    } else {
+      Alert.alert('Change Profile Picture', 'Select a picture from your device gallery.', [
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
+
   // Save Profile Details
   const handleSaveProfile = async () => {
     if (!editUsername.trim()) {
@@ -416,18 +447,32 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
     setSavingProfile(true);
     try {
-      const res = await profileService.updateProfile({
+      const payload: any = {
         full_name: editFullName.trim(),
         username: editUsername.trim(),
         bio: editBio.trim(),
+        caption: editBio.trim(),
         gender: editGender,
         show_gender: editShowGender,
-      });
-      setProfile((prev) => (prev ? { ...prev, ...res.profile } : null));
-      if (editFullName.trim() !== currentUser.full_name) {
-        onUserSwitched({ ...currentUser, full_name: editFullName.trim() });
+      };
+
+      if (editAvatarBase64) {
+        payload.profile_picture_base64 = editAvatarBase64;
       }
-      Alert.alert('Success ✅', 'Your campus profile details have been updated!');
+
+      const res = await profileService.updateProfile(payload);
+      setProfile((prev) => (prev ? { ...prev, ...res.profile } : null));
+      setEditAvatarBase64(null);
+      setEditAvatarPreview(null);
+
+      if (editFullName.trim() !== currentUser.full_name || res.user?.profile_picture) {
+        onUserSwitched({
+          ...currentUser,
+          full_name: editFullName.trim(),
+          profile_picture: res.user?.profile_picture || currentUser.profile_picture,
+        });
+      }
+      Alert.alert('Success ✅', 'Your campus profile details and photo have been updated!');
     } catch (e: any) {
       Alert.alert('Update Failed', e.response?.data?.error || 'Could not save profile changes.');
     } finally {
@@ -582,6 +627,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {/* Top Header Card */}
       <View style={[styles.heroCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
         <View style={styles.heroTopActions}>
+          <TouchableOpacity
+            style={[styles.editProfileBtn, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              setActiveSettingsSection('PROFILE');
+              setSettingsModalVisible(true);
+            }}
+          >
+            <Edit3 size={13} color="#ffffff" />
+            <Text style={styles.editProfileBtnText}>Edit Profile</Text>
+          </TouchableOpacity>
           {(currentUser.is_staff || currentUser.is_superuser) && (
             <TouchableOpacity
               style={styles.auditIconBtn}
@@ -627,13 +682,28 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 borderRadius: avatarShape === 'SQUARE' ? 0 : 36,
                 borderWidth: avatarShape === 'SQUARE' ? 2 : 3,
                 borderColor: avatarShape === 'SQUARE' ? colors.primary : 'rgba(255,255,255,0.15)',
+                overflow: 'hidden',
               },
             ]}
-            onPress={() => handleToggleAvatarShape(avatarShape === 'SQUARE' ? 'CIRCLE' : 'SQUARE')}
+            onPress={() => {
+              setActiveSettingsSection('PROFILE');
+              setSettingsModalVisible(true);
+            }}
             activeOpacity={0.8}
-            accessibilityLabel="Toggle profile picture shape"
+            accessibilityLabel="Edit profile and photo"
           >
-            <Text style={styles.avatarInitials}>{initials}</Text>
+            {profile?.profile_picture ? (
+              <Image
+                source={{ uri: getFullMediaUrl(profile.profile_picture) }}
+                style={[
+                  styles.avatarImage,
+                  { borderRadius: avatarShape === 'SQUARE' ? 0 : 36 },
+                ]}
+                resizeMode="cover"
+              />
+            ) : (
+              <Text style={styles.avatarInitials}>{initials}</Text>
+            )}
             <View style={styles.onlineBadge} />
             <View style={[styles.shapeBadgePill, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
               <Text style={[styles.shapeBadgeText, { color: colors.primary }]}>
@@ -1228,6 +1298,57 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               {activeSettingsSection === 'PROFILE' && (
                 <View style={styles.settingsSectionBody}>
                   <Text style={styles.inputGroupTitle}>Public Student Details</Text>
+
+                  {/* Profile Picture Upload Section */}
+                  <View style={styles.avatarEditContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.avatarPreviewBox,
+                        {
+                          borderRadius: avatarShape === 'SQUARE' ? 0 : 36,
+                          borderColor: colors.primary,
+                        },
+                      ]}
+                      onPress={handlePickPhoto}
+                      activeOpacity={0.8}
+                    >
+                      {editAvatarPreview || profile?.profile_picture ? (
+                        <Image
+                          source={{ uri: editAvatarPreview || getFullMediaUrl(profile?.profile_picture) }}
+                          style={[
+                            styles.avatarPreviewImage,
+                            { borderRadius: avatarShape === 'SQUARE' ? 0 : 36 },
+                          ]}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <Text style={styles.avatarInitials}>{initials}</Text>
+                      )}
+                      <View style={styles.avatarUploadOverlay}>
+                        <Camera size={14} color="#ffffff" />
+                      </View>
+                    </TouchableOpacity>
+
+                    <View style={styles.avatarEditInfoCol}>
+                      <TouchableOpacity
+                        style={[styles.photoUploadBtn, { backgroundColor: colors.primary }]}
+                        onPress={handlePickPhoto}
+                      >
+                        <Upload size={13} color="#ffffff" style={{ marginRight: 6 }} />
+                        <Text style={styles.photoUploadBtnText}>
+                          {editAvatarPreview || profile?.profile_picture ? 'Change Photo' : 'Upload Photo'}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.shapeSwitchSubBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                        onPress={() => handleToggleAvatarShape(avatarShape === 'SQUARE' ? 'CIRCLE' : 'SQUARE')}
+                      >
+                        <Text style={[styles.shapeSwitchSubText, { color: colors.textSecondary }]}>
+                          Style: <Text style={{ color: colors.primary, fontWeight: '700' }}>{avatarShape === 'SQUARE' ? '0 Shape (Square)' : 'Round Circle'}</Text>
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
 
                   <Text style={styles.fieldLabel}>Full Name</Text>
                   <TextInput
@@ -2544,6 +2665,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  editProfileBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginRight: 6,
+  },
+  editProfileBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   avatarRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2559,6 +2694,71 @@ const styles = StyleSheet.create({
     position: 'relative',
     borderWidth: 3,
     borderColor: 'rgba(255,255,255,0.1)',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarEditContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 18,
+    paddingVertical: 10,
+  },
+  avatarPreviewBox: {
+    width: 76,
+    height: 76,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  avatarPreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarUploadOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    left: 0,
+    height: 24,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarEditInfoCol: {
+    flex: 1,
+    gap: 8,
+  },
+  photoUploadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  photoUploadBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  photoHelpText: {
+    fontSize: 12,
+  },
+  shapeSwitchSubBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  shapeSwitchSubText: {
+    fontSize: 11,
   },
   avatarInitials: {
     color: '#fff',

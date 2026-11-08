@@ -692,8 +692,11 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
               value={isAnonymous}
               onValueChange={(val) => {
                 setIsAnonymous(val);
-                if (val && postScope === 'COMMUNITY') {
-                  setPostScope('COLLEGE');
+                if (val) {
+                  setSelectedCommunity(null);
+                  if (postScope === 'COMMUNITY') {
+                    setPostScope('COLLEGE');
+                  }
                 }
               }}
               trackColor={{ false: '#334155', true: '#7c3aed' }}

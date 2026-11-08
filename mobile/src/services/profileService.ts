@@ -112,6 +112,8 @@ export const profileService = {
     anonymous_enabled?: boolean;
     is_private_account?: boolean;
     messaging_preference?: string;
+    profile_picture_base64?: string;
+    caption?: string;
   }) {
     const res = await api.patch('/profile/edit/', data);
     return res.data;

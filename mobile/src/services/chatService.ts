@@ -139,6 +139,9 @@ export const chatService = {
 
   // Get messages in a conversation
   async getMessages(conversationId: string): Promise<Message[]> {
+    if (!conversationId || conversationId === 'undefined' || conversationId === 'null') {
+      return [];
+    }
     const res = await api.get(`/chat/${conversationId}/messages/`);
     return res.data.results || res.data;
   },
@@ -241,12 +244,17 @@ export const chatService = {
       } as any);
     }
     try {
-      const res = await api.post('/chat/upload-attachment/', formData, {
+      const res = await api.post('/attachments/upload/', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       return res.data;
-    } catch {
-      return { id: fileItem.id || String(Date.now()) };
+    } catch (err) {
+      console.warn('Failed to upload attachment via /attachments/upload/', err);
+      // If fileItem already has a real UUID id, retain it; otherwise throw or pass empty
+      if (fileItem.id && typeof fileItem.id === 'string' && fileItem.id.includes('-')) {
+        return { id: fileItem.id };
+      }
+      throw err;
     }
   },
 
