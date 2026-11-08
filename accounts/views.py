@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from django.http import HttpResponse
@@ -30,6 +31,8 @@ class SendEmailOTPView(APIView):
     Validates college email domain, dispatches 6-digit OTP and 1-Click Magic Link.
     """
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth_otp'
 
     def post(self, request):
         serializer = SendEmailOTPSerializer(data=request.data)
@@ -71,6 +74,8 @@ class VerifyEmailOTPView(APIView):
     Verifies college email OTP, creates/retrieves User, and issues JWT tokens.
     """
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth_otp'
 
     def post(self, request):
         serializer = VerifyEmailOTPSerializer(data=request.data)
@@ -215,6 +220,8 @@ class LoginView(APIView):
     Login using college email, username, or mobile phone number and password.
     """
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth_login'
 
     def post(self, request):
         serializer = LoginWithPasswordSerializer(data=request.data)
@@ -786,17 +793,23 @@ class ChangePasswordView(APIView):
 class ForgotPasswordView(APIView):
     """
     POST /api/authentication/password/forgot/
-    Initiates password reset OTP for college email.
+    Initiates password reset OTP for college email with anti-enumeration protection.
     """
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth_otp'
 
     def post(self, request):
         email = request.data.get("email", "").strip().lower()
-        if not email:
-            return Response({"error": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not email or "@" not in email:
+            return Response({"error": "Valid university email is required."}, status=status.HTTP_400_BAD_REQUEST)
         user = User.objects.filter(email__iexact=email).first()
         if not user:
-            return Response({"error": "No student found with this email."}, status=status.HTTP_404_NOT_FOUND)
+            # Prevent User Enumeration: return standard message without disclosing non-existence
+            return Response({
+                "message": f"If an account is associated with {email}, a password reset OTP has been dispatched.",
+                "email": email,
+            }, status=status.HTTP_200_OK)
         
         success, msg, otp_record = OTPService.send_email_otp(email, purpose="PASSWORD_RESET", return_record=True)
         if not success:
@@ -815,6 +828,8 @@ class ResetPasswordView(APIView):
     Verifies reset OTP and sets new password.
     """
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth_otp'
 
     def post(self, request):
         email = request.data.get("email", "").strip().lower()
