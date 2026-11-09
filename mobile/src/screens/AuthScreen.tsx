@@ -79,6 +79,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
   const [ssoTokenModal, setSsoTokenModal] = useState(false);
   const [manualTokenInput, setManualTokenInput] = useState('');
   const [ssoLoading, setSsoLoading] = useState(false);
+  const [ssoError, setSsoError] = useState<string | null>(null);
 
   // ID Card Scan State
   const [idScanLoading, setIdScanLoading] = useState(false);
@@ -200,20 +201,31 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     const tokenToUse = passedToken || manualTokenInput.trim();
     if (tokenToUse) {
       setSsoLoading(true);
+      setSsoError(null);
       try {
         const res = await authService.loginWithMicrosoft(tokenToUse);
         setSsoTokenModal(false);
         setManualTokenInput('');
-        Alert.alert(
-          'University Identity Verified! 🎓',
-          `Welcome, ${res.user.full_name || 'Student'}!\nVerified Email: ${res.user.email}\nRoll Number: ${res.detected_student?.roll_number || 'Verified'}\nCollege: ${res.detected_student?.college_name || 'Graphic Era University'}`
-        );
+        if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history?.replaceState) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+        if (Platform.OS !== 'web') {
+          Alert.alert(
+            'University Identity Verified! 🎓',
+            `Welcome, ${res.user.full_name || 'Student'}!\nVerified Email: ${res.user.email}\nRoll Number: ${res.detected_student?.roll_number || 'Verified'}\nCollege: ${res.detected_student?.college_name || 'Graphic Era University'}`
+          );
+        }
         onLoginSuccess(res.user);
       } catch (err: any) {
-        Alert.alert(
-          'SSO Verification Failed',
-          err.response?.data?.error || err.message || 'Token verification failed. Please try again.'
-        );
+        const errMsg =
+          err.response?.data?.error ||
+          err.response?.data?.detail ||
+          err.message ||
+          'Microsoft verification failed. Please try again.';
+        setSsoError(errMsg);
+        if (Platform.OS !== 'web') {
+          Alert.alert('SSO Verification Failed', errMsg);
+        }
       } finally {
         setSsoLoading(false);
       }
@@ -251,6 +263,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
         const params = new URLSearchParams(hash);
         const idToken = params.get('id_token') || params.get('access_token');
         if (idToken) {
+          if (window.history?.replaceState) {
+            window.history.replaceState(null, '', window.location.pathname);
+          }
           handleMicrosoftSSO(idToken);
         }
       } catch {}
@@ -748,6 +763,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                     One tap connects your Graphic Era Outlook identity. Instantly verifies your course, branch, and roll number.
                   </Text>
                 </View>
+
+                {/* Inline SSO Error Alert */}
+                {ssoError && (
+                  <View style={[styles.errorAlertBox, { marginHorizontal: 16, marginBottom: 14 }]}>
+                    <AlertCircle size={16} color="#ef4444" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.errorAlertText}>{ssoError}</Text>
+                      <TouchableOpacity
+                        onPress={() => setSsoTokenModal(true)}
+                        style={{ marginTop: 4 }}
+                      >
+                        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
+                          ⚡ Click here to paste dev token or use direct simulation
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
 
                 {/* Microsoft Action Button */}
                 <TouchableOpacity

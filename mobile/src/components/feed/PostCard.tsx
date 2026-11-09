@@ -194,26 +194,54 @@ const PostCardComponent: React.FC<PostCardProps> = ({
   const postVideoUrl = videoAttachment ? getFullMediaUrl(videoAttachment.file_url) : (isVideoMedia ? singleMediaUrl : null);
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
-      {/* Header */}
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.surface,
+          borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.cardBorder,
+        },
+      ]}
+    >
+      {/* 1. Header: Author & Campus Origin */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.authorRow}
           disabled={post.is_anonymous || !post.author}
           onPress={() => post.author && onAuthorPress?.(post.author)}
-          activeOpacity={0.7}
+          activeOpacity={0.75}
         >
           {post.is_anonymous ? (
-            <View style={[styles.avatar, styles.anonAvatar]}>
+            <View
+              style={[
+                styles.avatar,
+                styles.anonAvatar,
+                {
+                  backgroundColor: isDark ? 'rgba(113, 112, 255, 0.15)' : '#eef2ff',
+                  borderColor: isDark ? 'rgba(113, 112, 255, 0.3)' : '#c7d2fe',
+                },
+              ]}
+            >
               <Text style={styles.avatarText}>
                 {getAnonymousMascot(post.author_name || (post as any).anonymous_alias)}
               </Text>
             </View>
           ) : post.author_avatar ? (
-            <Image source={{ uri: getFullMediaUrl(post.author_avatar) }} style={styles.avatar} />
+            <Image
+              source={{ uri: getFullMediaUrl(post.author_avatar) }}
+              style={[styles.avatar, { borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : colors.cardBorder }]}
+            />
           ) : (
-            <View style={[styles.avatar, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
-              <Text style={[styles.avatarText, { color: colors.textPrimary }]}>{authorInitial}</Text>
+            <View
+              style={[
+                styles.avatar,
+                {
+                  backgroundColor: isDark ? '#18191b' : colors.surfaceLight,
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : colors.cardBorder,
+                },
+              ]}
+            >
+              <Text style={[styles.avatarText, { color: colors.primary }]}>{authorInitial}</Text>
             </View>
           )}
 
@@ -223,69 +251,100 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                 {post.author_name}
               </Text>
               {!post.is_anonymous && post.author_verification_tier === 'FULLY_VERIFIED' && (
-                <ShieldCheck size={14} color="#38bdf8" style={styles.badgeIcon} />
+                <View style={styles.verifiedBadgePill}>
+                  <ShieldCheck size={12} color="#10b981" />
+                  <Text style={styles.verifiedBadgeText}>VERIFIED</Text>
+                </View>
               )}
               {post.is_anonymous && (
-                <View style={[styles.anonPill, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
-                  <Text style={[styles.anonPillText, { color: colors.textMuted }]}>Anonymous</Text>
+                <View
+                  style={[
+                    styles.anonPill,
+                    {
+                      backgroundColor: isDark ? 'rgba(113, 112, 255, 0.12)' : '#eef2ff',
+                      borderColor: isDark ? 'rgba(113, 112, 255, 0.25)' : '#c7d2fe',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.anonPillText, { color: isDark ? '#a5b4fc' : '#4f46e5' }]}>Anonymous</Text>
                 </View>
               )}
             </View>
 
             <View style={styles.metaLine}>
-              <Text style={styles.communityTag}>
-                {post.community_name || post.author_college_name || 'Campus Feed'}
-                {' • '}
-              </Text>
+              <View
+                style={[
+                  styles.communityBadge,
+                  {
+                    backgroundColor: isDark ? 'rgba(94, 106, 210, 0.12)' : 'rgba(79, 70, 229, 0.08)',
+                    borderColor: isDark ? 'rgba(94, 106, 210, 0.24)' : 'rgba(79, 70, 229, 0.15)',
+                  },
+                ]}
+              >
+                <Text style={[styles.communityBadgeText, { color: colors.primary }]}>
+                  {post.community_name || post.author_college_name || 'Campus Feed'}
+                </Text>
+              </View>
+              <Text style={[styles.metaDot, { color: colors.textTertiary }]}>•</Text>
               <Text style={[styles.timestamp, { color: colors.textMuted }]}>{formatTimestamp(post.created_at)}</Text>
             </View>
           </View>
         </TouchableOpacity>
 
-        {/* 3-dots Menu */}
+        {/* 3-dots Menu Button */}
         <TouchableOpacity
-          style={styles.moreButton}
+          style={[styles.moreButton, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'transparent' }]}
           onPress={() => setMenuVisible(true)}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityLabel="Post options"
         >
           <MoreVertical size={18} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
-      {/* Post Text Content */}
+      {/* 2. Post Text Content */}
       {post.content ? (
         <TouchableOpacity onPress={() => onCommentPress(post)} activeOpacity={0.92}>
           <Text style={[styles.content, { color: colors.textPrimary }]}>{post.content}</Text>
         </TouchableOpacity>
       ) : null}
 
-      {/* Post Attachments (Playable Video, Images, & Academic Documents) */}
+      {/* 3. Post Attachments (Playable Video, Images, & Academic Documents) */}
       {postVideoUrl ? (
-        <View style={{ marginHorizontal: 12, marginVertical: 6, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' }}>
+        <View style={styles.videoWrapper}>
           {Platform.OS === 'web' ? (
             <video
               src={postVideoUrl}
               controls
               playsInline
-              style={{ width: '100%', maxHeight: 380, objectFit: 'contain', display: 'block', borderRadius: 12 }}
+              style={{
+                width: '100%',
+                maxHeight: 380,
+                objectFit: 'contain',
+                display: 'block',
+                borderRadius: 12,
+                backgroundColor: '#000',
+              }}
             />
           ) : (
             <TouchableOpacity
-              style={[styles.imageContainer, { height: 200, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }]}
+              style={[styles.imageContainer, { height: 210, justifyContent: 'center', alignItems: 'center', backgroundColor: '#090d16' }]}
               onPress={() => Linking.openURL(postVideoUrl)}
             >
-              <Play size={40} color="#fff" />
-              <Text style={{ color: '#fff', marginTop: 8, fontWeight: '600' }}>Play Video</Text>
+              <View style={styles.playButtonCircle}>
+                <Play size={28} color="#ffffff" fill="#ffffff" />
+              </View>
+              <Text style={styles.playVideoLabel}>Play Video Attachment</Text>
             </TouchableOpacity>
           )}
         </View>
       ) : allImages.length > 0 ? (
-        <View style={{ marginHorizontal: 12, marginVertical: 6 }}>
+        <View style={styles.mediaGridWrapper}>
           <MediaGrid images={allImages} />
         </View>
       ) : singleMediaUrl && (post.media_type === 'IMAGE' || !post.media_type) && !imageError ? (
         <TouchableOpacity
-          style={[styles.imageContainer, { backgroundColor: isDark ? '#141516' : '#f1f5f9' }]}
+          style={[styles.imageContainer, { backgroundColor: isDark ? '#121315' : '#f1f5f9' }]}
           onPress={() => onCommentPress(post)}
           activeOpacity={0.95}
         >
@@ -307,79 +366,113 @@ const PostCardComponent: React.FC<PostCardProps> = ({
         </View>
       ) : post.media_type === 'DOCUMENT' ? (
         <TouchableOpacity
-          style={styles.documentCard}
+          style={[
+            styles.documentCard,
+            {
+              backgroundColor: colors.surfaceLight,
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.cardBorder,
+            },
+          ]}
           onPress={() => handleOpenDocument(post.document || post.media_url)}
           activeOpacity={0.8}
         >
           <View style={styles.documentIconBox}>
-            <FileText size={24} color="#ef4444" />
+            <FileText size={22} color="#ef4444" />
           </View>
           <View style={styles.documentInfo}>
-            <Text style={styles.documentTitle} numberOfLines={1}>
+            <Text style={[styles.documentTitle, { color: colors.textPrimary }]} numberOfLines={1}>
               {post.document_name || 'Campus Academic Document.pdf'}
             </Text>
-            <Text style={styles.documentSize}>
+            <Text style={[styles.documentSize, { color: colors.textMuted }]}>
               {post.document_size || 'PDF Document'} • Tap to preview
             </Text>
           </View>
-          <View style={styles.downloadBadge}>
-            <Download size={16} color={colors.primary} />
+          <View
+            style={[
+              styles.downloadBadge,
+              {
+                backgroundColor: colors.surface,
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : colors.cardBorder,
+              },
+            ]}
+          >
+            <Download size={15} color={colors.primary} />
           </View>
         </TouchableOpacity>
       ) : null}
 
-      {/* Footer Action Bar */}
-      <View style={styles.footer}>
+      {/* 4. Footer Action Bar (Tactile Engagement Pills) */}
+      <View
+        style={[
+          styles.footer,
+          {
+            borderTopColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.hairline,
+          },
+        ]}
+      >
         <View style={styles.actionGroup}>
-          {/* Like */}
+          {/* Like Pill */}
           <TouchableOpacity
-            style={styles.actionBtn}
+            style={[
+              styles.actionPill,
+              post.has_liked && {
+                backgroundColor: isDark ? 'rgba(244, 63, 94, 0.12)' : '#ffe4e6',
+              },
+            ]}
             onPress={() => onLike(post.id)}
             activeOpacity={0.7}
           >
             <Heart
-              size={20}
-              color={post.has_liked ? '#ef4444' : colors.textSecondary}
-              fill={post.has_liked ? '#ef4444' : 'transparent'}
+              size={18}
+              color={post.has_liked ? '#f43f5e' : colors.textSecondary}
+              fill={post.has_liked ? '#f43f5e' : 'transparent'}
             />
             <Text
               style={[
                 styles.actionCount,
-                post.has_liked && { color: '#ef4444', fontWeight: '700' },
+                { color: post.has_liked ? '#f43f5e' : colors.textSecondary },
+                post.has_liked && { fontWeight: '700' },
               ]}
             >
               {post.likes_count || 0}
             </Text>
           </TouchableOpacity>
 
-          {/* Comment */}
+          {/* Comment Pill */}
           <TouchableOpacity
-            style={styles.actionBtn}
+            style={styles.actionPill}
             onPress={() => onCommentPress(post)}
             activeOpacity={0.7}
           >
-            <MessageCircle size={20} color={colors.textSecondary} />
-            <Text style={[styles.actionCount, { color: colors.textSecondary }]}>{post.comments_count || 0}</Text>
+            <MessageCircle size={18} color={colors.textSecondary} />
+            <Text style={[styles.actionCount, { color: colors.textSecondary }]}>
+              {post.comments_count || 0}
+            </Text>
           </TouchableOpacity>
 
-          {/* Share */}
+          {/* Share Pill */}
           <TouchableOpacity
-            style={styles.actionBtn}
+            style={styles.actionIconBtn}
             onPress={() => onSharePress(post)}
             activeOpacity={0.7}
           >
-            <Share2 size={19} color={colors.textSecondary} />
+            <Share2 size={17} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          {/* Bookmark / Save */}
+          {/* Bookmark Pill */}
           <TouchableOpacity
-            style={styles.actionBtn}
+            style={[
+              styles.actionIconBtn,
+              isBookmarked && {
+                backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : '#fef3c7',
+              },
+            ]}
             onPress={handleToggleBookmark}
             activeOpacity={0.7}
             accessibilityLabel={isBookmarked ? 'Remove saved bookmark' : 'Bookmark post'}
           >
             <Bookmark
-              size={19}
+              size={17}
               color={isBookmarked ? '#f59e0b' : colors.textSecondary}
               fill={isBookmarked ? '#f59e0b' : 'transparent'}
             />
@@ -388,16 +481,24 @@ const PostCardComponent: React.FC<PostCardProps> = ({
 
         {/* Post Visibility / Audience Badge */}
         {(() => {
-          let label = 'All colleges';
+          let label = 'All campus';
           if (post.visibility === 'COLLEGE') label = 'My college';
-          else if (post.visibility === 'FOLLOWERS') label = 'Followers only';
+          else if (post.visibility === 'FOLLOWERS') label = 'Followers';
           else if (post.visibility === 'CONNECTIONS') label = 'Connections';
           else if (post.visibility === 'COMMUNITY') label = 'Community';
-          else if (post.visibility === 'ONLY_ME') label = 'Only me';
+          else if (post.visibility === 'ONLY_ME') label = 'Private';
 
           return (
-            <View style={[styles.audienceBadge, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
-              <Text style={[styles.audienceText, { color: colors.textMuted }]}>{label}</Text>
+            <View
+              style={[
+                styles.audienceBadge,
+                {
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : colors.surfaceLight,
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.cardBorder,
+                },
+              ]}
+            >
+              <Text style={[styles.audienceText, { color: colors.textTertiary }]}>{label}</Text>
             </View>
           );
         })()}
@@ -416,7 +517,15 @@ const PostCardComponent: React.FC<PostCardProps> = ({
             activeOpacity={1}
             onPress={() => setMenuVisible(false)}
           >
-            <View style={[styles.menuSheet, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+            <View
+              style={[
+                styles.menuSheet,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : colors.cardBorder,
+                },
+              ]}
+            >
               {isAuthor && onDeletePost && (
                 <TouchableOpacity
                   style={styles.menuItem}
@@ -425,7 +534,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                     onDeletePost(post.id);
                   }}
                 >
-                  <Trash2 size={18} color="#ef4444" />
+                  <Trash2 size={17} color="#ef4444" />
                   <Text style={[styles.menuItemText, { color: '#ef4444' }]}>Delete Post</Text>
                 </TouchableOpacity>
               )}
@@ -438,8 +547,8 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                     onArchivePost(post.id);
                   }}
                 >
-                  <Archive size={18} color={colors.textPrimary} />
-                  <Text style={styles.menuItemText}>Archive Post</Text>
+                  <Archive size={17} color={colors.textPrimary} />
+                  <Text style={[styles.menuItemText, { color: colors.textPrimary }]}>Archive Post</Text>
                 </TouchableOpacity>
               )}
 
@@ -464,11 +573,9 @@ const PostCardComponent: React.FC<PostCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    marginBottom: 14,
+    marginBottom: 16,
     marginHorizontal: 12,
     overflow: 'hidden',
   },
@@ -477,7 +584,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    paddingTop: 12,
+    paddingTop: 14,
     paddingBottom: 8,
   },
   authorRow: {
@@ -486,24 +593,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.surfaceLight,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
+    marginRight: 11,
+    borderWidth: 1.5,
   },
   anonAvatar: {
-    backgroundColor: colors.surfaceLight,
-    borderColor: colors.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatarText: {
-    color: colors.textPrimary,
     fontWeight: '700',
-    fontSize: 15,
+    fontSize: 16,
   },
   authorInfo: {
     flex: 1,
@@ -511,53 +615,101 @@ const styles = StyleSheet.create({
   nameLine: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
   },
   authorName: {
-    color: colors.textPrimary,
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: '700',
-    maxWidth: '75%',
+    letterSpacing: -0.2,
+    maxWidth: '70%',
   },
-  badgeIcon: {
-    marginLeft: 4,
+  verifiedBadgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+  },
+  verifiedBadgeText: {
+    color: '#10b981',
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 0.4,
   },
   anonPill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    paddingHorizontal: 6,
+    paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    marginLeft: 6,
   },
   anonPillText: {
-    color: colors.textMuted,
-    fontSize: 10,
+    fontSize: 10.5,
     fontWeight: '600',
   },
   metaLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 2,
+    marginTop: 3,
+    gap: 5,
   },
-  communityTag: {
-    color: colors.primary,
+  communityBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  communityBadgeText: {
     fontSize: 11,
     fontWeight: '600',
   },
+  metaDot: {
+    fontSize: 10,
+  },
   timestamp: {
-    color: colors.textSecondary,
-    fontSize: 11,
+    fontSize: 11.5,
   },
   moreButton: {
-    padding: 6,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
-    color: colors.textPrimary,
     fontSize: 14.5,
-    lineHeight: 21,
+    lineHeight: 22,
+    letterSpacing: -0.15,
     paddingHorizontal: 14,
     paddingVertical: 8,
+  },
+  videoWrapper: {
+    marginHorizontal: 12,
+    marginVertical: 6,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  playButtonCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playVideoLabel: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  mediaGridWrapper: {
+    marginHorizontal: 12,
+    marginVertical: 6,
   },
   imageContainer: {
     width: '100%',
@@ -572,21 +724,19 @@ const styles = StyleSheet.create({
   documentCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 12,
     marginHorizontal: 14,
-    marginVertical: 8,
+    marginVertical: 6,
   },
   documentIconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
     backgroundColor: 'rgba(239, 68, 68, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.25)',
+    borderColor: 'rgba(239, 68, 68, 0.22)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -595,22 +745,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   documentTitle: {
-    color: colors.textPrimary,
     fontSize: 13.5,
     fontWeight: '700',
   },
   documentSize: {
-    color: colors.textSecondary,
     fontSize: 11,
     marginTop: 2,
   },
   downloadBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
@@ -622,41 +768,58 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.05)',
     marginTop: 6,
   },
   actionGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 20,
+    gap: 12,
   },
-  actionBtn: {
+  actionPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 5,
+  },
+  actionIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionCount: {
-    color: colors.textSecondary,
     fontSize: 13,
     fontWeight: '600',
-    marginLeft: 6,
+  },
+  audienceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 7,
+    borderWidth: 1,
+  },
+  audienceText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   menuBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   menuSheet: {
-    width: '80%',
-    maxWidth: 280,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
+    width: '82%',
+    maxWidth: 290,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     paddingVertical: 8,
-    elevation: 10,
+    elevation: 12,
   },
   menuItem: {
     flexDirection: 'row',
@@ -667,21 +830,6 @@ const styles = StyleSheet.create({
   },
   menuItemText: {
     fontSize: 14,
-    fontWeight: '600',
-  },
-  audienceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-  },
-  audienceText: {
-    color: colors.textMuted,
-    fontSize: 11,
     fontWeight: '600',
   },
 });

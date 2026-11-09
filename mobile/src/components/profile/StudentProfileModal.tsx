@@ -9,14 +9,18 @@ import {
   ScrollView,
   Alert,
   Platform,
+  Image,
 } from 'react-native';
+import { useTheme } from '../../theme/ThemeContext';
 import { colors } from '../../theme/colors';
 import { profileService, PublicProfile } from '../../services/profileService';
 import { chatService } from '../../services/chatService';
 import { postService, Post } from '../../services/postService';
+import { getFullMediaUrl } from '../../config/api';
 import {
   X,
   Shield,
+  ShieldCheck,
   Lock,
   UserPlus,
   UserCheck,
@@ -46,6 +50,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   onOpenChat,
   onOpenSocialList,
 }) => {
+  const { colors, isDark } = useTheme();
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -251,91 +256,127 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
       onRequestClose={onClose}
     >
       <View style={styles.backdrop}>
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { backgroundColor: colors.surface, borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.cardBorder }]}>
+          {/* Grab Handle */}
+          <View style={styles.sheetHandleRow}>
+            <View style={[styles.sheetHandle, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)' }]} />
+          </View>
+
           {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>Student Profile</Text>
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-              <X size={20} color={colors.textSecondary} />
+          <View style={[styles.header, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.hairline }]}>
+            <View style={styles.headerTitleBox}>
+              <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Student Identity</Text>
+              <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>Graphic Era Campus Network</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.closeBtn, { backgroundColor: colors.surfaceLight }]}
+              onPress={onClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <X size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>Loading profile details...</Text>
+              <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Verifying campus credentials...</Text>
             </View>
           ) : !profile ? (
             <View style={styles.loadingContainer}>
-              <Text style={styles.emptyText}>Student profile not found.</Text>
+              <Text style={[styles.emptyText, { color: colors.textMuted }]}>Student profile not found.</Text>
             </View>
           ) : (
-            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-              {/* Profile Card Top */}
-              <View style={styles.profileHero}>
-                <View style={styles.avatarCircle}>
-                  <Text style={styles.avatarInitials}>{initials}</Text>
-                  {profile.is_private_account && (
-                    <View style={styles.lockBadge}>
-                      <Lock size={12} color="#fff" />
-                    </View>
-                  )}
+            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              {/* Campus ID Card Banner */}
+              <View style={[styles.profileHero, { backgroundColor: colors.surfaceLight, borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.cardBorder }]}>
+                {/* Campus University Header Strip */}
+                <View style={[styles.campusBannerStrip, { backgroundColor: isDark ? 'rgba(94, 106, 210, 0.14)' : 'rgba(79, 70, 229, 0.08)', borderBottomColor: isDark ? 'rgba(94, 106, 210, 0.25)' : 'rgba(79, 70, 229, 0.15)' }]}>
+                  <Building2 size={13} color={colors.primary} />
+                  <Text style={[styles.campusBannerStripText, { color: colors.primary }]}>
+                    {profile.college_name || 'Graphic Era University'}
+                  </Text>
                 </View>
 
-                <View style={styles.nameRow}>
-                  <Text style={styles.fullName}>{profile.full_name || 'Student'}</Text>
-                  {profile.is_verified ? (
-                    <View style={styles.verifiedBadge}>
-                      <Shield size={13} color="#38bdf8" />
-                      <Text style={styles.verifiedText}>VERIFIED</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.semiVerifiedBadge}>
-                      <Text style={styles.semiVerifiedText}>SEMI-VERIFIED</Text>
-                    </View>
-                  )}
-                </View>
-
-                <Text style={styles.username}>@{profile.username}</Text>
-
-                {profile.bio ? (
-                  <Text style={styles.bioText}>{profile.bio}</Text>
-                ) : null}
-
-                {/* Stats Row: Posts | Followers | Following | Credibility */}
-                <View style={styles.statsRow}>
-                  <View style={styles.statBox}>
-                    <Text style={styles.statNumber}>{profile.posts_count ?? 0}</Text>
-                    <Text style={styles.statLabel}>Posts</Text>
+                <View style={styles.heroBody}>
+                  {/* Large Student Avatar */}
+                  <View style={[styles.avatarCircle, { borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : colors.cardBorder }]}>
+                    {profile.profile_picture ? (
+                      <Image
+                        source={{ uri: getFullMediaUrl(profile.profile_picture) }}
+                        style={styles.avatarImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Text style={[styles.avatarInitials, { color: colors.primary }]}>{initials}</Text>
+                    )}
+                    {profile.is_private_account && (
+                      <View style={[styles.lockBadge, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+                        <Lock size={12} color={colors.textSecondary} />
+                      </View>
+                    )}
                   </View>
 
-                  <View style={styles.statDivider} />
+                  {/* Name & Institutional Verification Badge */}
+                  <View style={styles.nameRow}>
+                    <Text style={[styles.fullName, { color: colors.textPrimary }]} numberOfLines={1}>
+                      {profile.full_name || 'Student'}
+                    </Text>
+                    {profile.is_verified ? (
+                      <View style={styles.verifiedBadge}>
+                        <ShieldCheck size={13} color="#10b981" />
+                        <Text style={styles.verifiedText}>OFFICIAL ID</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.semiVerifiedBadge}>
+                        <Text style={styles.semiVerifiedText}>SEMI-VERIFIED</Text>
+                      </View>
+                    )}
+                  </View>
 
-                  <TouchableOpacity
-                    style={styles.statBox}
-                    onPress={() => onOpenSocialList && onOpenSocialList('followers', profile.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.statNumber}>{profile.followers_count ?? 0}</Text>
-                    <Text style={styles.statLabel}>Followers</Text>
-                  </TouchableOpacity>
+                  <Text style={[styles.username, { color: colors.primary }]}>@{profile.username}</Text>
 
-                  <View style={styles.statDivider} />
+                  {profile.bio ? (
+                    <View style={[styles.bioQuoteBox, { backgroundColor: colors.surface, borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.cardBorder }]}>
+                      <Text style={[styles.bioText, { color: colors.textSecondary }]}>"{profile.bio}"</Text>
+                    </View>
+                  ) : null}
 
-                  <TouchableOpacity
-                    style={styles.statBox}
-                    onPress={() => onOpenSocialList && onOpenSocialList('following', profile.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.statNumber}>{profile.following_count ?? 0}</Text>
-                    <Text style={styles.statLabel}>Following</Text>
-                  </TouchableOpacity>
+                  {/* Stats Row: Posts | Followers | Following | Credibility */}
+                  <View style={[styles.statsRow, { backgroundColor: colors.surface, borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.cardBorder }]}>
+                    <View style={styles.statBox}>
+                      <Text style={[styles.statNumber, { color: colors.textPrimary }]}>{profile.posts_count ?? 0}</Text>
+                      <Text style={[styles.statLabel, { color: colors.textMuted }]}>Posts</Text>
+                    </View>
 
-                  <View style={styles.statDivider} />
+                    <View style={[styles.statDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.hairline }]} />
 
-                  <View style={styles.statBox}>
-                    <Text style={[styles.statNumber, { color: '#fbbf24' }]}>⭐ {profile.credibility_score ?? 0}</Text>
-                    <Text style={styles.statLabel}>Credibility</Text>
+                    <TouchableOpacity
+                      style={styles.statBox}
+                      onPress={() => onOpenSocialList && onOpenSocialList('followers', profile.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.statNumber, { color: colors.textPrimary }]}>{profile.followers_count ?? 0}</Text>
+                      <Text style={[styles.statLabel, { color: colors.textMuted }]}>Followers</Text>
+                    </TouchableOpacity>
+
+                    <View style={[styles.statDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.hairline }]} />
+
+                    <TouchableOpacity
+                      style={styles.statBox}
+                      onPress={() => onOpenSocialList && onOpenSocialList('following', profile.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.statNumber, { color: colors.textPrimary }]}>{profile.following_count ?? 0}</Text>
+                      <Text style={[styles.statLabel, { color: colors.textMuted }]}>Following</Text>
+                    </TouchableOpacity>
+
+                    <View style={[styles.statDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.hairline }]} />
+
+                    <View style={styles.statBox}>
+                      <Text style={[styles.statNumber, { color: '#fbbf24' }]}>⭐ {profile.credibility_score ?? 0}</Text>
+                      <Text style={[styles.statLabel, { color: colors.textMuted }]}>Credibility</Text>
+                    </View>
                   </View>
                 </View>
               </View>
@@ -349,23 +390,23 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                       style={[
                         styles.actionBtn,
                         profile.follow_status === 'FOLLOWING'
-                          ? styles.actionBtnOutline
+                          ? [styles.actionBtnOutline, { backgroundColor: colors.surfaceLight, borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : colors.cardBorder }]
                           : profile.follow_status === 'REQUEST_SENT'
-                          ? styles.actionBtnMuted
-                          : styles.actionBtnPrimary,
+                          ? [styles.actionBtnMuted, { backgroundColor: colors.surfaceLight }]
+                          : [styles.actionBtnPrimary, { backgroundColor: colors.primary }],
                       ]}
                       onPress={handleFollowAction}
                       disabled={actionLoading}
                     >
                       {profile.follow_status === 'FOLLOWING' ? (
                         <>
-                          <UserCheck size={16} color="#38bdf8" />
-                          <Text style={styles.actionBtnOutlineText}>Following</Text>
+                          <UserCheck size={16} color="#10b981" />
+                          <Text style={[styles.actionBtnOutlineText, { color: colors.textPrimary }]}>Following</Text>
                         </>
                       ) : profile.follow_status === 'REQUEST_SENT' ? (
                         <>
                           <UserPlus size={16} color={colors.textSecondary} />
-                          <Text style={styles.actionBtnMutedText}>Requested</Text>
+                          <Text style={[styles.actionBtnMutedText, { color: colors.textMuted }]}>Requested</Text>
                         </>
                       ) : (
                         <>
@@ -381,25 +422,25 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                         styles.actionBtn,
                         profile.has_endorsed
                           ? styles.actionBtnEndorsed
-                          : styles.actionBtnSecondary,
+                          : [styles.actionBtnSecondary, { backgroundColor: colors.surfaceLight, borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : colors.cardBorder }],
                       ]}
                       onPress={handleEndorseAction}
                       disabled={actionLoading}
                     >
-                      <Sparkles size={16} color={profile.has_endorsed ? '#fbbf24' : '#8a8f98'} />
-                      <Text style={profile.has_endorsed ? styles.actionBtnEndorsedText : styles.actionBtnSecondaryText}>
+                      <Sparkles size={16} color={profile.has_endorsed ? '#fbbf24' : colors.textSecondary} />
+                      <Text style={profile.has_endorsed ? styles.actionBtnEndorsedText : [styles.actionBtnSecondaryText, { color: colors.textSecondary }]}>
                         {profile.has_endorsed ? 'Endorsed' : 'Endorse'}
                       </Text>
                     </TouchableOpacity>
 
                     {/* Direct Message Action */}
                     <TouchableOpacity
-                      style={[styles.actionBtn, styles.actionBtnMessage]}
+                      style={[styles.actionBtn, styles.actionBtnMessage, { backgroundColor: colors.surfaceLight, borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : colors.cardBorder }]}
                       onPress={handleMessageAction}
                       disabled={actionLoading}
                     >
-                      <MessageSquare size={16} color="#fff" />
-                      <Text style={styles.actionBtnMessageText}>Message</Text>
+                      <MessageSquare size={16} color={colors.textPrimary} />
+                      <Text style={[styles.actionBtnMessageText, { color: colors.textPrimary }]}>Message</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -409,7 +450,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                     onPress={handleBlockAction}
                     disabled={actionLoading}
                   >
-                    <AlertTriangle size={14} color={profile.is_blocked ? '#10b981' : '#ef4444'} />
+                    <AlertTriangle size={13} color={profile.is_blocked ? '#10b981' : '#ef4444'} />
                     <Text style={profile.is_blocked ? styles.unblockText : styles.blockText}>
                       {profile.is_blocked ? 'Unblock Student' : 'Block Student'}
                     </Text>
@@ -419,38 +460,38 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
 
               {/* Private Account Locked Card */}
               {!profile.can_view_content ? (
-                <View style={styles.privateCard}>
-                  <View style={styles.privateIconCircle}>
-                    <Lock size={28} color={colors.primary} />
+                <View style={[styles.privateCard, { backgroundColor: colors.surfaceLight, borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.cardBorder }]}>
+                  <View style={[styles.privateIconCircle, { backgroundColor: isDark ? 'rgba(94, 106, 210, 0.15)' : 'rgba(79, 70, 229, 0.1)' }]}>
+                    <Lock size={26} color={colors.primary} />
                   </View>
-                  <Text style={styles.privateTitle}>This Account is Private</Text>
-                  <Text style={styles.privateSub}>
+                  <Text style={[styles.privateTitle, { color: colors.textPrimary }]}>This Account is Private</Text>
+                  <Text style={[styles.privateSub, { color: colors.textSecondary }]}>
                     Follow @{profile.username} to view their campus posts, cohort details, and academic community updates.
                   </Text>
                 </View>
               ) : (
                 <>
                   {/* Academic Details */}
-                  <View style={styles.detailsCard}>
-                    <Text style={styles.detailsCardTitle}>Academic Information</Text>
+                  <View style={[styles.detailsCard, { backgroundColor: colors.surfaceLight, borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.cardBorder }]}>
+                    <Text style={[styles.detailsCardTitle, { color: colors.textPrimary }]}>Academic Credentials</Text>
 
                     <View style={styles.detailRow}>
-                      <Building2 size={16} color={colors.textSecondary} style={styles.detailIcon} />
+                      <Building2 size={16} color={colors.primary} style={styles.detailIcon} />
                       <View style={styles.detailTextCol}>
-                        <Text style={styles.detailLabel}>College</Text>
-                        <Text style={styles.detailValue}>
+                        <Text style={[styles.detailLabel, { color: colors.textMuted }]}>College</Text>
+                        <Text style={[styles.detailValue, { color: colors.textPrimary }]}>
                           {profile.college_name} ({profile.college_short_name})
                         </Text>
                       </View>
                     </View>
 
-                    <View style={styles.detailDivider} />
+                    <View style={[styles.detailDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.hairline }]} />
 
                     <View style={styles.detailRow}>
-                      <GraduationCap size={16} color={colors.textSecondary} style={styles.detailIcon} />
+                      <GraduationCap size={16} color={colors.primary} style={styles.detailIcon} />
                       <View style={styles.detailTextCol}>
-                        <Text style={styles.detailLabel}>Course & Branch</Text>
-                        <Text style={styles.detailValue}>
+                        <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Program & Specialization</Text>
+                        <Text style={[styles.detailValue, { color: colors.textPrimary }]}>
                           {profile.course_name} • {profile.branch_name}
                         </Text>
                       </View>
@@ -458,12 +499,12 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
 
                     {profile.academic_year_name ? (
                       <>
-                        <View style={styles.detailDivider} />
+                        <View style={[styles.detailDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.hairline }]} />
                         <View style={styles.detailRow}>
-                          <Calendar size={16} color={colors.textSecondary} style={styles.detailIcon} />
+                          <Calendar size={16} color={colors.primary} style={styles.detailIcon} />
                           <View style={styles.detailTextCol}>
-                            <Text style={styles.detailLabel}>Cohort</Text>
-                            <Text style={styles.detailValue}>{profile.academic_year_name}</Text>
+                            <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Cohort</Text>
+                            <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{profile.academic_year_name}</Text>
                           </View>
                         </View>
                       </>
@@ -471,12 +512,12 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
 
                     {profile.admission_number ? (
                       <>
-                        <View style={styles.detailDivider} />
+                        <View style={[styles.detailDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.hairline }]} />
                         <View style={styles.detailRow}>
-                          <BookOpen size={16} color={colors.textSecondary} style={styles.detailIcon} />
+                          <BookOpen size={16} color={colors.primary} style={styles.detailIcon} />
                           <View style={styles.detailTextCol}>
-                            <Text style={styles.detailLabel}>Admission / Roll No</Text>
-                            <Text style={styles.detailValue}>{profile.admission_number}</Text>
+                            <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Admission / Roll Number</Text>
+                            <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{profile.admission_number}</Text>
                           </View>
                         </View>
                       </>
@@ -484,12 +525,12 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
 
                     {profile.gender ? (
                       <>
-                        <View style={styles.detailDivider} />
+                        <View style={[styles.detailDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.hairline }]} />
                         <View style={styles.detailRow}>
-                          <Users size={16} color={colors.textSecondary} style={styles.detailIcon} />
+                          <Users size={16} color={colors.primary} style={styles.detailIcon} />
                           <View style={styles.detailTextCol}>
-                            <Text style={styles.detailLabel}>Gender</Text>
-                            <Text style={styles.detailValue}>{profile.gender}</Text>
+                            <Text style={[styles.detailLabel, { color: colors.textMuted }]}>Gender</Text>
+                            <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{profile.gender}</Text>
                           </View>
                         </View>
                       </>
@@ -547,36 +588,56 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'flex-end',
+    alignItems: 'center',
   },
   sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '90%',
-    minHeight: '60%',
+    width: '100%',
+    maxWidth: 580,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '92%',
+    minHeight: '65%',
     borderWidth: 1,
-    borderColor: colors.cardBorder,
+    overflow: 'hidden',
+  },
+  sheetHandleRow: {
+    alignItems: 'center',
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: colors.cardBorder,
+  },
+  headerTitleBox: {
+    flex: 1,
   },
   headerTitle: {
-    color: colors.textPrimary,
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  headerSubtitle: {
+    fontSize: 11.5,
+    marginTop: 1,
   },
   closeBtn: {
-    padding: 6,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceLight,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   loadingContainer: {
     flex: 1,
@@ -586,50 +647,69 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loadingText: {
-    color: colors.textSecondary,
     fontSize: 14,
   },
   emptyText: {
-    color: colors.textMuted,
     fontSize: 15,
   },
   scroll: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    padding: 16,
     paddingBottom: 40,
   },
   profileHero: {
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  campusBannerStrip: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    gap: 6,
+    borderBottomWidth: 1,
+  },
+  campusBannerStripText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  heroBody: {
+    alignItems: 'center',
+    padding: 18,
   },
   avatarCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.surfaceLight,
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    backgroundColor: 'rgba(94, 106, 210, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
     position: 'relative',
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderWidth: 2.5,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   avatarInitials: {
-    color: '#fff',
     fontSize: 28,
     fontWeight: '800',
   },
   lockBadge: {
     position: 'absolute',
-    bottom: -2,
-    right: -2,
-    backgroundColor: colors.surfaceLight,
-    padding: 5,
-    borderRadius: 12,
+    bottom: 0,
+    right: 0,
+    padding: 4,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: colors.hairline,
   },
   nameRow: {
     flexDirection: 'row',
@@ -640,91 +720,92 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   fullName: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 19,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
   verifiedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(94, 106, 210, 0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
     gap: 4,
     borderWidth: 1,
-    borderColor: 'rgba(94, 106, 210, 0.25)',
+    borderColor: 'rgba(16, 185, 129, 0.25)',
   },
   verifiedText: {
-    color: '#818cf8',
-    fontSize: 10,
-    fontWeight: '800',
+    color: '#10b981',
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   semiVerifiedBadge: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.25)',
+    borderColor: 'rgba(245, 158, 11, 0.25)',
   },
   semiVerifiedText: {
-    color: '#ef4444',
-    fontSize: 10,
-    fontWeight: '800',
+    color: '#f59e0b',
+    fontSize: 9.5,
+    fontWeight: '700',
   },
   username: {
-    color: '#94a3b8',
-    fontSize: 14,
+    fontSize: 13.5,
+    fontWeight: '600',
     marginBottom: 10,
   },
+  bioQuoteBox: {
+    width: '100%',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 14,
+  },
   bioText: {
-    color: '#cbd5e1',
-    fontSize: 14,
+    fontSize: 13.5,
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 16,
-    paddingHorizontal: 12,
+    lineHeight: 19,
+    fontStyle: 'italic',
   },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     width: '100%',
     justifyContent: 'space-around',
     borderWidth: 1,
-    borderColor: colors.hairline,
   },
   statBox: {
     alignItems: 'center',
     flex: 1,
   },
   statNumber: {
-    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
     marginBottom: 2,
   },
   statLabel: {
-    color: colors.textMuted,
-    fontSize: 11.5,
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '600',
   },
   statDivider: {
     width: 1,
-    height: 24,
-    backgroundColor: colors.hairline,
+    height: 22,
   },
   actionsContainer: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   actionRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
+    gap: 8,
+    marginBottom: 8,
   },
   actionBtn: {
     flex: 1,
@@ -733,39 +814,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 10,
     paddingHorizontal: 8,
-    borderRadius: 12,
+    borderRadius: 10,
     gap: 6,
   },
-  actionBtnPrimary: {
-    backgroundColor: colors.primary,
-  },
+  actionBtnPrimary: {},
   actionBtnPrimaryText: {
-    color: '#fff',
+    color: '#ffffff',
     fontSize: 13,
     fontWeight: '700',
   },
   actionBtnOutline: {
-    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: colors.hairline,
   },
   actionBtnOutlineText: {
-    color: colors.textPrimary,
     fontSize: 13,
     fontWeight: '600',
   },
   actionBtnSecondary: {
-    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: colors.hairline,
   },
   actionBtnSecondaryText: {
-    color: colors.textSecondary,
     fontSize: 13,
     fontWeight: '600',
   },
   actionBtnEndorsed: {
-    backgroundColor: 'rgba(251, 191, 36, 0.1)',
+    backgroundColor: 'rgba(251, 191, 36, 0.12)',
     borderWidth: 1,
     borderColor: 'rgba(251, 191, 36, 0.3)',
   },
@@ -774,41 +847,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  actionBtnConnected: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-  },
-  actionBtnConnectedText: {
-    color: '#4ade80',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  actionBtnAccent: {
-    backgroundColor: colors.primary,
-  },
-  actionBtnAccentText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
   actionBtnMuted: {
-    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: colors.hairline,
   },
   actionBtnMutedText: {
-    color: colors.textMuted,
     fontSize: 13,
     fontWeight: '500',
   },
   actionBtnMessage: {
-    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: colors.hairline,
   },
   actionBtnMessageText: {
-    color: colors.textPrimary,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -816,7 +865,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 5,
     paddingVertical: 6,
   },
   blockText: {
@@ -830,47 +879,40 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   privateCard: {
-    backgroundColor: colors.surfaceLight,
     borderRadius: 14,
     padding: 24,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.hairline,
     marginVertical: 10,
   },
   privateIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(94, 106, 210, 0.12)',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   privateTitle: {
-    color: colors.textPrimary,
-    fontSize: 16,
+    fontSize: 15.5,
     fontWeight: '700',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   privateSub: {
-    color: colors.textSecondary,
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 18,
   },
   detailsCard: {
-    backgroundColor: colors.surfaceLight,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: colors.hairline,
   },
   detailsCardTitle: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '800',
-    marginBottom: 14,
+    fontSize: 14.5,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    marginBottom: 12,
   },
   detailRow: {
     flexDirection: 'row',
@@ -885,42 +927,34 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   detailLabel: {
-    color: '#94a3b8',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     marginBottom: 2,
   },
   detailValue: {
-    color: '#f8fafc',
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '600',
   },
   detailDivider: {
     height: 1,
-    backgroundColor: colors.cardBorder,
-    marginVertical: 10,
+    marginVertical: 8,
   },
   postsCard: {
-    backgroundColor: colors.surfaceLight,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     marginTop: 14,
   },
   noPostsText: {
-    color: colors.textMuted,
     fontSize: 13,
     fontStyle: 'italic',
     paddingVertical: 8,
   },
   miniPostCard: {
-    backgroundColor: colors.surface,
     borderRadius: 10,
     padding: 12,
     marginTop: 10,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
   },
   miniPostTopRow: {
     flexDirection: 'row',
@@ -929,16 +963,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   miniPostOrigin: {
-    color: colors.primary,
     fontSize: 11.5,
     fontWeight: '700',
   },
   miniPostTime: {
-    color: colors.textMuted,
     fontSize: 11,
   },
   miniPostContent: {
-    color: colors.textPrimary,
     fontSize: 13,
     lineHeight: 18,
     marginBottom: 8,
@@ -948,7 +979,6 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   miniPostStat: {
-    color: colors.textSecondary,
     fontSize: 11.5,
     fontWeight: '600',
   },
