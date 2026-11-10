@@ -189,7 +189,7 @@ class CommunityDiscussionsView(APIView):
 
         qs = Discussion.objects.filter(community=community).select_related(
             "author", "author__profile", "accepted_answer", "accepted_answer__author"
-        ).prefetch_related("attachments", "votes", "replies")
+        ).prefetch_related("attachments", "accepted_answer__attachments", "votes", "replies")
 
         # Filters
         disc_type = request.query_params.get("type")
@@ -296,7 +296,7 @@ class DiscussionDetailView(APIView):
     def get(self, request, slug, pk):
         community = get_object_or_404(Community, slug=slug)
         discussion = get_object_or_404(
-            Discussion.objects.select_related("author", "author__profile", "accepted_answer"),
+            Discussion.objects.select_related("author", "author__profile", "accepted_answer").prefetch_related("attachments", "replies__attachments"),
             community=community,
             id=pk
         )
@@ -320,7 +320,7 @@ class DiscussionDetailView(APIView):
 
         if title:
             discussion.title = title.strip()
-        if content:
+        if content is not None:
             discussion.content = content.strip()
         if tags is not None:
             discussion.tags = tags.strip()
@@ -375,10 +375,14 @@ class DiscussionPinSolvedView(APIView):
 class DiscussionRepliesView(APIView):
     """
     POST /api/communities/<slug>/discussions/<id>/replies/
+    Supports typed text, voice notes / attachments, or both together.
     """
     permission_classes = [IsAuthenticated]
 
     def post(self, request, slug, pk):
+        import uuid
+        from attachments.services import AttachmentService
+
         community = get_object_or_404(Community, slug=slug)
         discussion = get_object_or_404(Discussion, community=community, id=pk)
 
@@ -390,9 +394,35 @@ class DiscussionRepliesView(APIView):
                 defaults={"role": "MEMBER"}
             )
 
-        content = request.data.get("content", "").strip()
-        if not content:
-            return Response({"error": "Reply cannot be blank."}, status=status.HTTP_400_BAD_REQUEST)
+        content = (request.data.get("content") or "").strip()
+        uploaded_files = (
+            request.FILES.getlist("attachments")
+            or request.FILES.getlist("files")
+            or ([request.FILES.get("file")] if request.FILES.get("file") else [])
+        )
+
+        raw_attachment_ids = []
+        if hasattr(request.data, "getlist"):
+            raw_attachment_ids = request.data.getlist("attachment_ids")
+        if not raw_attachment_ids:
+            val = request.data.get("attachment_ids")
+            if isinstance(val, list):
+                raw_attachment_ids = val
+            elif isinstance(val, str) and val.strip():
+                raw_attachment_ids = [val.strip()]
+
+        valid_uuids = []
+        for att_id in raw_attachment_ids:
+            try:
+                valid_uuids.append(uuid.UUID(str(att_id)))
+            except (ValueError, TypeError):
+                pass
+
+        if not content and not uploaded_files and not valid_uuids:
+            return Response(
+                {"error": "Reply text or voice note/attachment required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         parent_reply_id = request.data.get("parent_reply_id")
         parent_reply = None
@@ -406,11 +436,39 @@ class DiscussionRepliesView(APIView):
             parent_reply=parent_reply
         )
 
+        # Link pre-uploaded attachments by ID
+        if valid_uuids:
+            MediaAttachment.objects.filter(
+                id__in=valid_uuids,
+                uploaded_by=request.user
+            ).update(discussion_reply=reply)
+
+        # Create direct multipart attachments (voice notes / images / documents)
+        if uploaded_files:
+            for idx, att_file in enumerate(uploaded_files):
+                try:
+                    AttachmentService.create_attachment(
+                        uploaded_file=att_file,
+                        user=request.user,
+                        discussion_reply=reply,
+                        order=idx
+                    )
+                except Exception:
+                    pass
+
+        # Ensure at least text or a persisted attachment exists if uploads all failed validation
+        if not content and not reply.attachments.exists():
+            reply.delete()
+            return Response(
+                {"error": "Reply could not be saved because no valid text or attachment was provided."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Parse mentions and notify community members
         sender_name = request.user.full_name or request.user.email.split("@")[0]
         notified_user_ids = {request.user.id}
 
-        mention_tags = set(re.findall(r'@([a-zA-Z0-9_\.]+)', content))
+        mention_tags = set(re.findall(r'@([a-zA-Z0-9_\.]+)', content)) if content else set()
         if mention_tags:
             from accounts.models import User
             member_user_ids = CommunityMember.objects.filter(community=community).values_list("user_id", flat=True)
@@ -438,6 +496,9 @@ class DiscussionRepliesView(APIView):
                         }
                     )
 
+        has_voice_note = reply.attachments.filter(file_type="AUDIO").exists()
+        reply_action_desc = "sent a voice note reply" if has_voice_note and not content else "replied"
+
         # Notify parent reply author (for nested replies) or discussion author
         if parent_reply and parent_reply.author and parent_reply.author.id not in notified_user_ids:
             notified_user_ids.add(parent_reply.author.id)
@@ -446,7 +507,7 @@ class DiscussionRepliesView(APIView):
                 sender=request.user,
                 notification_type='REPLY',
                 title='New Reply to Your Answer 💬',
-                message=f"{sender_name} replied to your answer in '{discussion.title[:60]}'",
+                message=f"{sender_name} {reply_action_desc} to your answer in '{discussion.title[:60]}'",
                 data={
                     'community_slug': community.slug,
                     'discussion_id': str(discussion.id),
@@ -460,7 +521,7 @@ class DiscussionRepliesView(APIView):
                 sender=request.user,
                 notification_type='COMMENT',
                 title='New Answer on Your Discussion 💬',
-                message=f"{sender_name} answered your question: '{discussion.title[:60]}'",
+                message=f"{sender_name} {'answered with a voice note in' if has_voice_note and not content else 'answered your question:'} '{discussion.title[:60]}'",
                 data={
                     'community_slug': community.slug,
                     'discussion_id': str(discussion.id),

@@ -11,9 +11,10 @@ import {
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { Message, AttachmentItem } from '../../services/chatService';
-import { ExternalLink, Heart, MessageCircle, Play, Pause, Mic, Volume2 } from 'lucide-react-native';
+import { ExternalLink, Heart, MessageCircle, Play } from 'lucide-react-native';
 import { MediaGrid } from '../media/MediaGrid';
 import { DocumentCard } from '../media/DocumentCard';
+import { AudioPlayerPill, splitMediaAttachments } from '../media/VoiceNotePlayer';
 import { getFullMediaUrl } from '../../config/api';
 
 export interface SharedPostCardData {
@@ -36,54 +37,6 @@ interface MessageBubbleProps {
   onPostCardPress?: (cardData: SharedPostCardData) => void;
   onSenderPress?: (senderId: number) => void;
 }
-
-const AudioPlayerPill: React.FC<{ url: string; fileName: string; isMe: boolean }> = ({ url, fileName, isMe }) => {
-  const fullUrl = getFullMediaUrl(url);
-
-  if (Platform.OS === 'web') {
-    return (
-      <View style={[styles.audioPill, isMe ? styles.audioPillMe : styles.audioPillThem, { flexDirection: 'column', alignItems: 'stretch', padding: 8, gap: 4, minWidth: 260 }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-          <Mic size={14} color={isMe ? '#ffffff' : '#6366f1'} />
-          <Text style={[styles.audioNameText, isMe ? styles.audioNameMe : styles.audioNameThem, { fontWeight: '700', flex: 1 }]} numberOfLines={1}>
-            {fileName || 'Voice Note'}
-          </Text>
-        </View>
-        {/* @ts-ignore */}
-        <audio
-          src={fullUrl}
-          controls
-          controlsList="nodownload"
-          preload="metadata"
-          style={{ width: '100%', height: 38, borderRadius: 8, outline: 'none' }}
-        />
-      </View>
-    );
-  }
-
-  const togglePlay = () => {
-    Linking.openURL(fullUrl).catch(() => {
-      Alert.alert('Cannot Play Audio', 'Could not open audio file.');
-    });
-  };
-
-  return (
-    <TouchableOpacity
-      style={[styles.audioPill, isMe ? styles.audioPillMe : styles.audioPillThem]}
-      onPress={togglePlay}
-      activeOpacity={0.8}
-    >
-      <View style={[styles.playBtnCircle, isMe ? styles.playBtnCircleMe : styles.playBtnCircleThem]}>
-        <Play size={14} color="#fff" style={{ marginLeft: 2 }} />
-      </View>
-      <View style={styles.audioMetaCol}>
-        <Text style={[styles.audioNameText, isMe ? styles.audioNameMe : styles.audioNameThem]} numberOfLines={1}>
-          {fileName || 'Audio Note • Tap to play'}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
-};
 
 const VideoPlayerPill: React.FC<{ url: string; fileName: string; isMe: boolean }> = ({ url, fileName, isMe }) => {
   const fullUrl = getFullMediaUrl(url);
@@ -169,39 +122,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   const senderInitial = (message.sender_name || 'S').charAt(0).toUpperCase();
 
-  const attachments = message.attachments || [];
-  const legacyAttachment = message.attachment ? [{
-    id: 'legacy',
-    file_url: message.attachment,
-    download_url: message.attachment,
-    file_name: 'Attachment',
-    file_type: (message.attachment.startsWith('data:image/') || message.attachment.match(/\.(jpg|jpeg|png|webp|gif)/i)) ? ('IMAGE' as const) : ('DOCUMENT' as const),
-    file_extension: message.attachment.split('.').pop() || '',
-    mime_type: '',
-    file_size: 0,
-    file_size_formatted: '',
-    created_at: message.created_at,
-  }] : [];
-
-  const allAttachments = [...attachments, ...legacyAttachment];
-  const audioAttachments = allAttachments.filter(
-    (a) =>
-      a.file_type === 'AUDIO' ||
-      a.file_name?.toLowerCase().includes('voice_note') ||
-      a.mime_type?.startsWith('audio/') ||
-      a.file_extension?.match(/^(mp3|wav|m4a|aac|ogg|opus)$/i) ||
-      (a.file_extension?.toLowerCase() === 'webm' && !a.mime_type?.startsWith('video/'))
-  );
-  const videoAttachments = allAttachments.filter(
-    (a) =>
-      !audioAttachments.includes(a) &&
-      (a.file_type === 'VIDEO' ||
-        a.mime_type?.startsWith('video/') ||
-        a.file_extension?.match(/^(mp4|mov|mkv|avi|m4v)$/i) ||
-        (a.file_extension?.toLowerCase() === 'webm' && a.mime_type?.startsWith('video/')))
-  );
-  const imageAttachments = allAttachments.filter((a) => a.file_type === 'IMAGE' && !audioAttachments.includes(a) && !videoAttachments.includes(a));
-  const docAttachments = allAttachments.filter((a) => a.file_type === 'DOCUMENT' && !audioAttachments.includes(a) && !videoAttachments.includes(a));
+  const { audioAttachments, videoAttachments, imageAttachments, docAttachments } =
+    splitMediaAttachments(message.attachments, message.attachment, message.created_at);
   const hasMedia = imageAttachments.length > 0 || docAttachments.length > 0 || audioAttachments.length > 0 || videoAttachments.length > 0 || Boolean(cardData);
 
   const anonInfo = parseAnonMessage(cleanText);
@@ -276,11 +198,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           </View>
         )}
 
-        {/* Voice / Audio Notes */}
+        {/* Voice / Audio Notes (Instagram DM Style) */}
         {audioAttachments.length > 0 && (
-          <View style={{ marginBottom: displayText ? 6 : 2, gap: 4 }}>
+          <View style={{ marginBottom: displayText ? 6 : 2, gap: 6 }}>
             {audioAttachments.map((aud, idx) => (
-              <AudioPlayerPill key={aud.id || idx} url={aud.file_url} fileName={aud.file_name} isMe={isMe} />
+              <AudioPlayerPill
+                key={aud.id || idx}
+                url={aud.file_url}
+                fileName={aud.file_name}
+                caption={aud.caption}
+                isMe={isMe}
+              />
             ))}
           </View>
         )}

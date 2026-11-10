@@ -78,8 +78,21 @@ class AttachmentDownloadView(APIView):
                         status=status.HTTP_403_FORBIDDEN
                     )
 
+        # 3b. Check authorization for Community Discussion Reply attachment
+        if attachment.discussion_reply:
+            parent_disc = attachment.discussion_reply.discussion
+            if parent_disc.community.is_private:
+                if not user or not user.is_authenticated:
+                    return Response({"error": "Authentication credentials required."}, status=status.HTTP_401_UNAUTHORIZED)
+                is_comm_member = CommunityMember.objects.filter(community=parent_disc.community, user=user).exists()
+                if not is_comm_member and attachment.discussion_reply.author_id != user.id and not getattr(user, "is_staff", False):
+                    return Response(
+                        {"error": "Access denied. You must be an enrolled member of this community to download attachments."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+
         # 4. Check authorization for standalone unlinked attachment
-        if not attachment.post and not attachment.message and not attachment.discussion:
+        if not attachment.post and not attachment.message and not attachment.discussion and not attachment.discussion_reply:
             if not user or not user.is_authenticated or (attachment.uploaded_by_id != user.id and not getattr(user, "is_staff", False)):
                 return Response(
                     {"error": "Access denied. You do not have permission to access this attachment."},
@@ -90,7 +103,13 @@ class AttachmentDownloadView(APIView):
             raise Http404("File not found on storage server.")
 
         inline_preview = request.query_params.get("preview", "false").lower() == "true"
-        as_attachment = not (inline_preview and attachment.file_extension in ["pdf", "jpg", "jpeg", "png", "webp", "gif"])
+        as_attachment = not (
+            inline_preview
+            and (
+                attachment.file_type in ["IMAGE", "AUDIO", "VIDEO"]
+                or attachment.file_extension in ["pdf", "jpg", "jpeg", "png", "webp", "gif", "mp3", "wav", "m4a", "aac", "ogg", "webm", "opus", "mp4"]
+            )
+        )
 
         try:
             if os.path.exists(attachment.file.path):

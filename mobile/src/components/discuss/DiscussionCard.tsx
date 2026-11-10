@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Discussion } from '../../services/communityService';
-import { ArrowBigUp, MessageSquare, Paperclip, CheckCircle, Pin } from 'lucide-react-native';
+import { ArrowBigUp, MessageSquare, Paperclip, CheckCircle, Pin, Mic } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
+import { AudioPlayerPill, splitMediaAttachments } from '../media/VoiceNotePlayer';
 
 interface DiscussionCardProps {
   discussion: Discussion;
@@ -34,7 +35,8 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
 
   const badgeColor = getTypeBadgeColor(discussion.discussion_type);
   const authorInitial = (discussion.author_name || 'S').trim()[0]?.toUpperCase() || 'S';
-  const hasAttachments = discussion.attachments && discussion.attachments.length > 0;
+  const { audioAttachments, allAttachments } = splitMediaAttachments(discussion.attachments);
+  const nonAudioCount = Math.max(0, allAttachments.length - audioAttachments.length);
 
   const formatTimeAgo = (dateStr: string) => {
     try {
@@ -99,6 +101,23 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
         </Text>
       ) : null}
 
+      {/* Voice Note Quick Player */}
+      {audioAttachments.length > 0 && (
+        <View
+          style={{ marginBottom: 10 }}
+          onStartShouldSetResponder={() => true}
+          {...(Platform.OS === 'web' ? ({ onClick: (e: any) => e?.stopPropagation?.() } as any) : {})}
+        >
+          <AudioPlayerPill
+            url={audioAttachments[0].file_url}
+            fileName={audioAttachments[0].file_name}
+            caption={audioAttachments[0].caption}
+            variant="card"
+            compact
+          />
+        </View>
+      )}
+
       {/* Accepted Answer Preview */}
       {discussion.accepted_answer_snippet && (
         <View style={styles.acceptedAnswerBox}>
@@ -139,10 +158,17 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
         </TouchableOpacity>
 
         <View style={styles.actionsGroup}>
-          {hasAttachments && (
+          {audioAttachments.length > 0 && (
+            <View style={styles.statItem}>
+              <Mic size={13} color={colors.primary} />
+              <Text style={[styles.statText, { color: colors.primary }]}>{audioAttachments.length}</Text>
+            </View>
+          )}
+
+          {nonAudioCount > 0 && (
             <View style={styles.statItem}>
               <Paperclip size={13} color={colors.textMuted} />
-              <Text style={[styles.statText, { color: colors.textMuted }]}>{discussion.attachments?.length}</Text>
+              <Text style={[styles.statText, { color: colors.textMuted }]}>{nonAudioCount}</Text>
             </View>
           )}
 

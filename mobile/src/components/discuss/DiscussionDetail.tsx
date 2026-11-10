@@ -23,6 +23,17 @@ import { DiscussionReplies } from './DiscussionReplies';
 import { DocumentCard } from '../media/DocumentCard';
 import { MediaGrid } from '../media/MediaGrid';
 import {
+  AudioPlayerPill,
+  splitMediaAttachments,
+  pauseAllActiveVoiceNotes,
+} from '../media/VoiceNotePlayer';
+import {
+  VoiceRecordingBar,
+  VoiceNoteDraftCard,
+  useVoiceRecorder,
+  RecordedVoiceNote,
+} from '../media/VoiceNoteRecorder';
+import {
   X,
   ArrowBigUp,
   MessageSquare,
@@ -34,6 +45,7 @@ import {
   Trash2,
   Flag,
   AlertTriangle,
+  Mic,
 } from 'lucide-react-native';
 
 interface DiscussionDetailProps {
@@ -64,6 +76,8 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   const [replyingTo, setReplyingTo] = useState<DiscussionReply | null>(null);
   const [submittingReply, setSubmittingReply] = useState(false);
   const [members, setMembers] = useState<CommunityMemberItem[]>([]);
+  const [draftVoiceNote, setDraftVoiceNote] = useState<RecordedVoiceNote | null>(null);
+  const voiceRecorder = useVoiceRecorder();
 
   // Menu & Reporting State
   const [menuVisible, setMenuVisible] = useState(false);
@@ -74,8 +88,17 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   const [submittingReport, setSubmittingReport] = useState(false);
 
   useEffect(() => {
+    if (!visible) {
+      voiceRecorder.cancelRecording();
+      setDraftVoiceNote(null);
+      pauseAllActiveVoiceNotes();
+    }
+  }, [visible, discussion?.id]);
+
+  useEffect(() => {
     if (!discussion || !visible) return;
     setDetail(discussion);
+    setDraftVoiceNote(null);
 
     const loadDetail = async () => {
       setLoading(true);
@@ -97,6 +120,13 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
       })
       .catch((e) => console.log('Error fetching members for mentions', e));
   }, [discussion?.id, visible, communitySlug]);
+
+  const handleCloseModal = () => {
+    voiceRecorder.cancelRecording();
+    setDraftVoiceNote(null);
+    pauseAllActiveVoiceNotes();
+    onClose();
+  };
 
   const lastAtMatch = replyText.match(/@([a-zA-Z0-9_\.]*)$/);
   const mentionQuery = lastAtMatch !== null ? lastAtMatch[1].toLowerCase() : null;
@@ -139,7 +169,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
     const executeDelete = async () => {
       try {
         await communityService.deleteDiscussion(communitySlug, detail.id);
-        onClose();
+        handleCloseModal();
         onDeleteDiscussion?.(detail.id);
       } catch (err: any) {
         const errorMsg = err.response?.data?.error || 'Could not delete discussion.';
@@ -223,26 +253,48 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
     }
   };
 
-  const handleSendReply = async () => {
-    if (!replyText.trim() || submittingReply) return;
+  const handleSendReply = async (overrideVoiceNote?: RecordedVoiceNote) => {
+    const activeVoice = overrideVoiceNote || draftVoiceNote;
+    const trimmedText = replyText.trim();
+    if ((!trimmedText && !activeVoice) || submittingReply) return;
+
     setSubmittingReply(true);
     try {
       await communityService.postReply(
         communitySlug,
         detail.id,
-        replyText.trim(),
-        replyingTo ? replyingTo.id : undefined
+        trimmedText,
+        replyingTo ? replyingTo.id : undefined,
+        activeVoice ? [activeVoice] : undefined
       );
 
       // Re-fetch detail to get updated tree
       const updated = await communityService.getDiscussionDetail(communitySlug, detail.id);
       setDetail(updated);
       setReplyText('');
+      setDraftVoiceNote(null);
       setReplyingTo(null);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Could not post reply.');
+      const msg = e.response?.data?.error || 'Could not post reply.';
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert(msg);
+      } else {
+        Alert.alert('Error', msg);
+      }
     } finally {
       setSubmittingReply(false);
+    }
+  };
+
+  const handleAttachVoiceToReplyDraft = async () => {
+    const note = await voiceRecorder.stopRecording();
+    if (note) setDraftVoiceNote(note);
+  };
+
+  const handleSendVoiceReplyNow = async () => {
+    const note = await voiceRecorder.stopRecording();
+    if (note) {
+      await handleSendReply(note);
     }
   };
 
@@ -279,18 +331,17 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
     }
   };
 
-  const imageAttachments = detail.attachments?.filter((a) => a.file_type === 'IMAGE') || [];
-  const docAttachments = detail.attachments?.filter((a) => a.file_type === 'DOCUMENT') || [];
+  const { audioAttachments, imageAttachments, docAttachments } = splitMediaAttachments(detail.attachments);
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" onRequestClose={handleCloseModal}>
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         {/* Header */}
         <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
-          <TouchableOpacity onPress={onClose} style={styles.backBtn}>
+          <TouchableOpacity onPress={handleCloseModal} style={styles.backBtn}>
             <Text style={[styles.backBtnArrow, { color: colors.textPrimary }]}>←</Text>
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
@@ -313,7 +364,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
             >
               <MoreVertical size={18} color={colors.textSecondary} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <TouchableOpacity onPress={handleCloseModal} style={styles.closeBtn}>
               <X size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -382,7 +433,24 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
             </TouchableOpacity>
 
             {/* Body */}
-            <Text style={[styles.detailContent, { color: colors.textSecondary }]}>{detail.content}</Text>
+            {detail.content?.trim() ? (
+              <Text style={[styles.detailContent, { color: colors.textSecondary }]}>{detail.content}</Text>
+            ) : null}
+
+            {/* Voice Note Attachments */}
+            {audioAttachments.length > 0 && (
+              <View style={styles.docsContainer}>
+                {audioAttachments.map((aud, idx) => (
+                  <AudioPlayerPill
+                    key={aud.id || idx}
+                    url={aud.file_url}
+                    fileName={aud.file_name}
+                    caption={aud.caption}
+                    variant="card"
+                  />
+                ))}
+              </View>
+            )}
 
             {/* Image Attachments */}
             {imageAttachments.length > 0 && (
@@ -505,7 +573,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
             </View>
           )}
 
-          {matchingMembers.length > 0 && (
+          {matchingMembers.length > 0 && !voiceRecorder.isRecording && (
             <View
               style={[
                 styles.mentionSuggestionsContainer,
@@ -542,45 +610,81 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
             </View>
           )}
 
-          <View style={styles.inputRow}>
-            <TextInput
-              style={[
-                styles.inputField,
-                {
-                  backgroundColor: isDark ? '#141516' : '#f1f5f9',
-                  borderColor: colors.cardBorder,
-                  color: colors.textPrimary,
-                },
-              ]}
-              placeholder={
-                replyingTo
-                  ? `Reply to ${replyingTo.author_name}...`
-                  : isQuestion
-                  ? 'Write your answer or solution...'
-                  : 'Add to the discussion...'
-              }
-              placeholderTextColor={colors.textMuted}
-              value={replyText}
-              onChangeText={setReplyText}
-              multiline
+          {draftVoiceNote && !voiceRecorder.isRecording && (
+            <VoiceNoteDraftCard
+              voiceNote={draftVoiceNote}
+              onRemove={() => setDraftVoiceNote(null)}
+              compact
             />
+          )}
 
-            <TouchableOpacity
-              style={[
-                styles.sendBtn,
-                { backgroundColor: colors.primary },
-                (!replyText.trim() || submittingReply) && styles.sendBtnDisabled,
-              ]}
-              onPress={handleSendReply}
-              disabled={!replyText.trim() || submittingReply}
-            >
-              {submittingReply ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Send size={16} color="#fff" />
-              )}
-            </TouchableOpacity>
-          </View>
+          {voiceRecorder.isRecording ? (
+            <VoiceRecordingBar
+              recordSeconds={voiceRecorder.recordSeconds}
+              liveLevels={voiceRecorder.liveLevels}
+              isFinalizing={voiceRecorder.isFinalizing || submittingReply}
+              onCancel={voiceRecorder.cancelRecording}
+              onAttachToDraft={handleAttachVoiceToReplyDraft}
+              onSend={handleSendVoiceReplyNow}
+            />
+          ) : (
+            <View style={styles.inputRow}>
+              <TouchableOpacity
+                style={[
+                  styles.micBtn,
+                  {
+                    backgroundColor: isDark ? 'rgba(94, 106, 210, 0.14)' : 'rgba(79, 70, 229, 0.1)',
+                    borderColor: isDark ? 'rgba(94, 106, 210, 0.30)' : 'rgba(79, 70, 229, 0.22)',
+                  },
+                ]}
+                onPress={voiceRecorder.startRecording}
+                activeOpacity={0.8}
+                accessibilityLabel="Record voice note reply"
+              >
+                <Mic size={17} color={colors.primary} />
+              </TouchableOpacity>
+
+              <TextInput
+                style={[
+                  styles.inputField,
+                  {
+                    backgroundColor: isDark ? '#141516' : '#f1f5f9',
+                    borderColor: colors.cardBorder,
+                    color: colors.textPrimary,
+                  },
+                ]}
+                placeholder={
+                  draftVoiceNote
+                    ? 'Add text alongside your voice note (optional)...'
+                    : replyingTo
+                    ? `Reply to ${replyingTo.author_name}...`
+                    : isQuestion
+                    ? 'Write your answer or record a voice note...'
+                    : 'Add to the discussion...'
+                }
+                placeholderTextColor={colors.textMuted}
+                value={replyText}
+                onChangeText={setReplyText}
+                multiline
+              />
+
+              <TouchableOpacity
+                style={[
+                  styles.sendBtn,
+                  { backgroundColor: colors.primary },
+                  (!(replyText.trim() || draftVoiceNote) || submittingReply) && styles.sendBtnDisabled,
+                ]}
+                onPress={() => handleSendReply()}
+                disabled={!(replyText.trim() || draftVoiceNote) || submittingReply}
+              >
+                {submittingReply ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Send size={16} color="#fff" />
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* Post Options Action Sheet */}
@@ -940,6 +1044,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  micBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   inputField: {
     flex: 1,

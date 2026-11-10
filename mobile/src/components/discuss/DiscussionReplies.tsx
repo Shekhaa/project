@@ -3,6 +3,9 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { DiscussionReply } from '../../services/communityService';
 import { ArrowBigUp, Check, CornerDownRight, Trash2, Flag } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
+import { AudioPlayerPill, splitMediaAttachments } from '../media/VoiceNotePlayer';
+import { MediaGrid } from '../media/MediaGrid';
+import { DocumentCard } from '../media/DocumentCard';
 
 interface DiscussionRepliesProps {
   replies: DiscussionReply[];
@@ -65,6 +68,7 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
     // Cap indent to prevent horizontal blowout: depth 1 gets 14px, depth 2 gets 10px, depth >= 3 gets 0px
     const indentMargin = depth === 1 ? 14 : depth === 2 ? 10 : 0;
     const isAuthor = currentUserId && item.author === currentUserId;
+    const { audioAttachments, imageAttachments, docAttachments } = splitMediaAttachments(item.attachments);
 
     return (
       <View
@@ -162,18 +166,52 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
         </View>
 
         {/* Content */}
-        <Text style={[styles.replyContent, { color: colors.textSecondary }]}>
-          {item.content.split(/(@[a-zA-Z0-9_\.]+(?=\s|$|[.,!?]))/g).map((part, idx) => {
-            if (part.startsWith('@')) {
-              return (
-                <Text key={idx} style={[styles.mentionHighlight, { color: colors.primary }]}>
-                  {part}
-                </Text>
-              );
-            }
-            return <Text key={idx}>{part}</Text>;
-          })}
-        </Text>
+        {item.content?.trim() ? (
+          <Text style={[styles.replyContent, { color: colors.textSecondary }]}>
+            {item.content.split(/(@[a-zA-Z0-9_\.]+(?=\s|$|[.,!?]))/g).map((part, idx) => {
+              if (part.startsWith('@')) {
+                return (
+                  <Text key={idx} style={[styles.mentionHighlight, { color: colors.primary }]}>
+                    {part}
+                  </Text>
+                );
+              }
+              return <Text key={idx}>{part}</Text>;
+            })}
+          </Text>
+        ) : null}
+
+        {/* Voice Note Attachments inside Reply */}
+        {audioAttachments.length > 0 && (
+          <View style={{ marginBottom: 10, gap: 6 }}>
+            {audioAttachments.map((aud, idx) => (
+              <AudioPlayerPill
+                key={aud.id || idx}
+                url={aud.file_url}
+                fileName={aud.file_name}
+                caption={aud.caption}
+                variant="card"
+                compact
+              />
+            ))}
+          </View>
+        )}
+
+        {/* Image Attachments inside Reply */}
+        {imageAttachments.length > 0 && (
+          <View style={{ marginBottom: 10 }}>
+            <MediaGrid images={imageAttachments} />
+          </View>
+        )}
+
+        {/* Document Attachments inside Reply */}
+        {docAttachments.length > 0 && (
+          <View style={{ marginBottom: 10, gap: 6 }}>
+            {docAttachments.map((doc, idx) => (
+              <DocumentCard key={doc.id || idx} attachment={doc} compact />
+            ))}
+          </View>
+        )}
 
         {/* Actions Bar: Upvote, Reply, Accept */}
         <View style={styles.replyActions}>

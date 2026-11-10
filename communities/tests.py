@@ -1,13 +1,33 @@
-from django.test import TestCase
+import shutil
+import tempfile
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, override_settings
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
 from .models import Community, CommunityMember, Discussion, DiscussionReply, DiscussionVote, CommunityReport
+from attachments.models import MediaAttachment
+from attachments.services import AttachmentService
+from notifications.models import Notification
 
 User = get_user_model()
 
+
+def make_dummy_webm(name="voice_note_12s_test.webm"):
+    # Valid EBML header bytes + dummy payload
+    return SimpleUploadedFile(name, b"\x1a\x45\xdf\xa3" + b"\x00" * 128, content_type="audio/webm")
+
+
+def make_dummy_safari_voice_mp4(name="voice_note_8s_safari.mp4"):
+    return SimpleUploadedFile(name, b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 128, content_type="audio/mp4")
+
+
 class CommunityPlatformTests(TestCase):
     def setUp(self):
+        self._media_dir = tempfile.mkdtemp(prefix="campus_test_media_")
+        self._override = override_settings(MEDIA_ROOT=self._media_dir)
+        self._override.enable()
+
         self.client = APIClient()
         self.user1 = User.objects.create_user(
             email="student1@geu.ac.in",
@@ -31,6 +51,10 @@ class CommunityPlatformTests(TestCase):
         )
         self.client.force_authenticate(user=self.user1)
 
+    def tearDown(self):
+        self._override.disable()
+        shutil.rmtree(self._media_dir, ignore_errors=True)
+
     def test_create_and_list_discussions(self):
         # Create discussion
         url = f"/api/communities/{self.community.slug}/discussions/"
@@ -42,7 +66,6 @@ class CommunityPlatformTests(TestCase):
         }
         res = self.client.post(url, payload, format="json")
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
-        disc_id = res.data["id"]
         self.assertEqual(res.data["title"], payload["title"])
         self.assertEqual(res.data["discussion_type"], "QUESTION")
 
@@ -50,6 +73,160 @@ class CommunityPlatformTests(TestCase):
         list_res = self.client.get(url)
         self.assertEqual(list_res.status_code, status.HTTP_200_OK)
         self.assertEqual(len(list_res.data), 1)
+
+    def test_create_discussion_with_voice_note_and_mixed_text(self):
+        # 1. Pre-upload .webm voice note via /api/attachments/upload/
+        upload_res = self.client.post(
+            "/api/attachments/upload/",
+            {"file": make_dummy_webm(), "caption": "0:12"},
+            format="multipart",
+        )
+        self.assertEqual(upload_res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(upload_res.data["file_type"], "AUDIO")
+        self.assertTrue(upload_res.data["mime_type"].startswith("audio/"))
+        webm_att_id = upload_res.data["id"]
+
+        # Create discussion with voice note only (blank content allowed when attachment_ids provided)
+        disc_url = f"/api/communities/{self.community.slug}/discussions/"
+        res_voice_only = self.client.post(
+            disc_url,
+            {
+                "title": "Doubt in Operating Systems Deadlock",
+                "content": "",
+                "discussion_type": "QUESTION",
+                "attachment_ids": [webm_att_id],
+            },
+            format="json",
+        )
+        self.assertEqual(res_voice_only.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(res_voice_only.data["attachments"]), 1)
+        self.assertEqual(res_voice_only.data["attachments"][0]["file_type"], "AUDIO")
+        self.assertEqual(res_voice_only.data["attachments"][0]["caption"], "0:12")
+
+        # 2. Pre-upload Safari audio/mp4 voice note and attach alongside typed text
+        mp4_upload = self.client.post(
+            "/api/attachments/upload/",
+            {"file": make_dummy_safari_voice_mp4(), "caption": "0:08"},
+            format="multipart",
+        )
+        self.assertEqual(mp4_upload.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(mp4_upload.data["file_type"], "AUDIO")
+        self.assertEqual(mp4_upload.data["mime_type"], "audio/mp4")
+
+        res_mixed = self.client.post(
+            disc_url,
+            {
+                "title": "CN Socket Programming Hint",
+                "content": "Here is my typed note plus quick voice walkthrough:",
+                "discussion_type": "RESOURCE",
+                "attachment_ids": [mp4_upload.data["id"]],
+            },
+            format="json",
+        )
+        self.assertEqual(res_mixed.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res_mixed.data["content"], "Here is my typed note plus quick voice walkthrough:")
+        self.assertEqual(len(res_mixed.data["attachments"]), 1)
+
+        # 3. Empty content without attachments is still rejected
+        res_empty = self.client.post(
+            disc_url,
+            {"title": "Empty Post Attempt", "content": "   ", "discussion_type": "GENERAL"},
+            format="json",
+        )
+        self.assertEqual(res_empty.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_discussion_reply_with_voice_note_and_accepted_answer(self):
+        disc = Discussion.objects.create(
+            community=self.community,
+            author=self.user1,
+            title="What is normalization in DBMS?",
+            content="Can someone explain 3NF vs BCNF simply?",
+            discussion_type="QUESTION"
+        )
+
+        # User 2 replies with voice-only multipart upload
+        self.client.force_authenticate(user=self.user2)
+        reply_url = f"/api/communities/{self.community.slug}/discussions/{disc.id}/replies/"
+        voice_reply_res = self.client.post(
+            reply_url,
+            {"content": "", "attachments": [make_dummy_webm("voice_note_15s_reply.webm")]},
+            format="multipart",
+        )
+        self.assertEqual(voice_reply_res.status_code, status.HTTP_201_CREATED)
+        voice_reply_id = voice_reply_res.data["id"]
+        self.assertEqual(len(voice_reply_res.data["attachments"]), 1)
+        self.assertEqual(voice_reply_res.data["attachments"][0]["file_type"], "AUDIO")
+
+        # Notification should describe the voice note reply
+        notif = Notification.objects.filter(recipient=self.user1, notification_type="COMMENT").latest("created_at")
+        self.assertIn("voice note", notif.message.lower())
+
+        # User 1 replies to User 2 with BOTH text and voice note (nested reply)
+        self.client.force_authenticate(user=self.user1)
+        mixed_nested_res = self.client.post(
+            reply_url,
+            {
+                "content": "Follow-up clarification in audio too",
+                "parent_reply_id": voice_reply_id,
+                "attachments": [make_dummy_safari_voice_mp4()],
+            },
+            format="multipart",
+        )
+        self.assertEqual(mixed_nested_res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(mixed_nested_res.data["content"], "Follow-up clarification in audio too")
+        self.assertEqual(len(mixed_nested_res.data["attachments"]), 1)
+
+        # Detail endpoint should prefetch nested children and attachments cleanly
+        detail_res = self.client.get(f"/api/communities/{self.community.slug}/discussions/{disc.id}/")
+        self.assertEqual(detail_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(detail_res.data["replies"]), 1)
+        self.assertEqual(len(detail_res.data["replies"][0]["children"]), 1)
+        self.assertEqual(len(detail_res.data["replies"][0]["children"][0]["attachments"]), 1)
+
+        # Author marks voice-only reply as accepted solution
+        accept_url = f"/api/communities/{self.community.slug}/discussions/{disc.id}/replies/{voice_reply_id}/accept/"
+        accept_res = self.client.post(accept_url)
+        self.assertEqual(accept_res.status_code, status.HTTP_200_OK)
+        self.assertTrue(accept_res.data["is_solved"])
+
+        detail_after_accept = self.client.get(f"/api/communities/{self.community.slug}/discussions/{disc.id}/")
+        self.assertEqual(detail_after_accept.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            detail_after_accept.data["accepted_answer_snippet"]["content"],
+            "🎙️ Voice Note Answer",
+        )
+
+    def test_private_community_discussion_reply_attachment_permissions(self):
+        private_comm = Community.objects.create(
+            name="Private Study Group",
+            community_type="CUSTOM",
+            description="Secret club",
+            is_private=True,
+        )
+        CommunityMember.objects.create(community=private_comm, user=self.user1, role="OWNER")
+        disc = Discussion.objects.create(
+            community=private_comm,
+            author=self.user1,
+            title="Private Notes",
+            content="Voice explanation",
+        )
+        reply = DiscussionReply.objects.create(discussion=disc, author=self.user1, content="")
+        att = AttachmentService.create_attachment(
+            make_dummy_webm(),
+            user=self.user1,
+            discussion_reply=reply,
+        )
+
+        # Non-member cannot download/stream private community reply voice note
+        self.client.force_authenticate(user=self.user2)
+        denied_res = self.client.get(f"/api/attachments/{att.id}/download/?preview=true")
+        self.assertEqual(denied_res.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Enrolled member gets 200 inline audio response
+        CommunityMember.objects.create(community=private_comm, user=self.user2, role="MEMBER")
+        allowed_res = self.client.get(f"/api/attachments/{att.id}/download/?preview=true")
+        self.assertEqual(allowed_res.status_code, status.HTTP_200_OK)
+        self.assertTrue(allowed_res.get("Content-Type", "").startswith("audio/"))
 
     def test_discussion_reply_and_accepted_answer(self):
         # Create discussion
@@ -112,3 +289,4 @@ class CommunityPlatformTests(TestCase):
         res = self.client.post(report_url, payload, format="json")
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         self.assertEqual(res.data["status"], "PENDING")
+

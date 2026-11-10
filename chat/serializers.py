@@ -86,11 +86,17 @@ class ConversationSerializer(serializers.ModelSerializer):
             if membership and membership.cleared_at:
                 qs = qs.filter(created_at__gt=membership.cleared_at)
 
-        msg = qs.order_by("-created_at").first()
+        msg = qs.prefetch_related("attachments").order_by("-created_at").first()
         if msg:
+            preview_text = msg.text
+            if not preview_text:
+                if msg.attachments.filter(file_type="AUDIO").exists():
+                    preview_text = "🎙️ Voice Note"
+                elif msg.attachments.exists() or msg.attachment:
+                    preview_text = "📎 Attachment"
             return {
                 "id": str(msg.id),
-                "text": msg.text,
+                "text": preview_text,
                 "sender_id": msg.sender_id,
                 "created_at": msg.created_at,
             }

@@ -141,7 +141,7 @@ class Discussion(models.Model):
         related_name="discussions"
     )
     title = models.CharField(max_length=300)
-    content = models.TextField()
+    content = models.TextField(blank=True, default="")
     discussion_type = models.CharField(
         max_length=20,
         choices=TYPE_CHOICES,
@@ -204,7 +204,7 @@ class DiscussionReply(models.Model):
         blank=True,
         related_name="children"
     )
-    content = models.TextField()
+    content = models.TextField(blank=True, default="")
     mentioned_users = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         blank=True,

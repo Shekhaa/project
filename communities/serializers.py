@@ -50,6 +50,7 @@ class DiscussionReplySerializer(serializers.ModelSerializer):
     user_has_voted = serializers.SerializerMethodField()
     is_accepted = serializers.BooleanField(read_only=True)
     children = serializers.SerializerMethodField()
+    attachments = MediaAttachmentSerializer(many=True, read_only=True)
     mentioned_users = DiscussionMentionedUserSerializer(many=True, read_only=True)
 
     class Meta:
@@ -62,6 +63,7 @@ class DiscussionReplySerializer(serializers.ModelSerializer):
             "author_avatar",
             "parent_reply",
             "content",
+            "attachments",
             "upvotes_count",
             "user_has_voted",
             "is_accepted",
@@ -70,7 +72,7 @@ class DiscussionReplySerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "author", "upvotes_count", "user_has_voted", "is_accepted", "created_at", "updated_at"]
+        read_only_fields = ["id", "author", "attachments", "upvotes_count", "user_has_voted", "is_accepted", "created_at", "updated_at"]
 
     def get_author_name(self, obj):
         return getattr(obj.author, "full_name", "") or obj.author.email.split("@")[0]
@@ -88,7 +90,7 @@ class DiscussionReplySerializer(serializers.ModelSerializer):
 
     def get_children(self, obj):
         # Support multi-level nested discussion replies
-        children = obj.children.select_related("author", "author__profile").all()
+        children = obj.children.select_related("author", "author__profile").prefetch_related("attachments").all()
         if children.exists():
             return DiscussionReplySerializer(children, many=True, context=self.context).data
         return []
@@ -164,10 +166,15 @@ class DiscussionSerializer(serializers.ModelSerializer):
 
     def get_accepted_answer_snippet(self, obj):
         if obj.accepted_answer:
+            ans = obj.accepted_answer
+            snippet = (ans.content or "").strip()[:140]
+            if not snippet:
+                has_audio = ans.attachments.filter(file_type="AUDIO").exists()
+                snippet = "🎙️ Voice Note Answer" if has_audio else "📎 Attached Answer"
             return {
-                "id": str(obj.accepted_answer.id),
-                "author_name": getattr(obj.accepted_answer.author, "full_name", "") or obj.accepted_answer.author.email.split("@")[0],
-                "content": obj.accepted_answer.content[:140],
+                "id": str(ans.id),
+                "author_name": getattr(ans.author, "full_name", "") or ans.author.email.split("@")[0],
+                "content": snippet,
             }
         return None
 
@@ -179,11 +186,12 @@ class DiscussionDetailSerializer(DiscussionSerializer):
         fields = DiscussionSerializer.Meta.fields + ["replies"]
 
     def get_replies(self, obj):
-        top_replies = obj.replies.filter(parent_reply__isnull=True).select_related("author", "author__profile")
+        top_replies = obj.replies.filter(parent_reply__isnull=True).select_related("author", "author__profile").prefetch_related("attachments")
         return DiscussionReplySerializer(top_replies, many=True, context=self.context).data
 
 
 class DiscussionCreateSerializer(serializers.ModelSerializer):
+    content = serializers.CharField(required=False, allow_blank=True, default="")
     attachment_ids = serializers.ListField(
         child=serializers.CharField(),
         required=False,
@@ -199,6 +207,14 @@ class DiscussionCreateSerializer(serializers.ModelSerializer):
         if len(val) < 2:
             raise serializers.ValidationError("Title must be at least 2 characters long.")
         return val
+
+    def validate(self, attrs):
+        content = (attrs.get("content") or "").strip()
+        attachment_ids = attrs.get("attachment_ids") or []
+        if not content and not attachment_ids:
+            raise serializers.ValidationError("Please enter details or attach a voice note / file.")
+        attrs["content"] = content
+        return attrs
 
 
 class CommunitySerializer(serializers.ModelSerializer):
@@ -257,11 +273,14 @@ class CommunitySerializer(serializers.ModelSerializer):
         from chat.models import Conversation
         conv = Conversation.objects.filter(name=obj.name, is_group=True).first()
         if conv:
-            msg = conv.messages.order_by("-created_at").first()
+            msg = conv.messages.prefetch_related("attachments").order_by("-created_at").first()
             if msg:
+                preview_text = msg.text[:60] if msg.text else (
+                    "🎙️ Voice Note" if msg.attachments.filter(file_type="AUDIO").exists() else "[Attachment]"
+                )
                 return {
                     "sender_name": getattr(msg.sender, "full_name", "") or msg.sender.email.split("@")[0],
-                    "text": msg.text[:60] if msg.text else "[Attachment]",
+                    "text": preview_text,
                     "time": msg.created_at.isoformat(),
                 }
         return None

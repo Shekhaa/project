@@ -56,11 +56,26 @@ class AttachmentService:
         sanitized_name = sanitize_filename(orig_name)
         ext = os.path.splitext(sanitized_name)[1].lower()
         size = uploaded_file.size
+        uploaded_ct = (getattr(uploaded_file, "content_type", "") or "").lower().split(";")[0].strip()
+        is_voice_hint = "voice_note" in sanitized_name.lower() or uploaded_ct.startswith("audio/")
 
         if ext in ALLOWED_IMAGE_EXTENSIONS:
             file_type = "IMAGE"
             if size > MAX_IMAGE_SIZE:
                 raise ValidationError(f"Image '{sanitized_name}' exceeds 15 MB limit.")
+        elif ext == ".webm":
+            if uploaded_ct.startswith("video/") and not is_voice_hint:
+                file_type = "VIDEO"
+                if size > MAX_VIDEO_SIZE:
+                    raise ValidationError(f"Video '{sanitized_name}' exceeds 100 MB limit.")
+            else:
+                file_type = "AUDIO"
+                if size > MAX_AUDIO_SIZE:
+                    raise ValidationError(f"Audio '{sanitized_name}' exceeds 25 MB limit.")
+        elif ext == ".mp4" and is_voice_hint:
+            file_type = "AUDIO"
+            if size > MAX_AUDIO_SIZE:
+                raise ValidationError(f"Audio '{sanitized_name}' exceeds 25 MB limit.")
         elif ext in ALLOWED_AUDIO_EXTENSIONS:
             file_type = "AUDIO"
             if size > MAX_AUDIO_SIZE:
@@ -94,13 +109,25 @@ class AttachmentService:
             except Exception:
                 raise ValidationError(f"File '{sanitized_name}' is not a valid or corrupted image.")
 
-        # Determine MIME type
-        mime_type, _ = mimetypes.guess_type(sanitized_name)
-        if not mime_type:
+        # Determine MIME type (respecting explicit audio/mp4 or audio/webm)
+        if uploaded_ct and ((file_type == "AUDIO" and uploaded_ct.startswith("audio/")) or (file_type == "VIDEO" and uploaded_ct.startswith("video/"))):
+            mime_type = uploaded_ct
+        else:
+            mime_type, _ = mimetypes.guess_type(sanitized_name)
+        if not mime_type or (file_type == "AUDIO" and not mime_type.startswith("audio/")) or (file_type == "VIDEO" and not mime_type.startswith("video/")):
             if file_type == "IMAGE":
                 mime_type = "image/jpeg"
             elif file_type == "AUDIO":
-                mime_type = "audio/webm" if ext == ".webm" else "audio/mpeg"
+                if ext == ".webm":
+                    mime_type = "audio/webm"
+                elif ext in (".mp4", ".m4a"):
+                    mime_type = "audio/mp4"
+                elif ext == ".ogg":
+                    mime_type = "audio/ogg"
+                elif ext == ".wav":
+                    mime_type = "audio/wav"
+                else:
+                    mime_type = "audio/mpeg"
             elif file_type == "VIDEO":
                 mime_type = "video/webm" if ext == ".webm" else "video/mp4"
             else:
@@ -119,15 +146,17 @@ class AttachmentService:
         }
 
     @classmethod
-    def create_attachment(cls, uploaded_file, user, post=None, message=None, caption="", order=0):
+    def create_attachment(cls, uploaded_file, user, post=None, message=None, discussion=None, discussion_reply=None, caption="", order=0):
         """
-        Creates and stores a validated MediaAttachment for a post or message.
+        Creates and stores a validated MediaAttachment for a post, message, discussion, or discussion reply.
         """
         meta = cls.validate_and_process_file(uploaded_file)
         
         attachment = MediaAttachment.objects.create(
             post=post,
             message=message,
+            discussion=discussion,
+            discussion_reply=discussion_reply,
             file=meta["file"],
             file_name=meta["file_name"],
             stored_name=os.path.basename(meta["file"].name or ""),

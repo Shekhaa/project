@@ -24,7 +24,7 @@ import {
   DiscussionReply,
   CommunityMemberItem,
 } from '../services/communityService';
-import { chatService, Message } from '../services/chatService';
+import { chatService, Message, mergeMessagesUnique, upsertMessageUnique } from '../services/chatService';
 import {
   Paperclip,
   Search,
@@ -55,6 +55,13 @@ import {
 import { MediaGrid } from '../components/media/MediaGrid';
 import { DocumentCard } from '../components/media/DocumentCard';
 import { AttachmentPickerModal, StagedAttachment } from '../components/media/AttachmentPickerModal';
+import {
+  VoiceRecordingBar,
+  VoiceNoteDraftCard,
+  useVoiceRecorder,
+  RecordedVoiceNote,
+} from '../components/media/VoiceNoteRecorder';
+import { pauseAllActiveVoiceNotes } from '../components/media/VoiceNotePlayer';
 import { MessageBubble, parseSharedPostCard, SharedPostCardData } from '../components/chat/MessageBubble';
 import { SharedPostViewerModal } from '../components/chat/SharedPostViewerModal';
 import { ImageViewerModal } from '../components/media/ImageViewerModal';
@@ -98,13 +105,11 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
   const [viewingSharedPost, setViewingSharedPost] = useState<SharedPostCardData | null>(null);
 
-  // Voice Recording State in Hub
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordSeconds, setRecordSeconds] = useState(0);
-  const mediaRecorderRef = useRef<any>(null);
-  const audioChunksRef = useRef<any[]>([]);
-  const audioStreamRef = useRef<any>(null);
-  const recordTimerRef = useRef<any>(null);
+  // Live Voice Note Recording & Draft State (Instagram style)
+  const [draftVoiceNote, setDraftVoiceNote] = useState<RecordedVoiceNote | null>(null);
+  const voiceRecorder = useVoiceRecorder({
+    onFallbackNative: () => setAttachmentPickerVisible(true),
+  });
 
   // Members Modal State
   const [membersModalVisible, setMembersModalVisible] = useState(false);
@@ -175,6 +180,13 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
     loadCommunities();
   }, []);
 
+  // Cancel active recording / clear draft / pause audio when switching hub or tab
+  useEffect(() => {
+    voiceRecorder.cancelRecording();
+    setDraftVoiceNote(null);
+    pauseAllActiveVoiceNotes();
+  }, [activeCommunity?.slug, activeTab]);
+
   // When active community changes, open its chat room and load discussions
   useEffect(() => {
     if (!activeCommunity) {
@@ -211,7 +223,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       if (!silent) setChatLoading(true);
       try {
         const msgs = await chatService.getMessages(activeConv.id);
-        if (isMounted) setMessages(msgs);
+        if (isMounted) setMessages((prev) => mergeMessagesUnique(prev, msgs));
       } catch (e) {
         if (!silent) console.log('Error fetching hub messages', e);
       } finally {
@@ -230,156 +242,126 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
   // Send Message in Hub Chat
   const handleSendHubMessage = async () => {
-    if (!messageText.trim() || !activeConv || sendingMessage) return;
-
+    if (!activeConv || sendingMessage) return;
     const textToSend = messageText.trim();
+    if (!textToSend && !draftVoiceNote) return;
+
+    if (draftVoiceNote) {
+      const voiceToSend = draftVoiceNote;
+      setDraftVoiceNote(null);
+      setMessageText('');
+      await handleSendAttachments([voiceToSend], textToSend);
+      return;
+    }
+
     setMessageText('');
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const optimisticMsg: Message = {
+      id: tempId as any,
+      conversation: activeConv.id as any,
+      sender: currentUser?.id,
+      sender_name: currentUser?.full_name || 'You',
+      sender_email: currentUser?.email || '',
+      text: textToSend,
+      attachments: [],
+      created_at: new Date().toISOString(),
+      is_read: false,
+      status: 'sending' as any,
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
     setSendingMessage(true);
 
     try {
       const newMsg = await chatService.sendMessage(activeConv.id, textToSend);
-      setMessages((prev) => [...prev, newMsg]);
+      setMessages((prev) => upsertMessageUnique(prev, newMsg, tempId));
       setTimeout(() => chatFlatListRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e) {
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as any } : m)));
       Alert.alert('Error', 'Failed to send message.');
     } finally {
       setSendingMessage(false);
     }
   };
 
-  // Send Staged Attachments
+  // Send Staged Attachments & Voice Notes
   const handleSendAttachments = async (
     files: StagedAttachment[],
     caption?: string
   ) => {
     if (!activeConv) return;
+    const finalCaption = (caption || '').trim();
+    const tempId = `temp_att_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const optimisticMsg: Message = {
+      id: tempId as any,
+      conversation: activeConv.id as any,
+      sender: currentUser?.id,
+      sender_name: currentUser?.full_name || 'You',
+      sender_email: currentUser?.email || '',
+      text: finalCaption,
+      created_at: new Date().toISOString(),
+      attachments: files.map((item, idx) => ({
+        id: `temp_att_${idx}`,
+        file_url: item.uri,
+        download_url: item.uri,
+        file_name: item.name,
+        file_type: item.type as any,
+        file_extension: item.extension || item.name.split('.').pop() || '',
+        mime_type: item.mimeType || '',
+        file_size: item.size || 0,
+        file_size_formatted: item.sizeFormatted || '',
+        created_at: new Date().toISOString(),
+      })),
+      is_read: false,
+      status: 'sending' as any,
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
     setSendingMessage(true);
     try {
+      const normalizedFiles = files.map((item) => ({
+        file: item.file,
+        uri: item.uri,
+        name: item.name,
+        type:
+          item.mimeType ||
+          (item.type === 'IMAGE'
+            ? 'image/jpeg'
+            : item.type === 'AUDIO'
+            ? 'audio/webm'
+            : item.type === 'VIDEO'
+            ? 'video/mp4'
+            : 'application/octet-stream'),
+      }));
       const newMsg = await chatService.sendMessageWithAttachments(
         activeConv.id,
-        caption || '',
-        files
+        finalCaption,
+        normalizedFiles
       );
-      setMessages((prev) => [...prev, newMsg]);
+      setMessages((prev) => upsertMessageUnique(prev, newMsg, tempId));
       setTimeout(() => chatFlatListRef.current?.scrollToEnd({ animated: true }), 100);
-    } catch (e) {
-      Alert.alert('Upload Failed', 'Could not upload selected attachments.');
+    } catch (e: any) {
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as any } : m)));
+      Alert.alert('Upload Failed', e.response?.data?.error || 'Could not upload selected attachments.');
     } finally {
       setSendingMessage(false);
     }
   };
 
-  const formatRecordTime = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  const handleSendRecordedVoiceNow = async () => {
+    const recorded = await voiceRecorder.stopRecording();
+    if (!recorded || !activeConv) return;
+    const typedCaption = messageText.trim();
+    if (typedCaption) {
+      setMessageText('');
+    }
+    await handleSendAttachments([recorded], typedCaption);
   };
 
-  const startVoiceRecording = async () => {
-    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioStreamRef.current = stream;
-        audioChunksRef.current = [];
-
-        let mimeType = 'audio/webm';
-        const MR = (window as any).MediaRecorder;
-        if (MR && typeof MR.isTypeSupported === 'function') {
-          if (MR.isTypeSupported('audio/webm;codecs=opus')) {
-            mimeType = 'audio/webm;codecs=opus';
-          } else if (MR.isTypeSupported('audio/webm')) {
-            mimeType = 'audio/webm';
-          } else if (MR.isTypeSupported('audio/mp4')) {
-            mimeType = 'audio/mp4';
-          } else if (MR.isTypeSupported('audio/ogg')) {
-            mimeType = 'audio/ogg';
-          }
-        }
-
-        const recorder = mimeType ? new MR(stream, { mimeType }) : new MR(stream);
-        mediaRecorderRef.current = recorder;
-
-        recorder.ondataavailable = (e: any) => {
-          if (e.data && e.data.size > 0) {
-            audioChunksRef.current.push(e.data);
-          }
-        };
-
-        recorder.start(100);
-        setIsRecording(true);
-        setRecordSeconds(0);
-
-        if (recordTimerRef.current) clearInterval(recordTimerRef.current);
-        recordTimerRef.current = setInterval(() => {
-          setRecordSeconds((s) => s + 1);
-        }, 1000);
-      } catch (err: any) {
-        if (Platform.OS === 'web') {
-          window.alert('Please allow microphone access in your browser to record voice notes.');
-        } else {
-          Alert.alert('Microphone Access Needed', 'Please allow microphone access in your browser to record voice notes.');
-        }
-      }
-    } else {
-      setAttachmentPickerVisible(true);
-    }
-  };
-
-  const stopAndSendVoiceRecording = async () => {
-    const recorder = mediaRecorderRef.current;
-    if (!recorder) return;
-    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
-
-    recorder.onstop = () => {
-      const actualMime = recorder.mimeType || 'audio/webm';
-      const ext = actualMime.includes('mp4') ? 'mp4' : actualMime.includes('ogg') ? 'ogg' : 'webm';
-      const cleanMime = actualMime.split(';')[0];
-      const audioBlob = new Blob(audioChunksRef.current, { type: cleanMime });
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audioFile = new File([audioBlob], `voice_note_${Date.now()}.${ext}`, { type: cleanMime });
-
-      if (audioStreamRef.current) {
-        audioStreamRef.current.getTracks().forEach((track: any) => track.stop());
-        audioStreamRef.current = null;
-      }
-
-      const voiceStaged: StagedAttachment = {
-        id: `temp_voice_${Date.now()}`,
-        uri: audioUrl,
-        name: `Voice Note (${formatRecordTime(recordSeconds || 1)})`,
-        size: audioBlob.size,
-        sizeFormatted: `${(audioBlob.size / 1024).toFixed(1)} KB`,
-        type: 'AUDIO',
-        extension: ext,
-        file: audioFile,
-        mimeType: cleanMime,
-      };
-
-      handleSendAttachments([voiceStaged], '');
-    };
-
-    try {
-      recorder.stop();
-    } catch {}
-    setIsRecording(false);
-    setRecordSeconds(0);
-  };
-
-  const cancelVoiceRecording = () => {
-    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
-    if (mediaRecorderRef.current) {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch {}
-      mediaRecorderRef.current = null;
-    }
-    if (audioStreamRef.current) {
-      audioStreamRef.current.getTracks().forEach((track: any) => track.stop());
-      audioStreamRef.current = null;
-    }
-    audioChunksRef.current = [];
-    setIsRecording(false);
-    setRecordSeconds(0);
+  const handleAttachRecordedVoiceToDraft = async () => {
+    const recorded = await voiceRecorder.stopRecording();
+    if (!recorded) return;
+    setDraftVoiceNote(recorded);
   };
 
   const handleDeleteCommunityFromList = (comm: Community) => {
@@ -831,36 +813,55 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
               />
             )}
 
-            {/* Chat Input Bar or Live Voice Note Recording Bar */}
-            {isRecording ? (
-              <View style={[styles.chatInputBar, { backgroundColor: colors.surface, borderTopColor: '#ef4444', justifyContent: 'space-between', paddingVertical: 10 }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8, paddingLeft: 6 }}>
-                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#ef4444' }} />
-                  <Text style={{ color: '#ef4444', fontWeight: '700', fontSize: 13 }}>
-                    Recording Voice Note {formatRecordTime(recordSeconds)}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <TouchableOpacity
-                    style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: colors.surfaceLight, flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                    onPress={cancelVoiceRecording}
-                    activeOpacity={0.7}
-                  >
-                    <Trash2 size={15} color="#94a3b8" />
-                    <Text style={{ color: '#94a3b8', fontSize: 12, fontWeight: '600' }}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8, backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                    onPress={stopAndSendVoiceRecording}
-                    activeOpacity={0.8}
-                  >
-                    <Send size={14} color="#ffffff" />
-                    <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '700' }}>Send</Text>
-                  </TouchableOpacity>
-                </View>
+            {/* Docked Voice Note Draft Preview (allows typing + voice note together) */}
+            {draftVoiceNote && !voiceRecorder.isRecording && (
+              <View
+                style={{
+                  paddingHorizontal: 12,
+                  paddingTop: 8,
+                  backgroundColor: colors.surface,
+                  borderTopWidth: 1,
+                  borderTopColor: colors.cardBorder,
+                }}
+              >
+                <VoiceNoteDraftCard
+                  voiceNote={draftVoiceNote}
+                  onRemove={() => setDraftVoiceNote(null)}
+                  compact
+                />
+              </View>
+            )}
+
+            {/* Chat Input Bar or Live Instagram Voice Recording Bar */}
+            {voiceRecorder.isRecording ? (
+              <View
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  backgroundColor: colors.surface,
+                  borderTopWidth: 1,
+                  borderTopColor: colors.cardBorder,
+                }}
+              >
+                <VoiceRecordingBar
+                  recordSeconds={voiceRecorder.recordSeconds}
+                  liveLevels={voiceRecorder.liveLevels}
+                  isFinalizing={voiceRecorder.isFinalizing}
+                  onCancel={voiceRecorder.cancelRecording}
+                  onAttachToDraft={handleAttachRecordedVoiceToDraft}
+                  onSend={handleSendRecordedVoiceNow}
+                />
               </View>
             ) : (
-              <View style={[styles.chatInputBar, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
+              <View
+                style={[
+                  styles.chatInputBar,
+                  {
+                    backgroundColor: colors.surface,
+                    borderTopColor: draftVoiceNote ? 'transparent' : colors.cardBorder,
+                  },
+                ]}
+              >
                 <TouchableOpacity
                   style={[styles.attachBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
                   onPress={() => setAttachmentPickerVisible(true)}
@@ -872,7 +873,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
                 <TouchableOpacity
                   style={[styles.attachBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                  onPress={startVoiceRecording}
+                  onPress={voiceRecorder.startRecording}
                   activeOpacity={0.7}
                   accessibilityLabel="Record voice note"
                 >
@@ -888,7 +889,11 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                       color: colors.textPrimary,
                     },
                   ]}
-                  placeholder={`Message ${activeCommunity.name}...`}
+                  placeholder={
+                    draftVoiceNote
+                      ? 'Add text to send with voice note...'
+                      : `Message ${activeCommunity.name}...`
+                  }
                   placeholderTextColor={colors.textMuted}
                   value={messageText}
                   onChangeText={setMessageText}
@@ -899,10 +904,10 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   style={[
                     styles.sendBtn,
                     { backgroundColor: colors.primary },
-                    (!messageText.trim() || sendingMessage) && styles.sendBtnDisabled,
+                    (!(messageText.trim() || draftVoiceNote) || sendingMessage) && styles.sendBtnDisabled,
                   ]}
                   onPress={handleSendHubMessage}
-                  disabled={!messageText.trim() || sendingMessage}
+                  disabled={!(messageText.trim() || draftVoiceNote) || sendingMessage}
                 >
                   {sendingMessage ? (
                     <ActivityIndicator color="#fff" size="small" />

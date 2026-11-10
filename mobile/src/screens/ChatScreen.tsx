@@ -14,13 +14,26 @@ import {
 } from 'react-native';
 import { colors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
-import { chatService, Conversation, Message } from '../services/chatService';
+import {
+  chatService,
+  Conversation,
+  Message,
+  mergeMessagesUnique,
+  upsertMessageUnique,
+} from '../services/chatService';
 import { api } from '../config/api';
 import { MessageBubble, SharedPostCardData } from '../components/chat/MessageBubble';
 import { SharedPostViewerModal } from '../components/chat/SharedPostViewerModal';
 import { DirectorySearchModal } from '../components/chat/DirectorySearchModal';
 import { EphemeralGroupModal } from '../components/chat/EphemeralGroupModal';
 import { AttachmentPickerModal, StagedAttachment } from '../components/media/AttachmentPickerModal';
+import {
+  VoiceRecordingBar,
+  VoiceNoteDraftCard,
+  useVoiceRecorder,
+  RecordedVoiceNote,
+} from '../components/media/VoiceNoteRecorder';
+import { pauseAllActiveVoiceNotes } from '../components/media/VoiceNotePlayer';
 import { AddMembersModal } from '../components/chat/AddMembersModal';
 import { InviteLinkModal } from '../components/chat/InviteLinkModal';
 import { JoinByInviteModal } from '../components/chat/JoinByInviteModal';
@@ -82,13 +95,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
   const [attachmentPickerVisible, setAttachmentPickerVisible] = useState(false);
 
-  // Live Voice Note Recording State (Instagram / WhatsApp style)
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordSeconds, setRecordSeconds] = useState(0);
-  const mediaRecorderRef = useRef<any>(null);
-  const audioChunksRef = useRef<any[]>([]);
-  const recordTimerRef = useRef<any>(null);
-  const audioStreamRef = useRef<any>(null);
+  // Live Voice Note Recording & Draft State (Instagram style)
+  const [draftVoiceNote, setDraftVoiceNote] = useState<RecordedVoiceNote | null>(null);
+  const voiceRecorder = useVoiceRecorder({
+    onFallbackNative: () => setAttachmentPickerVisible(true),
+  });
 
   // Anonymous Messaging (Green Verified Only)
   const [isAnonMode, setIsAnonMode] = useState(false);
@@ -125,6 +136,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   }, [initialConversation]);
 
+  // Clean up active voice recording/playback when switching conversations
+  useEffect(() => {
+    voiceRecorder.cancelRecording();
+    setDraftVoiceNote(null);
+    pauseAllActiveVoiceNotes();
+  }, [activeConv?.id]);
+
   // Load messages when conversation changes
   useEffect(() => {
     if (activeConv) {
@@ -132,7 +150,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       const pollTimer = setInterval(() => {
         loadMessages(activeConv.id, true);
       }, 3500);
-      return () => clearInterval(pollTimer);
+      return () => {
+        clearInterval(pollTimer);
+        pauseAllActiveVoiceNotes();
+      };
     }
   }, [activeConv]);
 
@@ -175,7 +196,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     try {
       if (!isSilent) setLoadingMessages(true);
       const msgs = await chatService.getMessages(convId);
-      setMessages(msgs);
+      setMessages((prev) => mergeMessagesUnique(prev, msgs));
     } catch (e) {
       console.log('Error loading messages', e);
     } finally {
@@ -183,117 +204,20 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   };
 
-  const formatRecordTime = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  const handleSendRecordedVoiceNow = async () => {
+    const recorded = await voiceRecorder.stopRecording();
+    if (!recorded || !activeConv) return;
+    const typedCaption = inputMessage.trim();
+    if (typedCaption) {
+      setInputMessage('');
+    }
+    await handleSendAttachments([recorded], typedCaption);
   };
 
-  const startVoiceRecording = async () => {
-    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioStreamRef.current = stream;
-        audioChunksRef.current = [];
-
-        let mimeType = 'audio/webm';
-        const MR = (window as any).MediaRecorder;
-        if (MR && typeof MR.isTypeSupported === 'function') {
-          if (MR.isTypeSupported('audio/webm;codecs=opus')) {
-            mimeType = 'audio/webm;codecs=opus';
-          } else if (MR.isTypeSupported('audio/webm')) {
-            mimeType = 'audio/webm';
-          } else if (MR.isTypeSupported('audio/mp4')) {
-            mimeType = 'audio/mp4';
-          } else if (MR.isTypeSupported('audio/ogg')) {
-            mimeType = 'audio/ogg';
-          }
-        }
-
-        const recorder = mimeType ? new MR(stream, { mimeType }) : new MR(stream);
-        mediaRecorderRef.current = recorder;
-
-        recorder.ondataavailable = (e: any) => {
-          if (e.data && e.data.size > 0) {
-            audioChunksRef.current.push(e.data);
-          }
-        };
-
-        recorder.start(100);
-        setIsRecording(true);
-        setRecordSeconds(0);
-
-        if (recordTimerRef.current) clearInterval(recordTimerRef.current);
-        recordTimerRef.current = setInterval(() => {
-          setRecordSeconds((s) => s + 1);
-        }, 1000);
-      } catch (err: any) {
-        if (Platform.OS === 'web') {
-          window.alert('Please allow microphone access in your browser to record voice notes.');
-        } else {
-          Alert.alert('Microphone Access Needed', 'Please allow microphone access in your browser to record voice notes.');
-        }
-      }
-    } else {
-      setAttachmentPickerVisible(true);
-    }
-  };
-
-  const stopAndSendVoiceRecording = async () => {
-    const recorder = mediaRecorderRef.current;
-    if (!recorder) return;
-    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
-
-    recorder.onstop = () => {
-      const actualMime = recorder.mimeType || 'audio/webm';
-      const ext = actualMime.includes('mp4') ? 'mp4' : actualMime.includes('ogg') ? 'ogg' : 'webm';
-      const cleanMime = actualMime.split(';')[0];
-      const audioBlob = new Blob(audioChunksRef.current, { type: cleanMime });
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audioFile = new File([audioBlob], `voice_note_${Date.now()}.${ext}`, { type: cleanMime });
-
-      if (audioStreamRef.current) {
-        audioStreamRef.current.getTracks().forEach((track: any) => track.stop());
-        audioStreamRef.current = null;
-      }
-
-      const voiceStaged: StagedAttachment = {
-        id: `temp_voice_${Date.now()}`,
-        uri: audioUrl,
-        name: `Voice Note (${formatRecordTime(recordSeconds || 1)})`,
-        size: audioBlob.size,
-        sizeFormatted: `${(audioBlob.size / 1024).toFixed(1)} KB`,
-        type: 'AUDIO',
-        extension: ext,
-        file: audioFile,
-        mimeType: cleanMime,
-      };
-
-      handleSendAttachments([voiceStaged], '');
-    };
-
-    try {
-      recorder.stop();
-    } catch {}
-    setIsRecording(false);
-    setRecordSeconds(0);
-  };
-
-  const cancelVoiceRecording = () => {
-    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
-    if (mediaRecorderRef.current) {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch {}
-      mediaRecorderRef.current = null;
-    }
-    if (audioStreamRef.current) {
-      audioStreamRef.current.getTracks().forEach((track: any) => track.stop());
-      audioStreamRef.current = null;
-    }
-    audioChunksRef.current = [];
-    setIsRecording(false);
-    setRecordSeconds(0);
+  const handleAttachRecordedVoiceToDraft = async () => {
+    const recorded = await voiceRecorder.stopRecording();
+    if (!recorded) return;
+    setDraftVoiceNote(recorded);
   };
 
   const toggleAnonMode = () => {
@@ -308,8 +232,19 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   };
 
   const handleSendMessage = async () => {
-    if (!activeConv || !inputMessage.trim() || sending) return;
-    let textToSend = inputMessage.trim();
+    if (!activeConv || sending) return;
+    const rawText = inputMessage.trim();
+    if (!rawText && !draftVoiceNote) return;
+
+    if (draftVoiceNote) {
+      const voiceToSend = draftVoiceNote;
+      setDraftVoiceNote(null);
+      setInputMessage('');
+      await handleSendAttachments([voiceToSend], rawText);
+      return;
+    }
+
+    let textToSend = rawText;
     if (isAnonMode) {
       const mascots = ['Anonymous Owl', 'Anonymous Fox', 'Anonymous Tiger', 'Anonymous Panda', 'Anonymous Falcon'];
       const chosenMascot = mascots[Math.floor(Math.random() * mascots.length)];
@@ -317,12 +252,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
     setInputMessage('');
 
-    const tempId = `temp_${Date.now()}`;
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const optimisticMsg: Message = {
       id: tempId as any,
       conversation: activeConv.id as any,
       sender: currentUser?.id,
       sender_name: isAnonMode ? 'Anonymous Mascot' : (currentUser?.full_name || 'You'),
+      sender_email: currentUser?.email || '',
       text: textToSend,
       attachments: [],
       created_at: new Date().toISOString(),
@@ -335,7 +271,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     try {
       setSending(true);
       const sent = await chatService.sendMessage(activeConv.id, textToSend);
-      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...sent, status: 'sent' } : m)));
+      setMessages((prev) => upsertMessageUnique(prev, sent, tempId));
     } catch (e) {
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as any } : m)));
       Alert.alert('Delivery Failed', 'Could not deliver message.');
@@ -346,12 +282,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
   const handleSendAttachments = async (staged: StagedAttachment[], caption: string) => {
     if (!activeConv) return;
-    const tempId = `temp_att_msg_${Date.now()}`;
-    let finalCaption = caption || '';
-    if (isAnonMode && finalCaption) {
+    const tempId = `temp_att_msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    let finalCaption = (caption || '').trim();
+    if (isAnonMode) {
       const mascots = ['Anonymous Owl', 'Anonymous Fox', 'Anonymous Tiger', 'Anonymous Panda', 'Anonymous Falcon'];
       const chosenMascot = mascots[Math.floor(Math.random() * mascots.length)];
-      finalCaption = `[ANON_MSG: ${chosenMascot}] ${finalCaption}`;
+      finalCaption = finalCaption ? `[ANON_MSG: ${chosenMascot}] ${finalCaption}` : `[ANON_MSG: ${chosenMascot}]`;
     }
 
     const optimisticMsg: Message = {
@@ -359,6 +295,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       conversation: activeConv.id as any,
       sender: currentUser?.id,
       sender_name: isAnonMode ? 'Anonymous Mascot' : (currentUser?.full_name || 'You'),
+      sender_email: currentUser?.email || '',
       text: finalCaption,
       created_at: new Date().toISOString(),
       attachments: staged.map((item, idx) => ({
@@ -388,7 +325,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         type: item.mimeType || (item.type === 'IMAGE' ? 'image/jpeg' : (item.type === 'AUDIO' ? 'audio/webm' : (item.type === 'VIDEO' ? 'video/mp4' : 'application/octet-stream'))),
       }));
       const sent = await chatService.sendMessageWithAttachments(activeConv.id, finalCaption, filesToSend);
-      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...sent, status: 'sent' } : m)));
+      setMessages((prev) => upsertMessageUnique(prev, sent, tempId));
     } catch (err: any) {
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as any } : m)));
       Alert.alert('Upload Failed', err.response?.data?.error || err.message || 'Could not send attachments.');
@@ -654,36 +591,55 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           </View>
         )}
 
-        {/* Bottom Message Input Bar / Live Voice Recording Bar */}
-        {isRecording ? (
-          <View style={[styles.recordingBar, { backgroundColor: isDark ? '#1f1315' : '#fef2f2', borderColor: '#ef4444' }]}>
-            <View style={styles.recordingLeft}>
-              <View style={styles.pulsingRedDot} />
-              <Text style={[styles.recordingText, { color: '#ef4444' }]}>
-                🔴 Recording Voice Note {formatRecordTime(recordSeconds)}
-              </Text>
-            </View>
-            <View style={styles.recordingActions}>
-              <TouchableOpacity
-                style={styles.cancelRecordBtn}
-                onPress={cancelVoiceRecording}
-                activeOpacity={0.7}
-              >
-                <Trash2 size={16} color="#94a3b8" />
-                <Text style={styles.cancelRecordText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.sendRecordBtn}
-                onPress={stopAndSendVoiceRecording}
-                activeOpacity={0.8}
-              >
-                <Send size={15} color="#ffffff" />
-                <Text style={styles.sendRecordText}>Send</Text>
-              </TouchableOpacity>
-            </View>
+        {/* Docked Voice Note Draft Preview (allows typing + voice note together) */}
+        {draftVoiceNote && !voiceRecorder.isRecording && (
+          <View
+            style={{
+              paddingHorizontal: 12,
+              paddingTop: 8,
+              backgroundColor: colors.surface,
+              borderTopWidth: 1,
+              borderTopColor: colors.cardBorder,
+            }}
+          >
+            <VoiceNoteDraftCard
+              voiceNote={draftVoiceNote}
+              onRemove={() => setDraftVoiceNote(null)}
+              compact
+            />
+          </View>
+        )}
+
+        {/* Bottom Message Input Bar / Live Instagram Voice Recording Bar */}
+        {voiceRecorder.isRecording ? (
+          <View
+            style={{
+              paddingHorizontal: 10,
+              paddingVertical: 8,
+              backgroundColor: colors.surface,
+              borderTopWidth: 1,
+              borderTopColor: colors.cardBorder,
+            }}
+          >
+            <VoiceRecordingBar
+              recordSeconds={voiceRecorder.recordSeconds}
+              liveLevels={voiceRecorder.liveLevels}
+              isFinalizing={voiceRecorder.isFinalizing}
+              onCancel={voiceRecorder.cancelRecording}
+              onAttachToDraft={handleAttachRecordedVoiceToDraft}
+              onSend={handleSendRecordedVoiceNow}
+            />
           </View>
         ) : (
-          <View style={[styles.inputArea, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
+          <View
+            style={[
+              styles.inputArea,
+              {
+                backgroundColor: colors.surface,
+                borderTopColor: draftVoiceNote ? 'transparent' : colors.cardBorder,
+              },
+            ]}
+          >
             <TouchableOpacity
               style={styles.attachBtn}
               onPress={() => setAttachmentPickerVisible(true)}
@@ -695,9 +651,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
             <TouchableOpacity
               style={styles.attachBtn}
-              onPress={startVoiceRecording}
+              onPress={voiceRecorder.startRecording}
               activeOpacity={0.7}
-              accessibilityLabel="Hold or tap to record voice note"
+              accessibilityLabel="Record voice note"
             >
               <Mic size={20} color={colors.primary} />
             </TouchableOpacity>
@@ -721,7 +677,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
             <TextInput
               style={[styles.messageInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
-              placeholder={isAnonMode ? "Type anonymous message..." : "Type a message..."}
+              placeholder={
+                draftVoiceNote
+                  ? 'Add text to send with voice note...'
+                  : isAnonMode
+                  ? 'Type anonymous message...'
+                  : 'Type a message...'
+              }
               placeholderTextColor={colors.textMuted}
               value={inputMessage}
               onChangeText={setInputMessage}
@@ -729,9 +691,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               maxLength={1000}
             />
             <TouchableOpacity
-              style={[styles.sendButton, (!inputMessage.trim() || sending) && styles.sendButtonDisabled]}
+              style={[
+                styles.sendButton,
+                (!(inputMessage.trim() || draftVoiceNote) || sending) && styles.sendButtonDisabled,
+              ]}
               onPress={handleSendMessage}
-              disabled={!inputMessage.trim() || sending}
+              disabled={!(inputMessage.trim() || draftVoiceNote) || sending}
             >
               {sending ? (
                 <ActivityIndicator size="small" color="#fff" />

@@ -12,9 +12,16 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { X, Paperclip, FileText, Check, Send, AlertCircle } from 'lucide-react-native';
+import { X, Paperclip, FileText, Check, Send, AlertCircle, Mic } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { AttachmentPickerModal, StagedAttachment } from '../media/AttachmentPickerModal';
+import {
+  VoiceRecordingBar,
+  VoiceNoteDraftCard,
+  useVoiceRecorder,
+  RecordedVoiceNote,
+} from '../media/VoiceNoteRecorder';
+import { pauseAllActiveVoiceNotes } from '../media/VoiceNotePlayer';
 import { chatService } from '../../services/chatService';
 
 interface DiscussionComposerProps {
@@ -42,12 +49,23 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [stagedFiles, setStagedFiles] = useState<StagedAttachment[]>([]);
+  const [draftVoiceNote, setDraftVoiceNote] = useState<RecordedVoiceNote | null>(null);
   const [pickerVisible, setPickerVisible] = useState(false);
+
+  const voiceRecorder = useVoiceRecorder({
+    onFallbackNative: () => setPickerVisible(true),
+  });
+
+  const handleClose = () => {
+    if (submitting) return;
+    voiceRecorder.cancelRecording();
+    pauseAllActiveVoiceNotes();
+    onClose();
+  };
 
   const notify = (titleStr: string, msg: string) => {
     setErrorMessage(`${titleStr}: ${msg}`);
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      // Non-blocking fallback for web
       console.warn(`[DiscussionComposer] ${titleStr}: ${msg}`);
     } else {
       Alert.alert(titleStr, msg);
@@ -68,17 +86,24 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
       notify('Title Too Short', 'Discussion title must be at least 2 characters long.');
       return;
     }
-    if (!cleanContent) {
-      notify('Details Required', 'Please enter some details or notes for your post.');
+    if (!cleanContent && stagedFiles.length === 0 && !draftVoiceNote) {
+      notify(
+        'Details or Voice Note Required',
+        'Please enter details, record a voice note, or attach a file for your post.'
+      );
       return;
     }
 
     setSubmitting(true);
     try {
+      const filesToUpload: any[] = [
+        ...(draftVoiceNote ? [draftVoiceNote] : []),
+        ...stagedFiles,
+      ];
       let attachment_ids: string[] = [];
-      if (stagedFiles.length > 0) {
+      if (filesToUpload.length > 0) {
         const uploaded = await Promise.all(
-          stagedFiles.map((file) => chatService.uploadAttachmentFile(file))
+          filesToUpload.map((file) => chatService.uploadAttachmentFile(file))
         );
         attachment_ids = uploaded.map((u: any) => u.id);
       }
@@ -92,11 +117,14 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
       });
 
       // Reset state
+      voiceRecorder.cancelRecording();
+      pauseAllActiveVoiceNotes();
       setTitle('');
       setContent('');
       setType('QUESTION');
       setTags('');
       setStagedFiles([]);
+      setDraftVoiceNote(null);
       setErrorMessage(null);
       onClose();
     } catch (e: any) {
@@ -119,14 +147,14 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         {/* Header */}
         <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+          <TouchableOpacity onPress={handleClose} style={styles.closeBtn} activeOpacity={0.7}>
             <X size={20} color={colors.textPrimary} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>New Community Post</Text>
@@ -221,7 +249,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
           />
 
           {/* Content / Question Body */}
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Details & Description *</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Details or Voice Note *</Text>
           <TextInput
             style={[
               styles.contentInput,
@@ -231,7 +259,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
                 color: colors.textPrimary,
               },
             ]}
-            placeholder="Explain your problem, question, or share helpful college notes/syllabus details..."
+            placeholder="Explain your problem, question, or type notes to go with your voice note..."
             placeholderTextColor={colors.textMuted}
             value={content}
             onChangeText={(c) => {
@@ -242,6 +270,54 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
             numberOfLines={6}
             textAlignVertical="top"
           />
+
+          {/* Voice Note Recorder / Draft Preview (Instagram Style) */}
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Voice Note (Optional)</Text>
+          {voiceRecorder.isRecording ? (
+            <VoiceRecordingBar
+              recordSeconds={voiceRecorder.recordSeconds}
+              liveLevels={voiceRecorder.liveLevels}
+              isFinalizing={voiceRecorder.isFinalizing}
+              onCancel={voiceRecorder.cancelRecording}
+              onAttachToDraft={async () => {
+                const note = await voiceRecorder.stopRecording();
+                if (note) {
+                  setDraftVoiceNote(note);
+                  if (errorMessage) setErrorMessage(null);
+                }
+              }}
+              attachLabel="Attach"
+            />
+          ) : draftVoiceNote ? (
+            <VoiceNoteDraftCard
+              voiceNote={draftVoiceNote}
+              onRemove={() => setDraftVoiceNote(null)}
+            />
+          ) : (
+            <TouchableOpacity
+              style={[
+                styles.voiceTriggerCard,
+                {
+                  backgroundColor: isDark ? 'rgba(94, 106, 210, 0.10)' : 'rgba(79, 70, 229, 0.06)',
+                  borderColor: isDark ? 'rgba(94, 106, 210, 0.30)' : 'rgba(79, 70, 229, 0.24)',
+                },
+              ]}
+              onPress={voiceRecorder.startRecording}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.voiceMicBadge, { backgroundColor: colors.primary }]}>
+                <Mic size={16} color="#ffffff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.voiceTriggerTitle, { color: colors.textPrimary }]}>
+                  Record Voice Explanation
+                </Text>
+                <Text style={[styles.voiceTriggerSub, { color: colors.textMuted }]}>
+                  Speak freely & optionally type details above
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
 
           {/* Tags */}
           <Text style={[styles.label, { color: colors.textSecondary }]}>Tags (Optional, comma separated)</Text>
@@ -275,7 +351,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
           >
             <Paperclip size={16} color={colors.primary} />
             <Text style={[styles.attachBtnText, { color: colors.primary }]}>
-              Attach Notes, PDFs, Images or Documents
+              Attach Notes, PDFs, Images or Audio Files
             </Text>
           </TouchableOpacity>
 
@@ -331,7 +407,8 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
           visible={pickerVisible}
           onClose={() => setPickerVisible(false)}
           onSend={async (files) => {
-            setStagedFiles(files);
+            setStagedFiles((prev) => [...prev, ...files]);
+            if (errorMessage) setErrorMessage(null);
             setPickerVisible(false);
           }}
         />
@@ -435,7 +512,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 13.5,
-    minHeight: 120,
+    minHeight: 110,
+  },
+  voiceTriggerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  voiceMicBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceTriggerTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  voiceTriggerSub: {
+    fontSize: 11.5,
+    marginTop: 1,
   },
   tagInput: {
     borderWidth: 1,

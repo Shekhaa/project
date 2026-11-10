@@ -353,7 +353,7 @@ class SendMessageView(APIView):
             is_hidden=True
         ).update(is_hidden=False)
 
-        att_first = attachment or (attachments[0] if attachments else None)
+        att_first = attachment if (attachment and not attachments) else None
         msg = Message.objects.create(
             conversation=conv,
             sender=request.user,
@@ -361,7 +361,7 @@ class SendMessageView(APIView):
             attachment=att_first
         )
 
-        # Handle unified attachments
+        # Handle unified attachments (images, documents, voice notes, video)
         if attachments:
             for idx, att_file in enumerate(attachments):
                 try:
@@ -380,9 +380,11 @@ class SendMessageView(APIView):
         sender_name = request.user.full_name or request.user.email.split("@")[0]
         other_members = conv.members.exclude(user=request.user).select_related("user")
         is_shared_card = "[CAMPUS_POST_CARD:" in text
+        has_audio_att = msg.attachments.filter(file_type="AUDIO").exists()
         notif_type = 'SHARE' if is_shared_card else 'MESSAGE'
         notif_title = f"Post Shared 🔗" if is_shared_card else (f"{conv.name}" if conv.is_group else f"{sender_name} 💬")
-        notif_msg = f"{sender_name} shared a post with you." if is_shared_card else f"{sender_name}: {text[:75] or 'Sent an attachment'}"
+        fallback_att_label = "Sent a voice note 🎙️" if has_audio_att else "Sent an attachment"
+        notif_msg = f"{sender_name} shared a post with you." if is_shared_card else f"{sender_name}: {text[:75] or fallback_att_label}"
 
         for m in other_members:
             if not m.is_hidden:

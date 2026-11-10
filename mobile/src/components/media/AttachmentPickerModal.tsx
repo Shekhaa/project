@@ -128,12 +128,15 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
       const files: File[] = Array.from(e.target.files || []);
       const newItems: StagedAttachment[] = files.map((file) => {
         const ext = file.name.split('.').pop()?.toLowerCase() || '';
-        const isVid = file.type.startsWith('video/') || ['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v'].includes(ext);
-        const isAud = file.type.startsWith('audio/') || ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus'].includes(ext);
+        const isAud =
+          file.type.startsWith('audio/') ||
+          ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus'].includes(ext) ||
+          (ext === 'webm' && !file.type.startsWith('video/'));
+        const isVid = !isAud && (file.type.startsWith('video/') || ['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v'].includes(ext));
         const isImage = !isDoc && !isVid && !isAud && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
         let fileType: 'IMAGE' | 'DOCUMENT' | 'AUDIO' | 'VIDEO' = 'DOCUMENT';
-        if (isVid) fileType = 'VIDEO';
-        else if (isAud) fileType = 'AUDIO';
+        if (isAud) fileType = 'AUDIO';
+        else if (isVid) fileType = 'VIDEO';
         else if (isImage) fileType = 'IMAGE';
 
         return {
@@ -267,7 +270,7 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
       if (typeof document === 'undefined') return;
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = 'audio/*,.mp3,.wav,.m4a,.aac,.ogg';
+      input.accept = 'audio/*,.mp3,.wav,.m4a,.aac,.ogg,.webm,.opus';
       input.multiple = true;
       input.onchange = (e: any) => {
         const files: File[] = Array.from(e.target.files || []);
@@ -282,6 +285,7 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
             type: 'AUDIO',
             extension: ext,
             file,
+            mimeType: file.type || undefined,
           };
         });
         setStagedFiles((prev) => [...prev, ...newItems]);

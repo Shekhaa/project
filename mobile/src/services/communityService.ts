@@ -35,6 +35,7 @@ export interface DiscussionReply {
   author_avatar?: string | null;
   parent_reply?: string | null;
   content: string;
+  attachments?: AttachmentItem[];
   upvotes_count: number;
   user_has_voted: boolean;
   is_accepted: boolean;
@@ -200,7 +201,49 @@ export const communityService = {
     return res.data;
   },
 
-  async createReply(slug: string, discussionId: string, content: string, parentReplyId?: string): Promise<DiscussionReply> {
+  async createReply(
+    slug: string,
+    discussionId: string,
+    content: string,
+    parentReplyId?: string,
+    attachments?: any[]
+  ): Promise<DiscussionReply> {
+    if (attachments && attachments.length > 0) {
+      const formData = new FormData();
+      if (content && content.trim()) {
+        formData.append('content', content.trim());
+      }
+      if (parentReplyId) {
+        formData.append('parent_reply_id', parentReplyId);
+      }
+      attachments.forEach((item, index) => {
+        if (item.file) {
+          formData.append('attachments', item.file);
+        } else if (item.uri) {
+          const fallbackType =
+            item.mimeType ||
+            (item.type === 'AUDIO'
+              ? 'audio/webm'
+              : item.type === 'VIDEO'
+              ? 'video/mp4'
+              : item.type === 'IMAGE'
+              ? 'image/jpeg'
+              : 'application/octet-stream');
+          formData.append('attachments', {
+            uri: item.uri,
+            name: item.name || `reply_attachment_${index}`,
+            type: fallbackType,
+          } as any);
+        }
+      });
+      const res = await api.post(
+        `/communities/${slug}/discussions/${discussionId}/replies/`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      return res.data;
+    }
+
     const res = await api.post(`/communities/${slug}/discussions/${discussionId}/replies/`, {
       content,
       parent_reply_id: parentReplyId,
@@ -218,8 +261,14 @@ export const communityService = {
     return res.data;
   },
 
-  async postReply(slug: string, discussionId: string, content: string, parentReplyId?: string): Promise<DiscussionReply> {
-    return this.createReply(slug, discussionId, content, parentReplyId);
+  async postReply(
+    slug: string,
+    discussionId: string,
+    content: string,
+    parentReplyId?: string,
+    attachments?: any[]
+  ): Promise<DiscussionReply> {
+    return this.createReply(slug, discussionId, content, parentReplyId, attachments);
   },
 
   async acceptReply(slug: string, discussionId: string, replyId: string) {

@@ -48,6 +48,13 @@ class MediaAttachment(models.Model):
         blank=True,
         related_name="attachments"
     )
+    discussion_reply = models.ForeignKey(
+        "communities.DiscussionReply",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="attachments"
+    )
     
     # Physical File & Names
     file = models.FileField(upload_to=attachment_upload_path)
@@ -83,9 +90,17 @@ class MediaAttachment(models.Model):
             models.Index(fields=["post", "order"]),
             models.Index(fields=["message", "order"]),
             models.Index(fields=["discussion", "order"]),
+            models.Index(fields=["discussion_reply", "order"]),
             models.Index(fields=["uploaded_by", "-created_at"]),
         ]
 
     def __str__(self):
-        owner = f"Post #{self.post_id}" if self.post_id else f"Message #{self.message_id}" if self.message_id else f"Discussion #{self.discussion_id}"
+        if self.post_id:
+            owner = f"Post #{self.post_id}"
+        elif self.message_id:
+            owner = f"Message #{self.message_id}"
+        elif self.discussion_id:
+            owner = f"Discussion #{self.discussion_id}"
+        else:
+            owner = f"DiscussionReply #{self.discussion_reply_id}"
         return f"{self.file_name} ({self.file_type}) -> {owner}"

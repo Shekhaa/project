@@ -31,7 +31,7 @@ export interface AttachmentItem {
   file_url: string;
   download_url: string;
   file_name: string;
-  file_type: 'IMAGE' | 'DOCUMENT' | 'AUDIO';
+  file_type: 'IMAGE' | 'DOCUMENT' | 'AUDIO' | 'VIDEO';
   file_extension: string;
   mime_type: string;
   file_size: number;
@@ -54,6 +54,7 @@ export interface Message {
   attachment?: string;
   attachments?: AttachmentItem[];
   is_read: boolean;
+  status?: 'sending' | 'sent' | 'failed';
   created_at: string;
 }
 
@@ -237,11 +238,27 @@ export const chatService = {
     if (fileItem.file) {
       formData.append('file', fileItem.file);
     } else if (fileItem.uri) {
+      const fallbackType =
+        fileItem.mimeType ||
+        (fileItem.type === 'IMAGE'
+          ? 'image/jpeg'
+          : fileItem.type === 'AUDIO'
+          ? 'audio/webm'
+          : fileItem.type === 'VIDEO'
+          ? 'video/mp4'
+          : 'application/octet-stream');
       formData.append('file', {
         uri: fileItem.uri,
         name: fileItem.name || 'attachment.jpg',
-        type: fileItem.type === 'IMAGE' ? 'image/jpeg' : 'application/octet-stream',
+        type: fallbackType,
       } as any);
+    }
+    if (fileItem.caption) {
+      formData.append('caption', String(fileItem.caption));
+    } else if (typeof fileItem.durationSeconds === 'number' && fileItem.durationSeconds > 0) {
+      const mins = Math.floor(fileItem.durationSeconds / 60);
+      const secs = Math.floor(fileItem.durationSeconds % 60);
+      formData.append('caption', `${mins}:${secs < 10 ? '0' : ''}${secs}`);
     }
     try {
       const res = await api.post('/attachments/upload/', formData, {
@@ -300,3 +317,50 @@ export const chatService = {
     return res.data;
   },
 };
+
+/**
+ * Merges server-fetched messages with any local in-flight optimistic messages,
+ * guaranteeing strict uniqueness by message `id` so polling + sends never duplicate items.
+ */
+export const mergeMessagesUnique = (prev: Message[], incoming: Message[]): Message[] => {
+  const seen = new Set<string>();
+  const result: Message[] = [];
+  for (const msg of incoming) {
+    const key = String(msg.id);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(msg);
+  }
+  // Keep in-flight sending messages not yet confirmed by the server
+  for (const localMsg of prev) {
+    const status = (localMsg as any).status;
+    const key = String(localMsg.id);
+    if ((status === 'sending' || status === 'failed') && key.startsWith('temp_') && !seen.has(key)) {
+      seen.add(key);
+      result.push(localMsg);
+    }
+  }
+  return result;
+};
+
+/**
+ * Replaces an optimistic temp message with the saved server message or appends safely if not yet present.
+ */
+export const upsertMessageUnique = (
+  prev: Message[],
+  savedMsg: Message,
+  tempId?: string
+): Message[] => {
+  const savedId = String(savedMsg.id);
+  const existsReal = prev.some((m) => String(m.id) === savedId);
+  if (existsReal) {
+    return prev
+      .filter((m) => !tempId || String(m.id) !== tempId)
+      .map((m) => (String(m.id) === savedId ? { ...savedMsg, status: 'sent' as any } : m));
+  }
+  if (tempId && prev.some((m) => String(m.id) === tempId)) {
+    return prev.map((m) => (String(m.id) === tempId ? { ...savedMsg, status: 'sent' as any } : m));
+  }
+  return [...prev, { ...savedMsg, status: 'sent' as any }];
+};
+
