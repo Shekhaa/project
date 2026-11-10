@@ -22,6 +22,7 @@ export interface Conversation {
     created_at: string;
   };
   unread_count?: number;
+  is_request_pending?: boolean;
   updated_at?: string;
   members?: any[];
 }
@@ -125,7 +126,11 @@ export const chatService = {
   // Start 1-on-1 direct chat with a student (by username or email)
   async startDirectChat(identifier: string): Promise<Conversation> {
     const res = await api.post(`/chat/start/${encodeURIComponent(identifier)}/`);
-    return res.data;
+    const conv = res.data?.conversation || res.data;
+    if (conv && !conv.is_group && (res.data?.status === 'MESSAGE_REQUEST_PENDING' || res.data?.status === 'MESSAGE_REQUEST_SENT')) {
+      return { ...conv, is_request_pending: true };
+    }
+    return conv;
   },
 
   // Create Ephemeral Self-Destructing Group (Hangout / Trip / Study session)

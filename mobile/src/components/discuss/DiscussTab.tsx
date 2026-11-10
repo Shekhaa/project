@@ -20,6 +20,7 @@ export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser, 
 
   // Modals
   const [composerVisible, setComposerVisible] = useState(false);
+  const [composerAutoVoice, setComposerAutoVoice] = useState(false);
   const [selectedDiscussion, setSelectedDiscussion] = useState<Discussion | null>(null);
 
   const fetchDiscussions = useCallback(async () => {
@@ -91,7 +92,14 @@ export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser, 
         setFilter={setFilter}
         sort={sort}
         setSort={setSort}
-        onOpenComposer={() => setComposerVisible(true)}
+        onOpenComposer={() => {
+          setComposerAutoVoice(false);
+          setComposerVisible(true);
+        }}
+        onOpenVoiceComposer={() => {
+          setComposerAutoVoice(true);
+          setComposerVisible(true);
+        }}
         onSelectDiscussion={(d) => setSelectedDiscussion(d)}
         onVoteDiscussion={handleVote}
         onRefresh={fetchDiscussions}
@@ -101,7 +109,11 @@ export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser, 
       {/* Composer Modal */}
       <DiscussionComposer
         visible={composerVisible}
-        onClose={() => setComposerVisible(false)}
+        autoStartVoice={composerAutoVoice}
+        onClose={() => {
+          setComposerVisible(false);
+          setComposerAutoVoice(false);
+        }}
         onSubmit={handleCreateDiscussion}
       />
 

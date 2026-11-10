@@ -200,6 +200,7 @@ export interface AudioPlayerPillProps {
   isMe?: boolean;
   variant?: 'bubbleMe' | 'bubbleThem' | 'card' | 'preview';
   compact?: boolean;
+  borderless?: boolean;
 }
 
 const SPEED_STEPS = [1, 1.5, 2] as const;
@@ -212,6 +213,7 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
   isMe = false,
   variant,
   compact = false,
+  borderless = false,
 }) => {
   const { colors, isDark } = useTheme();
   const fullUrl = getFullMediaUrl(url);
@@ -223,7 +225,7 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
     [durationHintSeconds, fileName, caption]
   );
 
-  const barCount = compact ? 24 : 30;
+  const barCount = compact ? 20 : 28;
   const waveformBars = useMemo(
     () => buildWaveformBars(`${fileName || ''}_${url}`, barCount),
     [fileName, url, barCount]
@@ -231,30 +233,50 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasAudioError, setHasAudioError] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(hintedDuration);
   const [speedIndex, setSpeedIndex] = useState(0);
   const [trackWidth, setTrackWidth] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const durationRef = useRef<number>(hintedDuration);
 
   const speed = SPEED_STEPS[speedIndex];
 
-  const pauseSelf = () => {
+  const syncDuration = (nextDur: number) => {
+    if (Number.isFinite(nextDur) && !Number.isNaN(nextDur) && nextDur > 0) {
+      durationRef.current = nextDur;
+      setDuration(nextDur);
+    }
+  };
+
+  // Stable identity across renders so unregisterActiveAudio always cleans up on unmount
+  const pauseHandlerRef = useRef<() => void>(() => {
     const audio = audioRef.current;
     if (audio && !audio.paused) {
       audio.pause();
     }
     setIsPlaying(false);
-  };
+  });
+  const stablePauseRef = useRef<() => void>(() => pauseHandlerRef.current());
 
   useEffect(() => {
-    setDuration((prev) => (prev > 0 ? prev : hintedDuration));
+    setDuration((prev) => {
+      const next = prev > 0 ? prev : hintedDuration;
+      durationRef.current = next;
+      return next;
+    });
   }, [hintedDuration]);
 
   useEffect(() => {
+    setHasAudioError(false);
+    setCurrentTime(0);
+    setIsPlaying(false);
+    setIsLoading(false);
+    const stablePause = stablePauseRef.current;
     return () => {
-      unregisterActiveAudio(pauseSelf);
+      unregisterActiveAudio(stablePause);
       if (audioRef.current) {
         try {
           audioRef.current.pause();
@@ -282,29 +304,32 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
     audio.playbackRate = speed;
 
     audio.addEventListener('loadedmetadata', () => {
-      const d = audio.duration;
-      if (Number.isFinite(d) && !Number.isNaN(d) && d > 0) {
-        setDuration(d);
-      } else if (hintedDuration > 0) {
-        setDuration(hintedDuration);
+      if (Number.isFinite(audio.duration) && !Number.isNaN(audio.duration) && audio.duration > 0) {
+        syncDuration(audio.duration);
+      } else if (hintedDuration > 0 && durationRef.current <= 0) {
+        syncDuration(hintedDuration);
       }
     });
 
     audio.addEventListener('durationchange', () => {
-      const d = audio.duration;
-      if (Number.isFinite(d) && !Number.isNaN(d) && d > 0) {
-        setDuration(d);
+      if (Number.isFinite(audio.duration) && !Number.isNaN(audio.duration) && audio.duration > 0) {
+        syncDuration(audio.duration);
       }
     });
 
     audio.addEventListener('timeupdate', () => {
       setCurrentTime(audio.currentTime || 0);
-      if ((!duration || !Number.isFinite(duration)) && Number.isFinite(audio.duration) && audio.duration > 0) {
-        setDuration(audio.duration);
+      if (
+        (!durationRef.current || !Number.isFinite(durationRef.current)) &&
+        Number.isFinite(audio.duration) &&
+        audio.duration > 0
+      ) {
+        syncDuration(audio.duration);
       }
     });
 
     audio.addEventListener('playing', () => {
+      setHasAudioError(false);
       setIsLoading(false);
       setIsPlaying(true);
     });
@@ -323,15 +348,16 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
       setIsLoading(false);
       setCurrentTime(0);
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
-        setDuration(audio.duration);
+        syncDuration(audio.duration);
       }
-      unregisterActiveAudio(pauseSelf);
+      unregisterActiveAudio(stablePauseRef.current);
     });
 
     audio.addEventListener('error', () => {
       setIsPlaying(false);
       setIsLoading(false);
-      unregisterActiveAudio(pauseSelf);
+      setHasAudioError(true);
+      unregisterActiveAudio(stablePauseRef.current);
     });
 
     audioRef.current = audio;
@@ -340,7 +366,7 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
 
   const handleTogglePlay = async (e?: any) => {
     e?.stopPropagation?.();
-    if (!fullUrl) return;
+    if (!fullUrl || hasAudioError) return;
 
     if (Platform.OS !== 'web') {
       Linking.openURL(fullUrl).catch(() => {
@@ -355,12 +381,12 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
     if (isPlaying || !audio.paused) {
       audio.pause();
       setIsPlaying(false);
-      unregisterActiveAudio(pauseSelf);
+      unregisterActiveAudio(stablePauseRef.current);
       return;
     }
 
     try {
-      registerActiveAudio(pauseSelf);
+      registerActiveAudio(stablePauseRef.current);
       setIsLoading(true);
       audio.playbackRate = speed;
       await audio.play();
@@ -369,7 +395,8 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
     } catch {
       setIsPlaying(false);
       setIsLoading(false);
-      unregisterActiveAudio(pauseSelf);
+      setHasAudioError(true);
+      unregisterActiveAudio(stablePauseRef.current);
     }
   };
 
@@ -384,17 +411,17 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
 
   const handleSeek = (e: any) => {
     e?.stopPropagation?.();
-    if (Platform.OS !== 'web') return;
+    if (Platform.OS !== 'web' || hasAudioError) return;
     const audio = ensureAudioElement();
     if (!audio) return;
 
-    const effectiveDuration =
-      Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : duration;
-    if (!effectiveDuration || effectiveDuration <= 0 || trackWidth <= 0) return;
+    const effectiveDur =
+      Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : durationRef.current;
+    if (!effectiveDur || effectiveDur <= 0 || trackWidth <= 0) return;
 
     const locX = e?.nativeEvent?.locationX ?? e?.nativeEvent?.offsetX ?? 0;
     const ratio = Math.max(0, Math.min(1, locX / trackWidth));
-    const targetTime = ratio * effectiveDuration;
+    const targetTime = ratio * effectiveDur;
     try {
       audio.currentTime = targetTime;
       setCurrentTime(targetTime);
@@ -406,52 +433,68 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
     effectiveDuration > 0 ? Math.max(0, Math.min(1, currentTime / effectiveDuration)) : 0;
   const activeBars = Math.round(progressRatio * waveformBars.length);
 
-  // Palette based on theme & container context (Instagram DM aesthetic)
-  const containerStyle = isBubbleMe
+  // Palette anchored on Linear surface & indigo tokens
+  const containerStyle = borderless
     ? {
-        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(255, 255, 255, 0.18)',
-        borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(255, 255, 255, 0.28)',
+        backgroundColor: 'transparent',
+        borderWidth: 0,
+        paddingHorizontal: 0,
+        paddingVertical: 2,
+      }
+    : isBubbleMe
+    ? {
+        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.16)',
+        borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(255, 255, 255, 0.28)',
       }
     : resolvedVariant === 'card' || resolvedVariant === 'preview'
     ? {
-        backgroundColor: isDark ? '#16181d' : '#f1f5f9',
-        borderColor: isDark ? 'rgba(94, 106, 210, 0.30)' : 'rgba(79, 70, 229, 0.22)',
+        backgroundColor: isDark ? '#141516' : '#f1f5f9',
+        borderColor: colors.cardBorder,
       }
     : {
         backgroundColor: isDark ? 'rgba(94, 106, 210, 0.10)' : 'rgba(79, 70, 229, 0.08)',
         borderColor: isDark ? 'rgba(94, 106, 210, 0.28)' : 'rgba(79, 70, 229, 0.22)',
       };
 
-  const playCircleStyle = isBubbleMe
-    ? {
-        backgroundColor: '#ffffff',
-      }
-    : {
-        backgroundColor: colors.primary,
-      };
+  const playCircleStyle = hasAudioError
+    ? { backgroundColor: isDark ? '#23252a' : '#cbd5e1' }
+    : isBubbleMe
+    ? { backgroundColor: '#ffffff' }
+    : { backgroundColor: colors.primary };
 
-  const playIconColor = isBubbleMe ? (isDark ? '#282d46' : '#4f46e5') : '#ffffff';
+  const playIconColor = hasAudioError
+    ? colors.textMuted
+    : isBubbleMe
+    ? isDark
+      ? '#282d46'
+      : '#4f46e5'
+    : '#ffffff';
   const playedBarColor = isBubbleMe ? '#ffffff' : colors.primary;
   const unplayedBarColor = isBubbleMe
-    ? 'rgba(255, 255, 255, 0.32)'
+    ? 'rgba(255, 255, 255, 0.30)'
     : isDark
-    ? 'rgba(208, 214, 224, 0.26)'
-    : 'rgba(79, 70, 229, 0.24)';
+    ? 'rgba(208, 214, 224, 0.24)'
+    : 'rgba(79, 70, 229, 0.22)';
 
-  const timerColor = isBubbleMe ? 'rgba(255, 255, 255, 0.88)' : colors.textSecondary;
+  const timerColor = hasAudioError
+    ? colors.danger
+    : isBubbleMe
+    ? 'rgba(255, 255, 255, 0.90)'
+    : colors.textSecondary;
   const speedBg = isBubbleMe
-    ? 'rgba(255, 255, 255, 0.18)'
+    ? 'rgba(255, 255, 255, 0.16)'
     : isDark
-    ? 'rgba(255, 255, 255, 0.08)'
-    : 'rgba(15, 23, 42, 0.07)';
+    ? 'rgba(255, 255, 255, 0.06)'
+    : 'rgba(15, 23, 42, 0.06)';
   const speedTextColor = isBubbleMe ? '#ffffff' : speed !== 1 ? colors.primary : colors.textSecondary;
 
-  const displayTime =
-    isPlaying || currentTime > 0
-      ? formatAudioDuration(currentTime)
-      : effectiveDuration > 0
-      ? formatAudioDuration(effectiveDuration)
-      : 'Voice Note';
+  const displayTime = hasAudioError
+    ? 'Audio unavailable'
+    : isPlaying || currentTime > 0
+    ? formatAudioDuration(currentTime)
+    : effectiveDuration > 0
+    ? formatAudioDuration(effectiveDuration)
+    : 'Voice Note';
 
   return (
     <View
@@ -461,9 +504,9 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
         containerStyle,
       ]}
     >
-      {/* Circular Play / Pause Trigger */}
       <TouchableOpacity
         onPress={handleTogglePlay}
+        disabled={hasAudioError}
         activeOpacity={0.8}
         style={[styles.playButton, compact && styles.playButtonCompact, playCircleStyle]}
         accessibilityLabel={isPlaying ? 'Pause voice note' : 'Play voice note'}
@@ -471,10 +514,10 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
         {isLoading ? (
           <ActivityIndicator size="small" color={playIconColor} />
         ) : isPlaying ? (
-          <Pause size={compact ? 14 : 16} color={playIconColor} fill={playIconColor} />
+          <Pause size={compact ? 14 : 15} color={playIconColor} fill={playIconColor} />
         ) : (
           <Play
-            size={compact ? 14 : 16}
+            size={compact ? 14 : 15}
             color={playIconColor}
             fill={playIconColor}
             style={{ marginLeft: 2 }}
@@ -482,23 +525,23 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
         )}
       </TouchableOpacity>
 
-      {/* Interactive Instagram Waveform + Timer */}
       <View style={styles.centerColumn}>
         <TouchableOpacity
           activeOpacity={0.9}
           onPress={handleSeek}
+          disabled={hasAudioError}
           onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
           style={styles.waveformTrack}
         >
           {waveformBars.map((barH, idx) => {
-            const isPlayed = idx < activeBars || (isPlaying && idx === activeBars);
+            const isPlayed = !hasAudioError && (idx < activeBars || (isPlaying && idx === activeBars));
             return (
               <View
                 key={idx}
                 style={[
                   styles.waveBar,
                   {
-                    height: compact ? Math.max(5, Math.round(barH * 0.8)) : barH,
+                    height: compact ? Math.max(5, Math.round(barH * 0.78)) : barH,
                     backgroundColor: isPlayed ? playedBarColor : unplayedBarColor,
                   },
                 ]}
@@ -515,7 +558,7 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
             </Text>
           </View>
 
-          {Platform.OS === 'web' && (
+          {Platform.OS === 'web' && !hasAudioError && (
             <TouchableOpacity
               onPress={handleCycleSpeed}
               activeOpacity={0.75}
@@ -535,24 +578,24 @@ const styles = StyleSheet.create({
   pillContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 20,
+    borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    minWidth: 220,
-    gap: 10,
+    minWidth: 196,
+    gap: 9,
   },
   pillCompact: {
-    paddingHorizontal: 9,
+    paddingHorizontal: 8,
     paddingVertical: 6,
-    borderRadius: 16,
-    minWidth: 195,
+    borderRadius: 10,
+    minWidth: 170,
     gap: 8,
   },
   playButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -565,17 +608,18 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     gap: 4,
+    minWidth: 0,
   },
   waveformTrack: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    height: 26,
+    height: 24,
     gap: 2,
   },
   waveBar: {
     flex: 1,
-    maxWidth: 3.5,
+    maxWidth: 3,
     minWidth: 2,
     borderRadius: 2,
   },
@@ -595,9 +639,9 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   speedPill: {
-    paddingHorizontal: 7,
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 9,
+    borderRadius: 6,
   },
   speedText: {
     fontSize: 10.5,

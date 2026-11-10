@@ -12,7 +12,6 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import { colors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import {
   chatService,
@@ -47,7 +46,6 @@ import {
   Send,
   X,
   MessageSquare,
-  Users,
   Copy,
   Paperclip,
   Mic,
@@ -62,6 +60,15 @@ interface ChatScreenProps {
   onClearInitialConversation?: () => void;
   onOpenProfile?: (userId: number) => void;
 }
+
+const extractApiError = (err: any, fallback: string): string => {
+  const data = err?.response?.data;
+  if (typeof data?.error === 'string' && data.error.trim()) return data.error;
+  if (typeof data?.detail === 'string' && data.detail.trim()) return data.detail;
+  if (typeof data === 'string' && data.trim()) return data;
+  if (typeof err?.message === 'string' && err.message.trim()) return err.message;
+  return fallback;
+};
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({
   currentUser,
@@ -78,6 +85,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [checkingRequestStatus, setCheckingRequestStatus] = useState(false);
+
+  // Inline feedback banners (visible on both Web & Native)
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
+  const [roomNotice, setRoomNotice] = useState<string | null>(null);
+  const [inboxError, setInboxError] = useState<string | null>(null);
 
   // Message Requests State (Safe Direct Messaging)
   const [messageRequestsVisible, setMessageRequestsVisible] = useState(false);
@@ -109,22 +122,19 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [inviteLinkModalVisible, setInviteLinkModalVisible] = useState(false);
   const [joinViaInviteModalVisible, setJoinViaInviteModalVisible] = useState(false);
 
-  const handleAddChatMembers = async (selectedIds: number[]) => {
-    if (!activeConv) return;
-    await chatService.addMembers(activeConv.id, selectedIds);
-    await loadMessages(activeConv.id);
-    await loadInbox();
-    Alert.alert('Success! 🎉', `Added ${selectedIds.length} members to the group.`);
-  };
-
-  const handleJoinedChatViaInvite = async (conv: any) => {
-    await loadInbox();
-    setActiveConv(conv);
-  };
-
   const flatListRef = useRef<FlatList>(null);
 
-  // Initial load & Polling
+  const recipientReplied = messages.some(
+    (m) =>
+      currentUser &&
+      m.sender !== currentUser.id &&
+      (!m.sender_email || m.sender_email.toLowerCase() !== currentUser.email?.toLowerCase())
+  );
+  const isRequestPending = Boolean(
+    activeConv && !activeConv.is_group && activeConv.is_request_pending && !recipientReplied
+  );
+
+  // Initial load
   useEffect(() => {
     loadInbox();
   }, []);
@@ -136,26 +146,29 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   }, [initialConversation]);
 
-  // Clean up active voice recording/playback when switching conversations
+  // Clean up active voice recording/playback & banners when switching conversations
   useEffect(() => {
     voiceRecorder.cancelRecording();
     setDraftVoiceNote(null);
+    setDeliveryError(null);
+    setRoomNotice(null);
     pauseAllActiveVoiceNotes();
   }, [activeConv?.id]);
 
-  // Load messages when conversation changes
+  // Load messages when conversation id changes
   useEffect(() => {
-    if (activeConv) {
-      loadMessages(activeConv.id);
+    const convId = activeConv?.id;
+    if (convId) {
+      loadMessages(convId);
       const pollTimer = setInterval(() => {
-        loadMessages(activeConv.id, true);
+        loadMessages(convId, true);
       }, 3500);
       return () => {
         clearInterval(pollTimer);
         pauseAllActiveVoiceNotes();
       };
     }
-  }, [activeConv]);
+  }, [activeConv?.id]);
 
   // Live Campus Directory search when typing in inbox search
   useEffect(() => {
@@ -176,16 +189,28 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   }, [searchQuery]);
 
-  const loadInbox = async () => {
+  const loadInbox = async (): Promise<Conversation[]> => {
     try {
       setLoadingInbox(true);
       const data: any = await chatService.getInbox();
-      setConversations(data.results || (Array.isArray(data) ? data : []));
+      const list: Conversation[] = data.results || (Array.isArray(data) ? data : []);
+      setConversations(list);
       if (data.pending_requests_count !== undefined) {
         setPendingRequestsCount(data.pending_requests_count);
       }
+      setActiveConv((prev) => {
+        if (!prev) return prev;
+        const fresh = list.find((c) => String(c.id) === String(prev.id));
+        if (!fresh) return prev;
+        if (Boolean(fresh.is_request_pending) !== Boolean(prev.is_request_pending)) {
+          return { ...prev, ...fresh };
+        }
+        return prev;
+      });
+      return list;
     } catch (e) {
       console.log('Error loading inbox', e);
+      return [];
     } finally {
       setLoadingInbox(false);
     }
@@ -204,9 +229,47 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   };
 
+  const handleCheckRequestStatus = async () => {
+    if (!activeConv || checkingRequestStatus) return;
+    setCheckingRequestStatus(true);
+    try {
+      const list = await loadInbox();
+      await loadMessages(activeConv.id, true);
+      const fresh = list.find((c) => String(c.id) === String(activeConv.id));
+      if (fresh && !fresh.is_request_pending) {
+        setDeliveryError(null);
+        setRoomNotice('Message request accepted! You can chat freely now.');
+      } else {
+        setRoomNotice('Still pending acceptance.');
+      }
+    } finally {
+      setCheckingRequestStatus(false);
+    }
+  };
+
+  const handleAddChatMembers = async (selectedIds: number[]) => {
+    if (!activeConv) return;
+    await chatService.addMembers(activeConv.id, selectedIds);
+    await loadMessages(activeConv.id);
+    await loadInbox();
+    setRoomNotice(`Added ${selectedIds.length} member(s) to the group.`);
+    if (Platform.OS !== 'web') {
+      Alert.alert('Success', `Added ${selectedIds.length} members to the group.`);
+    }
+  };
+
+  const handleJoinedChatViaInvite = async (conv: any) => {
+    await loadInbox();
+    setActiveConv(conv);
+  };
+
   const handleSendRecordedVoiceNow = async () => {
     const recorded = await voiceRecorder.stopRecording();
     if (!recorded || !activeConv) return;
+    if (isRequestPending) {
+      setDeliveryError('Waiting for recipient to accept your message request.');
+      return;
+    }
     const typedCaption = inputMessage.trim();
     if (typedCaption) {
       setInputMessage('');
@@ -217,24 +280,31 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const handleAttachRecordedVoiceToDraft = async () => {
     const recorded = await voiceRecorder.stopRecording();
     if (!recorded) return;
+    setDeliveryError(null);
     setDraftVoiceNote(recorded);
   };
 
   const toggleAnonMode = () => {
     if (currentUser?.verification_tier !== 'FULLY_VERIFIED') {
-      Alert.alert(
-        'Green Badge Required 🛡️',
-        'Anonymous campus messaging is exclusive to Green-Verified students to maintain a trusted campus community. Please verify your student ID.'
-      );
+      const msg =
+        'Anonymous messaging is exclusive to Green-Verified students. Please verify your student ID.';
+      setDeliveryError(msg);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Green Badge Required', msg);
+      }
       return;
     }
+    setDeliveryError(null);
     setIsAnonMode(!isAnonMode);
   };
 
   const handleSendMessage = async () => {
-    if (!activeConv || sending) return;
+    if (!activeConv || sending || isRequestPending) return;
     const rawText = inputMessage.trim();
     if (!rawText && !draftVoiceNote) return;
+
+    setDeliveryError(null);
+    setRoomNotice(null);
 
     if (draftVoiceNote) {
       const voiceToSend = draftVoiceNote;
@@ -272,16 +342,27 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       setSending(true);
       const sent = await chatService.sendMessage(activeConv.id, textToSend);
       setMessages((prev) => upsertMessageUnique(prev, sent, tempId));
-    } catch (e) {
+    } catch (e: any) {
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as any } : m)));
-      Alert.alert('Delivery Failed', 'Could not deliver message.');
+      const errStatus = e?.response?.data?.status;
+      const errMsg = extractApiError(e, 'Could not deliver message.');
+      if (e?.response?.status === 403 && errStatus === 'MESSAGE_REQUEST_PENDING') {
+        setActiveConv((prev) => (prev ? { ...prev, is_request_pending: true } : prev));
+      }
+      setRoomNotice(null);
+      setDeliveryError(errMsg);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Delivery Failed', errMsg);
+      }
     } finally {
       setSending(false);
     }
   };
 
   const handleSendAttachments = async (staged: StagedAttachment[], caption: string) => {
-    if (!activeConv) return;
+    if (!activeConv || isRequestPending) return;
+    setDeliveryError(null);
+    setRoomNotice(null);
     const tempId = `temp_att_msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     let finalCaption = (caption || '').trim();
     if (isAnonMode) {
@@ -318,6 +399,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     setMessages((prev) => [...prev, optimisticMsg]);
 
     try {
+      setSending(true);
       const filesToSend = staged.map((item) => ({
         file: item.file,
         uri: item.uri,
@@ -328,11 +410,23 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       setMessages((prev) => upsertMessageUnique(prev, sent, tempId));
     } catch (err: any) {
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as any } : m)));
-      Alert.alert('Upload Failed', err.response?.data?.error || err.message || 'Could not send attachments.');
+      const errStatus = err?.response?.data?.status;
+      const errMsg = extractApiError(err, 'Could not send attachments.');
+      if (err?.response?.status === 403 && errStatus === 'MESSAGE_REQUEST_PENDING') {
+        setActiveConv((prev) => (prev ? { ...prev, is_request_pending: true } : prev));
+      }
+      setRoomNotice(null);
+      setDeliveryError(errMsg);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Upload Failed', errMsg);
+      }
+    } finally {
+      setSending(false);
     }
   };
 
   const handleStartDirectChat = async (user: any) => {
+    setInboxError(null);
     try {
       setDirectoryModalVisible(false);
       setSearchQuery('');
@@ -341,33 +435,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       await loadInbox();
       setActiveConv(conv);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Could not start conversation.');
+      const errMsg = extractApiError(e, 'Could not start conversation.');
+      setInboxError(errMsg);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Error', errMsg);
+      }
     }
-  };
-
-  const handleDeleteConversation = async (convId: string) => {
-    Alert.alert(
-      'Delete Conversation',
-      'Are you sure you want to delete this chat?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await chatService.deleteConversation(convId);
-              if (activeConv?.id === convId) {
-                setActiveConv(null);
-              }
-              setConversations((prev) => prev.filter((c) => c.id !== convId));
-            } catch (e) {
-              Alert.alert('Error', 'Could not delete conversation.');
-            }
-          },
-        },
-      ]
-    );
   };
 
   const handleClearConversationFromSheet = (conv: Conversation) => {
@@ -380,9 +453,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         }
         await loadInbox();
       } catch (e) {
-        if (Platform.OS === 'web') {
-          window.alert('Could not clear chat history.');
-        } else {
+        setInboxError('Could not clear chat history.');
+        if (Platform.OS !== 'web') {
           Alert.alert('Error', 'Could not clear chat history.');
         }
       }
@@ -413,9 +485,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         }
         setConversations((prev) => prev.filter((c) => c.id !== conv.id));
       } catch (e) {
-        if (Platform.OS === 'web') {
-          window.alert('Could not delete conversation.');
-        } else {
+        setInboxError('Could not delete conversation.');
+        if (Platform.OS !== 'web') {
           Alert.alert('Error', 'Could not delete conversation.');
         }
       }
@@ -438,30 +509,49 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
   const handleUnsendMessage = async (msg: Message) => {
     setActionMessage(null);
+    if (msg.status === 'failed' || String(msg.id).startsWith('temp_')) {
+      setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+      return;
+    }
     try {
       await chatService.unsendMessage(msg.id);
       setMessages((prev) => prev.filter((m) => m.id !== msg.id));
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Could not unsend message.');
+      const errMsg = extractApiError(e, 'Could not unsend message.');
+      setDeliveryError(errMsg);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Error', errMsg);
+      }
     }
   };
 
   const handleDeleteForMe = async (msg: Message) => {
     setActionMessage(null);
+    if (msg.status === 'failed' || String(msg.id).startsWith('temp_')) {
+      setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+      return;
+    }
     try {
       await chatService.deleteMessageForMe(msg.id);
       setMessages((prev) => prev.filter((m) => m.id !== msg.id));
-    } catch (e) {
-      Alert.alert('Error', 'Could not remove message.');
+    } catch (e: any) {
+      const errMsg = extractApiError(e, 'Could not remove message.');
+      setDeliveryError(errMsg);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Error', errMsg);
+      }
     }
   };
 
   const handleCopyMessage = (msg: Message) => {
     setActionMessage(null);
     if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(msg.text);
+      navigator.clipboard.writeText(msg.text || '');
     }
-    Alert.alert('Copied', 'Message text copied to clipboard.');
+    setRoomNotice('Message copied to clipboard.');
+    if (Platform.OS !== 'web') {
+      Alert.alert('Copied', 'Message text copied to clipboard.');
+    }
   };
 
   const getFilteredConversations = () => {
@@ -504,8 +594,18 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             onPress={() => activeConv.recipient?.id && onOpenProfile?.(activeConv.recipient.id)}
             activeOpacity={0.7}
           >
-            <View style={styles.roomAvatar}>
-              <Text style={styles.roomAvatarText}>{roomTitle.charAt(0).toUpperCase()}</Text>
+            <View
+              style={[
+                styles.roomAvatar,
+                {
+                  backgroundColor: isDark ? 'rgba(94, 106, 210, 0.22)' : 'rgba(79, 70, 229, 0.12)',
+                  borderColor: colors.cardBorder,
+                },
+              ]}
+            >
+              <Text style={[styles.roomAvatarText, { color: colors.primary }]}>
+                {roomTitle.charAt(0).toUpperCase()}
+              </Text>
             </View>
 
             <View style={styles.roomMeta}>
@@ -522,7 +622,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             </View>
           </TouchableOpacity>
 
-          {/* Header Action Buttons (Instagram Style) */}
+          {/* Header Action Buttons */}
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             {activeConv.is_group && (
               <TouchableOpacity
@@ -543,7 +643,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 <UserPlus size={19} color={colors.textSecondary} />
               </TouchableOpacity>
             )}
-
           </View>
         </View>
 
@@ -568,6 +667,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                   message={item}
                   isMe={isMe}
                   isGroup={activeConv.is_group}
+                  onPress={(m) => {
+                    if (m.status === 'failed') {
+                      setActionMessage(m);
+                    }
+                  }}
                   onLongPress={(m) => setActionMessage(m)}
                   onPostCardPress={(card) => setSelectedPostCard(card)}
                   onSenderPress={onOpenProfile}
@@ -579,11 +683,98 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           />
         )}
 
+        {/* Pending Message Request Lock Banner */}
+        {isRequestPending && (
+          <View
+            style={[
+              styles.pendingRequestBanner,
+              {
+                backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : '#fffbeb',
+                borderTopColor: isDark ? 'rgba(245, 158, 11, 0.35)' : '#fde68a',
+              },
+            ]}
+          >
+            <Text style={[styles.pendingRequestText, { color: colors.warning }]}>
+              ⏳ Message request pending — waiting for {roomTitle} to accept before you can send follow-ups.
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.checkStatusBtn,
+                {
+                  backgroundColor: isDark ? '#141516' : '#ffffff',
+                  borderColor: colors.warning,
+                },
+              ]}
+              onPress={handleCheckRequestStatus}
+              disabled={checkingRequestStatus}
+              activeOpacity={0.8}
+            >
+              {checkingRequestStatus ? (
+                <ActivityIndicator size="small" color={colors.warning} />
+              ) : (
+                <Text style={[styles.checkStatusText, { color: colors.warning }]}>Check</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Inline Delivery Error Banner */}
+        {deliveryError && (
+          <View
+            style={[
+              styles.roomFeedbackBanner,
+              {
+                backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : '#fef2f2',
+                borderTopColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#fecaca',
+              },
+            ]}
+          >
+            <Text style={[styles.roomFeedbackText, { color: colors.danger }]} numberOfLines={3}>
+              ⚠️ {deliveryError}
+            </Text>
+            <TouchableOpacity onPress={() => setDeliveryError(null)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <X size={14} color={colors.danger} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Inline Notice Banner */}
+        {roomNotice && (
+          <View
+            style={[
+              styles.roomFeedbackBanner,
+              {
+                backgroundColor: isDark ? 'rgba(39, 166, 68, 0.14)' : '#f0fdf4',
+                borderTopColor: isDark ? 'rgba(39, 166, 68, 0.35)' : '#bbf7d0',
+              },
+            ]}
+          >
+            <Text style={[styles.roomFeedbackText, { color: colors.success }]} numberOfLines={2}>
+              ✓ {roomNotice}
+            </Text>
+            <TouchableOpacity onPress={() => setRoomNotice(null)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <X size={14} color={colors.success} />
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Anonymous Mode Active Indicator Banner */}
         {isAnonMode && (
-          <View style={{ paddingHorizontal: 14, paddingVertical: 6, backgroundColor: isDark ? 'rgba(147, 51, 234, 0.15)' : 'rgba(147, 51, 234, 0.1)', borderTopWidth: 1, borderColor: 'rgba(147, 51, 234, 0.25)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: 11, color: isDark ? '#c084fc' : '#7e22ce', fontWeight: '600' }}>
-              🎭 Anonymous DM Active • Your real name is hidden. Sent as an Anonymous Mascot.
+          <View
+            style={{
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              backgroundColor: isDark ? 'rgba(147, 51, 234, 0.15)' : 'rgba(147, 51, 234, 0.08)',
+              borderTopWidth: 1,
+              borderColor: 'rgba(147, 51, 234, 0.25)',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
+            <Text style={{ fontSize: 11, color: isDark ? '#c084fc' : '#7e22ce', fontWeight: '600', flex: 1 }}>
+              🎭 Anonymous DM Active • Your real name is hidden.
             </Text>
             <TouchableOpacity onPress={() => setIsAnonMode(false)}>
               <X size={14} color={isDark ? '#c084fc' : '#7e22ce'} />
@@ -595,7 +786,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         {draftVoiceNote && !voiceRecorder.isRecording && (
           <View
             style={{
-              paddingHorizontal: 12,
+              paddingHorizontal: 10,
               paddingTop: 8,
               backgroundColor: colors.surface,
               borderTopWidth: 1,
@@ -614,7 +805,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         {voiceRecorder.isRecording ? (
           <View
             style={{
-              paddingHorizontal: 10,
+              paddingHorizontal: 8,
               paddingVertical: 8,
               backgroundColor: colors.surface,
               borderTopWidth: 1,
@@ -641,67 +832,104 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             ]}
           >
             <TouchableOpacity
-              style={styles.attachBtn}
+              style={[
+                styles.attachBtn,
+                {
+                  backgroundColor: colors.surfaceLight,
+                  borderColor: colors.cardBorder,
+                },
+                isRequestPending && styles.controlDisabled,
+              ]}
               onPress={() => setAttachmentPickerVisible(true)}
+              disabled={isRequestPending}
               activeOpacity={0.7}
               accessibilityLabel="Share media or document"
             >
-              <Paperclip size={20} color={colors.textSecondary} />
+              <Paperclip size={17} color={colors.textSecondary} />
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.attachBtn}
-              onPress={voiceRecorder.startRecording}
+              style={[
+                styles.attachBtn,
+                {
+                  backgroundColor: colors.surfaceLight,
+                  borderColor: colors.cardBorder,
+                },
+                isRequestPending && styles.controlDisabled,
+              ]}
+              onPress={() => voiceRecorder.startRecording()}
+              disabled={isRequestPending}
               activeOpacity={0.7}
               accessibilityLabel="Record voice note"
             >
-              <Mic size={20} color={colors.primary} />
+              <Mic size={17} color={colors.primary} />
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[
                 styles.anonToggleBtn,
                 {
-                  backgroundColor: isAnonMode ? (isDark ? 'rgba(147, 51, 234, 0.25)' : 'rgba(147, 51, 234, 0.12)') : colors.surfaceLight,
+                  backgroundColor: isAnonMode
+                    ? isDark
+                      ? 'rgba(147, 51, 234, 0.25)'
+                      : 'rgba(147, 51, 234, 0.12)'
+                    : colors.surfaceLight,
                   borderColor: isAnonMode ? '#a855f7' : colors.cardBorder,
                 },
+                isRequestPending && styles.controlDisabled,
               ]}
               onPress={toggleAnonMode}
+              disabled={isRequestPending}
               activeOpacity={0.8}
               accessibilityLabel="Toggle anonymous message"
             >
               <Text style={[styles.anonToggleText, { color: isAnonMode ? '#a855f7' : colors.textMuted }]}>
-                🎭 {isAnonMode ? 'Anon ON' : 'Anon'}
+                {isAnonMode ? '🎭 ON' : '🎭'}
               </Text>
             </TouchableOpacity>
 
             <TextInput
-              style={[styles.messageInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
+              style={[
+                styles.messageInput,
+                {
+                  backgroundColor: colors.surfaceLight,
+                  color: colors.textPrimary,
+                  borderColor: colors.cardBorder,
+                },
+                isRequestPending && { opacity: 0.6 },
+              ]}
               placeholder={
-                draftVoiceNote
-                  ? 'Add text to send with voice note...'
+                isRequestPending
+                  ? 'Waiting for request acceptance...'
+                  : draftVoiceNote
+                  ? 'Add text to voice note...'
                   : isAnonMode
                   ? 'Type anonymous message...'
                   : 'Type a message...'
               }
               placeholderTextColor={colors.textMuted}
               value={inputMessage}
-              onChangeText={setInputMessage}
+              onChangeText={(txt) => {
+                setInputMessage(txt);
+                if (deliveryError) setDeliveryError(null);
+              }}
+              editable={!isRequestPending}
               multiline
               maxLength={1000}
             />
             <TouchableOpacity
               style={[
                 styles.sendButton,
-                (!(inputMessage.trim() || draftVoiceNote) || sending) && styles.sendButtonDisabled,
+                { backgroundColor: colors.primary },
+                (isRequestPending || !(inputMessage.trim() || draftVoiceNote) || sending) && styles.sendButtonDisabled,
               ]}
               onPress={handleSendMessage}
-              disabled={!(inputMessage.trim() || draftVoiceNote) || sending}
+              disabled={isRequestPending || !(inputMessage.trim() || draftVoiceNote) || sending}
             >
               {sending ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Send size={18} color="#fff" />
+                <Send size={16} color="#fff" />
               )}
             </TouchableOpacity>
           </View>
@@ -723,41 +951,76 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         {/* Action Sheet Modal for Message */}
         {actionMessage && (
           <Modal transparent animationType="fade" visible={!!actionMessage} onRequestClose={() => setActionMessage(null)}>
-            <TouchableOpacity style={styles.menuBackdrop} activeOpacity={1} onPress={() => setActionMessage(null)}>
-              <View style={styles.actionSheet}>
-                {currentUser &&
-                  (actionMessage.sender === currentUser.id ||
-                    actionMessage.sender_email?.toLowerCase() === currentUser.email?.toLowerCase()) && (
-                    <TouchableOpacity
-                      style={styles.actionSheetItem}
-                      onPress={() => handleUnsendMessage(actionMessage)}
-                    >
-                      <Trash2 size={18} color="#ef4444" />
-                      <Text style={[styles.actionSheetText, { color: '#ef4444' }]}>Unsend for Everyone</Text>
-                    </TouchableOpacity>
-                  )}
+            <TouchableOpacity
+              style={[styles.menuBackdrop, { backgroundColor: colors.modalOverlay }]}
+              activeOpacity={1}
+              onPress={() => setActionMessage(null)}
+            >
+              <View style={[styles.actionSheet, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+                {(() => {
+                  const isTempOrFailed =
+                    actionMessage.status === 'failed' || String(actionMessage.id).startsWith('temp_');
+                  const isSenderMe =
+                    currentUser &&
+                    (actionMessage.sender === currentUser.id ||
+                      actionMessage.sender_email?.toLowerCase() === currentUser.email?.toLowerCase());
 
-                <TouchableOpacity
-                  style={styles.actionSheetItem}
-                  onPress={() => handleDeleteForMe(actionMessage)}
-                >
-                  <Trash2 size={18} color={colors.textSecondary} />
-                  <Text style={[styles.actionSheetText, { color: colors.textPrimary }]}>Delete for Me</Text>
-                </TouchableOpacity>
+                  return (
+                    <>
+                      {actionMessage.status === 'failed' && (
+                        <Text
+                          style={{
+                            paddingHorizontal: 18,
+                            paddingTop: 6,
+                            paddingBottom: 8,
+                            color: colors.danger,
+                            fontSize: 12,
+                            fontWeight: '700',
+                            borderBottomWidth: 1,
+                            borderBottomColor: colors.hairline,
+                            marginBottom: 4,
+                          }}
+                        >
+                          Message failed to deliver
+                        </Text>
+                      )}
 
-                <TouchableOpacity
-                  style={styles.actionSheetItem}
-                  onPress={() => handleCopyMessage(actionMessage)}
-                >
-                  <Copy size={18} color={colors.textSecondary} />
-                  <Text style={[styles.actionSheetText, { color: colors.textPrimary }]}>Copy Text</Text>
-                </TouchableOpacity>
+                      {isSenderMe && !isTempOrFailed && (
+                        <TouchableOpacity
+                          style={styles.actionSheetItem}
+                          onPress={() => handleUnsendMessage(actionMessage)}
+                        >
+                          <Trash2 size={18} color={colors.danger} />
+                          <Text style={[styles.actionSheetText, { color: colors.danger }]}>Unsend for Everyone</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      <TouchableOpacity
+                        style={styles.actionSheetItem}
+                        onPress={() => handleDeleteForMe(actionMessage)}
+                      >
+                        <Trash2 size={18} color={colors.textSecondary} />
+                        <Text style={[styles.actionSheetText, { color: colors.textPrimary }]}>
+                          {isTempOrFailed ? 'Remove Failed Message' : 'Delete for Me'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.actionSheetItem}
+                        onPress={() => handleCopyMessage(actionMessage)}
+                      >
+                        <Copy size={18} color={colors.textSecondary} />
+                        <Text style={[styles.actionSheetText, { color: colors.textPrimary }]}>Copy Text</Text>
+                      </TouchableOpacity>
+                    </>
+                  );
+                })()}
               </View>
             </TouchableOpacity>
           </Modal>
         )}
 
-        {/* ADD MEMBERS MODAL (Instagram Style) */}
+        {/* ADD MEMBERS MODAL */}
         {activeConv && activeConv.is_group && (
           <AddMembersModal
             visible={addMembersModalVisible}
@@ -768,7 +1031,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           />
         )}
 
-        {/* GROUP INVITE LINK MODAL (Instagram Style) */}
+        {/* GROUP INVITE LINK MODAL */}
         {activeConv && activeConv.is_group && (
           <InviteLinkModal
             visible={inviteLinkModalVisible}
@@ -790,50 +1053,85 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Top Header */}
       <View style={[styles.inboxHeader, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
-        <Text style={[styles.inboxTitle, { color: colors.textPrimary }]}>Campus Messages</Text>
+        <Text style={[styles.inboxTitle, { color: colors.textPrimary }]}>Messages</Text>
         <View style={styles.headerBtnGroup}>
           <TouchableOpacity
-            style={pendingRequestsCount > 0 ? styles.requestsPillActive : styles.requestsPill}
+            style={[
+              styles.requestsPill,
+              pendingRequestsCount > 0
+                ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                : { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+            ]}
             onPress={() => setMessageRequestsVisible(true)}
             activeOpacity={0.8}
           >
-            <MessageSquare size={13} color={pendingRequestsCount > 0 ? '#fff' : colors.textSecondary} />
-            <Text style={pendingRequestsCount > 0 ? styles.requestsPillTextActive : styles.requestsPillText}>
+            <MessageSquare size={13} color={pendingRequestsCount > 0 ? '#ffffff' : colors.textSecondary} />
+            <Text
+              style={[
+                styles.requestsPillText,
+                { color: pendingRequestsCount > 0 ? '#ffffff' : colors.textSecondary },
+              ]}
+            >
               Requests{pendingRequestsCount > 0 ? ` (${pendingRequestsCount})` : ''}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.joinLinkPill}
+            style={[
+              styles.joinLinkPill,
+              { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+            ]}
             onPress={() => setJoinViaInviteModalVisible(true)}
             activeOpacity={0.8}
           >
             <Link2 size={13} color={colors.textSecondary} />
-            <Text style={styles.joinLinkPillText}>Join Link</Text>
+            <Text style={[styles.joinLinkPillText, { color: colors.textSecondary }]}>Join</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.ephemeralPill}
+            style={[
+              styles.ephemeralPill,
+              { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+            ]}
             onPress={() => setEphemeralModalVisible(true)}
             activeOpacity={0.8}
           >
-            <Flame size={14} color={colors.ephemeralFire} />
-            <Text style={styles.ephemeralPillText}>Ephemeral</Text>
+            <Flame size={13} color={colors.ephemeralFire} />
+            <Text style={[styles.ephemeralPillText, { color: colors.textSecondary }]}>Ephemeral</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.newChatBtn}
+            style={[styles.newChatBtn, { backgroundColor: colors.primary }]}
             onPress={() => setDirectoryModalVisible(true)}
             activeOpacity={0.8}
+            accessibilityLabel="New message"
           >
-            <Plus size={18} color="#fff" />
+            <Plus size={17} color="#ffffff" />
           </TouchableOpacity>
         </View>
       </View>
 
+      {/* Inbox Error Banner */}
+      {inboxError && (
+        <View
+          style={[
+            styles.inboxErrorBanner,
+            {
+              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : '#fef2f2',
+              borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#fecaca',
+            },
+          ]}
+        >
+          <Text style={[styles.roomFeedbackText, { color: colors.danger }]}>⚠️ {inboxError}</Text>
+          <TouchableOpacity onPress={() => setInboxError(null)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+            <X size={14} color={colors.danger} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Search Input Bar */}
       <View style={[styles.searchBar, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
-        <Search size={18} color={colors.textSecondary} style={{ marginRight: 8 }} />
+        <Search size={17} color={colors.textSecondary} style={{ marginRight: 8 }} />
         <TextInput
           style={[styles.searchInput, { color: colors.textPrimary }]}
           placeholder="Search chats or find classmates..."
@@ -850,23 +1148,28 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
       {/* Live Campus Directory search section */}
       {searchQuery.trim().length >= 2 && (
-        <View style={styles.directorySection}>
-          <Text style={styles.sectionHeader}>Campus Directory</Text>
+        <View style={[styles.directorySection, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+          <Text style={[styles.sectionHeader, { color: colors.textMuted }]}>Campus Directory</Text>
           {searchingDirectory ? (
             <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 10 }} />
           ) : directoryResults.length === 0 ? (
-            <Text style={styles.noResultsText}>No students matching "{searchQuery}"</Text>
+            <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>No students matching "{searchQuery}"</Text>
           ) : (
             <FlatList
               data={directoryResults}
               keyExtractor={(item) => String(item.id)}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={styles.directoryRow}
+                  style={[styles.directoryRow, { borderBottomColor: colors.hairline }]}
                   onPress={() => handleStartDirectChat(item)}
                 >
-                  <View style={styles.directoryAvatar}>
-                    <Text style={styles.directoryAvatarText}>
+                  <View
+                    style={[
+                      styles.directoryAvatar,
+                      { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                    ]}
+                  >
+                    <Text style={[styles.directoryAvatarText, { color: colors.textSecondary }]}>
                       {(item.full_name || item.email).charAt(0).toUpperCase()}
                     </Text>
                   </View>
@@ -874,7 +1177,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                     <Text style={[styles.directoryName, { color: colors.textPrimary }]}>{item.full_name || item.email}</Text>
                     <Text style={[styles.directoryEmail, { color: colors.textSecondary }]}>{item.email}</Text>
                   </View>
-                  <Text style={styles.startChatLink}>Chat</Text>
+                  <Text style={[styles.startChatLink, { color: colors.primary }]}>Chat</Text>
                 </TouchableOpacity>
               )}
             />
@@ -890,12 +1193,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       ) : filteredConvs.length === 0 ? (
         <View style={styles.centerBox}>
           <MessageSquare size={40} color={colors.textSecondary} />
-          <Text style={styles.emptyTitle}>No messages yet</Text>
-          <Text style={styles.emptySub}>
+          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No messages yet</Text>
+          <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
             Start a direct message with a batchmate or launch an ephemeral group!
           </Text>
           <TouchableOpacity
-            style={styles.startChatCta}
+            style={[styles.startChatCta, { backgroundColor: colors.primary }]}
             onPress={() => setDirectoryModalVisible(true)}
           >
             <Text style={styles.startChatCtaText}>Find Classmates</Text>
@@ -930,10 +1233,15 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 <View
                   style={[
                     styles.convAvatar,
-                    item.is_ephemeral && styles.convAvatarEphemeral,
+                    {
+                      backgroundColor: colors.surfaceLight,
+                      borderColor: item.is_ephemeral ? colors.ephemeralFire : colors.cardBorder,
+                    },
                   ]}
                 >
-                  <Text style={styles.convAvatarText}>{name.charAt(0).toUpperCase()}</Text>
+                  <Text style={[styles.convAvatarText, { color: colors.textPrimary }]}>
+                    {name.charAt(0).toUpperCase()}
+                  </Text>
                 </View>
 
                 <View style={styles.convBody}>
@@ -1003,7 +1311,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         }}
       />
 
-      {/* Join By Invite Modal (Instagram Style) */}
+      {/* Join By Invite Modal */}
       <JoinByInviteModal
         visible={joinViaInviteModalVisible}
         onClose={() => setJoinViaInviteModalVisible(false)}
@@ -1027,21 +1335,21 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           onRequestClose={() => setActionConv(null)}
         >
           <TouchableOpacity
-            style={styles.menuBackdrop}
+            style={[styles.menuBackdrop, { backgroundColor: colors.modalOverlay }]}
             activeOpacity={1}
             onPress={() => setActionConv(null)}
           >
-            <View style={styles.actionSheet}>
+            <View style={[styles.actionSheet, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
               <Text
                 style={{
                   paddingHorizontal: 18,
                   paddingTop: 8,
                   paddingBottom: 8,
-                  color: '#94a3b8',
+                  color: colors.textMuted,
                   fontSize: 13,
                   fontWeight: '700',
                   borderBottomWidth: 1,
-                  borderBottomColor: 'rgba(255,255,255,0.06)',
+                  borderBottomColor: colors.hairline,
                   marginBottom: 4,
                 }}
                 numberOfLines={1}
@@ -1057,9 +1365,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 style={styles.actionSheetItem}
                 onPress={() => handleClearConversationFromSheet(actionConv)}
               >
-                <Trash2 size={18} color="#f59e0b" />
+                <Trash2 size={18} color={colors.warning} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.actionSheetText, { color: '#f59e0b' }]}>Clear Messages</Text>
+                  <Text style={[styles.actionSheetText, { color: colors.warning }]}>Clear Messages</Text>
                 </View>
               </TouchableOpacity>
 
@@ -1068,9 +1376,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 style={styles.actionSheetItem}
                 onPress={() => handleDeleteConversationFromSheet(actionConv)}
               >
-                <Trash2 size={18} color="#ef4444" />
+                <Trash2 size={18} color={colors.danger} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.actionSheetText, { color: '#ef4444' }]}>Delete Chat</Text>
+                  <Text style={[styles.actionSheetText, { color: colors.danger }]}>Delete Chat</Text>
                 </View>
               </TouchableOpacity>
 
@@ -1078,12 +1386,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               <TouchableOpacity
                 style={[
                   styles.actionSheetItem,
-                  { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', marginTop: 4 },
+                  { borderTopWidth: 1, borderTopColor: colors.hairline, marginTop: 4 },
                 ]}
                 onPress={() => setActionConv(null)}
               >
-                <X size={18} color="#94a3b8" />
-                <Text style={[styles.actionSheetText, { color: '#94a3b8' }]}>Cancel</Text>
+                <X size={18} color={colors.textMuted} />
+                <Text style={[styles.actionSheetText, { color: colors.textMuted }]}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -1096,110 +1404,93 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
     maxWidth: 680,
     width: '100%',
     alignSelf: 'center',
   },
   inboxHeader: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    gap: 8,
+    paddingHorizontal: 14,
     paddingTop: 14,
     paddingBottom: 10,
-    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
   },
   inboxTitle: {
-    color: colors.textPrimary,
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '800',
   },
   headerBtnGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   requestsPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(56, 189, 248, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.3)',
     paddingHorizontal: 9,
     paddingVertical: 6,
-    borderRadius: 16,
-    gap: 4,
-  },
-  requestsPillActive: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0284c7',
-    borderWidth: 1,
-    borderColor: '#38bdf8',
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 8,
     gap: 4,
   },
   requestsPillText: {
-    color: '#38bdf8',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  requestsPillTextActive: {
-    color: '#ffffff',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
   },
   joinLinkPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 2,
+    borderRadius: 8,
     gap: 4,
   },
   joinLinkPillText: {
-    color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
   },
   ephemeralPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 8,
     gap: 4,
   },
   ephemeralPillText: {
-    color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
   },
   newChatBtn: {
-    backgroundColor: colors.primary,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  inboxErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 8,
+    marginHorizontal: 14,
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 12,
+    borderRadius: 10,
     marginHorizontal: 14,
     marginVertical: 10,
     paddingHorizontal: 12,
@@ -1207,27 +1498,22 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    color: colors.textPrimary,
     fontSize: 14,
   },
   directorySection: {
-    backgroundColor: colors.surface,
     marginHorizontal: 14,
     marginBottom: 10,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     padding: 12,
     maxHeight: 200,
   },
   sectionHeader: {
-    color: colors.textMuted,
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 8,
   },
   noResultsText: {
-    color: colors.textSecondary,
     fontSize: 13,
     paddingVertical: 6,
   },
@@ -1236,35 +1522,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   directoryAvatar: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
   },
   directoryAvatarText: {
-    color: colors.textSecondary,
     fontSize: 13,
     fontWeight: '700',
   },
   directoryName: {
-    color: colors.textPrimary,
     fontSize: 13,
     fontWeight: '700',
   },
   directoryEmail: {
-    color: colors.textSecondary,
     fontSize: 11,
   },
   startChatLink: {
-    color: colors.primary,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -1275,9 +1554,7 @@ const styles = StyleSheet.create({
   convCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
@@ -1286,18 +1563,12 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
-  convAvatarEphemeral: {
-    borderColor: colors.ephemeralFire,
-  },
   convAvatarText: {
-    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
   },
@@ -1310,14 +1581,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   convName: {
-    color: colors.textPrimary,
     fontSize: 14.5,
     fontWeight: '700',
     flex: 1,
     marginRight: 6,
   },
   convTime: {
-    color: colors.textSecondary,
     fontSize: 11,
   },
   convBottomRow: {
@@ -1327,7 +1596,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   lastMsg: {
-    color: colors.textSecondary,
     fontSize: 13,
     flex: 1,
   },
@@ -1335,17 +1603,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#ef4444',
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 10,
+    borderRadius: 8,
     marginLeft: 6,
   },
   unreadBadgeText: {
     color: '#fff',
     fontSize: 10,
     fontWeight: '700',
-  },
-  trashBtn: {
-    padding: 6,
-    marginLeft: 8,
   },
   centerBox: {
     flex: 1,
@@ -1355,13 +1619,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   emptyTitle: {
-    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
     marginTop: 8,
   },
   emptySub: {
-    color: colors.textSecondary,
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 18,
@@ -1369,10 +1631,9 @@ const styles = StyleSheet.create({
   },
   startChatCta: {
     marginTop: 12,
-    backgroundColor: colors.primary,
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 8,
   },
   startChatCtaText: {
     color: '#fff',
@@ -1381,7 +1642,6 @@ const styles = StyleSheet.create({
   },
   roomContainer: {
     flex: 1,
-    backgroundColor: colors.background,
     maxWidth: 680,
     width: '100%',
     alignSelf: 'center',
@@ -1389,11 +1649,9 @@ const styles = StyleSheet.create({
   roomHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: colors.cardBorder,
   },
   backBtn: {
     padding: 6,
@@ -1403,13 +1661,11 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#1e3a8a',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
   },
   roomAvatarText: {
-    color: '#93c5fd',
     fontSize: 14,
     fontWeight: '700',
   },
@@ -1417,12 +1673,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   roomTitle: {
-    color: colors.textPrimary,
     fontSize: 15,
     fontWeight: '700',
   },
   roomSubtitle: {
-    color: colors.textSecondary,
     fontSize: 11,
     marginTop: 1,
   },
@@ -1431,58 +1685,100 @@ const styles = StyleSheet.create({
   },
   messagesList: {
     paddingVertical: 12,
+    flexGrow: 1,
+  },
+  pendingRequestBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    borderTopWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  pendingRequestText: {
+    flex: 1,
+    fontSize: 11.5,
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  checkStatusBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    minWidth: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkStatusText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  roomFeedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    borderTopWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  roomFeedbackText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
   },
   inputArea: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
     borderTopWidth: 1,
-    borderTopColor: colors.cardBorder,
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     paddingVertical: 8,
+    gap: 6,
   },
   attachBtn: {
-    padding: 8,
-    marginRight: 6,
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  controlDisabled: {
+    opacity: 0.45,
   },
   messageInput: {
     flex: 1,
-    backgroundColor: colors.surfaceLight,
-    color: colors.textPrimary,
-    borderRadius: 20,
-    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 11,
     paddingVertical: 8,
-    fontSize: 14,
+    minHeight: 36,
+    fontSize: 13.5,
     maxHeight: 90,
   },
   sendButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.primary,
+    width: 36,
+    height: 36,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 8,
   },
   sendButtonDisabled: {
     opacity: 0.4,
   },
   menuBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   actionSheet: {
-    width: '80%',
-    maxWidth: 280,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
+    width: '82%',
+    maxWidth: 290,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     paddingVertical: 8,
   },
   actionSheetItem: {
@@ -1496,74 +1792,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  recordingBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-  },
-  recordingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  pulsingRedDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#ef4444',
-  },
-  recordingText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  recordingActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  cancelRecordBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: 'rgba(148, 163, 184, 0.15)',
-    gap: 4,
-  },
-  cancelRecordText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#94a3b8',
-  },
-  sendRecordBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: '#10b981',
-    gap: 4,
-  },
-  sendRecordText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
   anonToggleBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 14,
+    paddingHorizontal: 7,
+    height: 34,
+    borderRadius: 8,
     borderWidth: 1,
-    marginRight: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    justifyContent: 'center',
   },
   anonToggleText: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: '700',
   },
 });

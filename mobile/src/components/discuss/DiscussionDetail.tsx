@@ -33,6 +33,7 @@ import {
   useVoiceRecorder,
   RecordedVoiceNote,
 } from '../media/VoiceNoteRecorder';
+import { AttachmentPickerModal, StagedAttachment } from '../media/AttachmentPickerModal';
 import {
   X,
   ArrowBigUp,
@@ -77,7 +78,12 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   const [submittingReply, setSubmittingReply] = useState(false);
   const [members, setMembers] = useState<CommunityMemberItem[]>([]);
   const [draftVoiceNote, setDraftVoiceNote] = useState<RecordedVoiceNote | null>(null);
-  const voiceRecorder = useVoiceRecorder();
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const [replyNotice, setReplyNotice] = useState<string | null>(null);
+  const voiceRecorder = useVoiceRecorder({
+    onFallbackNative: () => setPickerVisible(true),
+  });
 
   // Menu & Reporting State
   const [menuVisible, setMenuVisible] = useState(false);
@@ -85,12 +91,16 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   const [reportTarget, setReportTarget] = useState<{ type: 'DISCUSSION' | 'REPLY'; id: string } | null>(null);
   const [reportReason, setReportReason] = useState<'SPAM' | 'HARASSMENT' | 'ABUSIVE' | 'INAPPROPRIATE' | 'OTHER'>('SPAM');
   const [reportDescription, setReportDescription] = useState('');
+  const [reportError, setReportError] = useState<string | null>(null);
   const [submittingReport, setSubmittingReport] = useState(false);
 
   useEffect(() => {
     if (!visible) {
       voiceRecorder.cancelRecording();
       setDraftVoiceNote(null);
+      setPickerVisible(false);
+      setReplyError(null);
+      setReplyNotice(null);
       pauseAllActiveVoiceNotes();
     }
   }, [visible, discussion?.id]);
@@ -99,6 +109,8 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
     if (!discussion || !visible) return;
     setDetail(discussion);
     setDraftVoiceNote(null);
+    setReplyError(null);
+    setReplyNotice(null);
 
     const loadDetail = async () => {
       setLoading(true);
@@ -124,6 +136,9 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   const handleCloseModal = () => {
     voiceRecorder.cancelRecording();
     setDraftVoiceNote(null);
+    setPickerVisible(false);
+    setReplyError(null);
+    setReplyNotice(null);
     pauseAllActiveVoiceNotes();
     onClose();
   };
@@ -173,9 +188,8 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
         onDeleteDiscussion?.(detail.id);
       } catch (err: any) {
         const errorMsg = err.response?.data?.error || 'Could not delete discussion.';
-        if (Platform.OS === 'web') {
-          window.alert(errorMsg);
-        } else {
+        setReplyError(errorMsg);
+        if (Platform.OS !== 'web') {
           Alert.alert('Error', errorMsg);
         }
       }
@@ -198,15 +212,15 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
 
   const handleDeleteReply = async (reply: DiscussionReply) => {
     const executeDeleteReply = async () => {
+      setReplyError(null);
       try {
         await communityService.deleteReply(communitySlug, detail.id, reply.id);
         const updated = await communityService.getDiscussionDetail(communitySlug, detail.id);
         setDetail(updated);
       } catch (err: any) {
         const errorMsg = err.response?.data?.error || 'Could not delete reply.';
-        if (Platform.OS === 'web') {
-          window.alert(errorMsg);
-        } else {
+        setReplyError(errorMsg);
+        if (Platform.OS !== 'web') {
           Alert.alert('Error', errorMsg);
         }
       }
@@ -228,12 +242,14 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
     setReportTarget({ type, id });
     setReportReason('SPAM');
     setReportDescription('');
+    setReportError(null);
     setReportModalVisible(true);
   };
 
   const handleSubmitReport = async () => {
     if (!reportTarget) return;
     setSubmittingReport(true);
+    setReportError(null);
     try {
       await communityService.submitReport(communitySlug, {
         target_type: reportTarget.type,
@@ -242,12 +258,14 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
         description: reportDescription.trim(),
       });
       setReportModalVisible(false);
-      Alert.alert(
-        'Report Submitted 🛡️',
-        'Thank you for reporting. Campus moderators will review this discussion to maintain a safe and productive environment.'
-      );
+      setReplyError(null);
+      setReplyNotice('Report submitted. Campus moderators will review this content.');
     } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.error || 'Could not submit report.');
+      const msg = err.response?.data?.error || 'Could not submit report.';
+      setReportError(msg);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Error', msg);
+      }
     } finally {
       setSubmittingReport(false);
     }
@@ -258,6 +276,8 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
     const trimmedText = replyText.trim();
     if ((!trimmedText && !activeVoice) || submittingReply) return;
 
+    setReplyError(null);
+    setReplyNotice(null);
     setSubmittingReply(true);
     try {
       await communityService.postReply(
@@ -275,10 +295,40 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
       setDraftVoiceNote(null);
       setReplyingTo(null);
     } catch (e: any) {
-      const msg = e.response?.data?.error || 'Could not post reply.';
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        window.alert(msg);
-      } else {
+      const msg = e.response?.data?.error || e.message || 'Could not post reply.';
+      setReplyError(msg);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Error', msg);
+      }
+    } finally {
+      setSubmittingReply(false);
+    }
+  };
+
+  const handleSendPickedAttachments = async (files: StagedAttachment[], pickerCaption: string) => {
+    const combinedText = [replyText.trim(), (pickerCaption || '').trim()].filter(Boolean).join('\n');
+    if ((!combinedText && files.length === 0) || submittingReply) return;
+
+    setReplyError(null);
+    setReplyNotice(null);
+    setSubmittingReply(true);
+    try {
+      await communityService.postReply(
+        communitySlug,
+        detail.id,
+        combinedText,
+        replyingTo ? replyingTo.id : undefined,
+        files
+      );
+      const updated = await communityService.getDiscussionDetail(communitySlug, detail.id);
+      setDetail(updated);
+      setReplyText('');
+      setDraftVoiceNote(null);
+      setReplyingTo(null);
+    } catch (e: any) {
+      const msg = e.response?.data?.error || e.message || 'Could not upload reply attachment.';
+      setReplyError(msg);
+      if (Platform.OS !== 'web') {
         Alert.alert('Error', msg);
       }
     } finally {
@@ -288,7 +338,10 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
 
   const handleAttachVoiceToReplyDraft = async () => {
     const note = await voiceRecorder.stopRecording();
-    if (note) setDraftVoiceNote(note);
+    if (note) {
+      setReplyError(null);
+      setDraftVoiceNote(note);
+    }
   };
 
   const handleSendVoiceReplyNow = async () => {
@@ -321,13 +374,19 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   };
 
   const handleAcceptReply = async (reply: DiscussionReply) => {
+    setReplyError(null);
+    setReplyNotice(null);
     try {
       await communityService.acceptReply(communitySlug, detail.id, reply.id);
       const updated = await communityService.getDiscussionDetail(communitySlug, detail.id);
       setDetail(updated);
-      Alert.alert('Accepted! 🎯', 'This reply is marked as the verified solution.');
+      setReplyNotice('Accepted! This reply is now marked as the verified solution.');
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Could not accept reply.');
+      const msg = e.response?.data?.error || 'Could not accept reply.';
+      setReplyError(msg);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Error', msg);
+      }
     }
   };
 
@@ -554,6 +613,44 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
 
         {/* Bottom Reply Composer Bar */}
         <View style={[styles.bottomComposer, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
+          {replyError && (
+            <View
+              style={[
+                styles.feedbackBanner,
+                {
+                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : '#fef2f2',
+                  borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#fecaca',
+                },
+              ]}
+            >
+              <Text style={[styles.feedbackText, { color: colors.danger }]} numberOfLines={3}>
+                ⚠️ {replyError}
+              </Text>
+              <TouchableOpacity onPress={() => setReplyError(null)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                <X size={14} color={colors.danger} />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {replyNotice && (
+            <View
+              style={[
+                styles.feedbackBanner,
+                {
+                  backgroundColor: isDark ? 'rgba(39, 166, 68, 0.14)' : '#f0fdf4',
+                  borderColor: isDark ? 'rgba(39, 166, 68, 0.35)' : '#bbf7d0',
+                },
+              ]}
+            >
+              <Text style={[styles.feedbackText, { color: colors.success }]} numberOfLines={2}>
+                ✓ {replyNotice}
+              </Text>
+              <TouchableOpacity onPress={() => setReplyNotice(null)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                <X size={14} color={colors.success} />
+              </TouchableOpacity>
+            </View>
+          )}
+
           {replyingTo && (
             <View
               style={[
@@ -637,7 +734,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                     borderColor: isDark ? 'rgba(94, 106, 210, 0.30)' : 'rgba(79, 70, 229, 0.22)',
                   },
                 ]}
-                onPress={voiceRecorder.startRecording}
+                onPress={() => voiceRecorder.startRecording()}
                 activeOpacity={0.8}
                 accessibilityLabel="Record voice note reply"
               >
@@ -664,7 +761,10 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                 }
                 placeholderTextColor={colors.textMuted}
                 value={replyText}
-                onChangeText={setReplyText}
+                onChangeText={(txt) => {
+                  setReplyText(txt);
+                  if (replyError) setReplyError(null);
+                }}
                 multiline
               />
 
@@ -687,12 +787,23 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
           )}
         </View>
 
+        <AttachmentPickerModal
+          visible={pickerVisible}
+          onClose={() => setPickerVisible(false)}
+          onSend={handleSendPickedAttachments}
+        />
+
         {/* Post Options Action Sheet */}
         {menuVisible && (
           <Modal transparent animationType="fade" visible={menuVisible} onRequestClose={() => setMenuVisible(false)}>
             <TouchableOpacity style={styles.menuModalBackdrop} activeOpacity={1} onPress={() => setMenuVisible(false)}>
               <View style={[styles.menuModalSheet, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
-                <View style={styles.dragBar} />
+                <View
+                  style={[
+                    styles.dragBar,
+                    { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(15, 23, 42, 0.18)' },
+                  ]}
+                />
                 <Text style={[styles.menuModalTitle, { color: colors.textPrimary }]}>Discussion Options</Text>
 
                 {canDeletePost && (
@@ -754,6 +865,20 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                 <Text style={[styles.reportSub, { color: colors.textMuted }]}>
                   Select the reason that best describes this issue:
                 </Text>
+
+                {reportError ? (
+                  <View
+                    style={[
+                      styles.feedbackBanner,
+                      {
+                        backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : '#fef2f2',
+                        borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#fecaca',
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.feedbackText, { color: colors.danger }]}>⚠️ {reportError}</Text>
+                  </View>
+                ) : null}
 
                 <View style={styles.reportReasonsList}>
                   {(
@@ -881,7 +1006,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   mainPostCard: {
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 16,
     borderWidth: 1,
     marginBottom: 16,
@@ -985,7 +1110,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 14,
+    borderRadius: 8,
     borderWidth: 1,
   },
   voteBtnText: {
@@ -1025,6 +1150,22 @@ const styles = StyleSheet.create({
     padding: 10,
     paddingBottom: Platform.OS === 'ios' ? 28 : 12,
   },
+  feedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 8,
+  },
+  feedbackText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   replyingToBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1046,26 +1187,26 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   micBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 8,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   inputField: {
     flex: 1,
-    borderRadius: 20,
-    paddingHorizontal: 14,
+    borderRadius: 10,
+    paddingHorizontal: 12,
     paddingVertical: 9,
     fontSize: 13.5,
     borderWidth: 1,
     maxHeight: 90,
   },
   sendBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1087,7 +1228,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 8,
     borderWidth: 1,
   },
   mentionAvatar: {
@@ -1116,8 +1257,8 @@ const styles = StyleSheet.create({
   menuModalSheet: {
     width: '100%',
     maxWidth: 680,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
     padding: 20,
     borderTopWidth: 1,
     borderLeftWidth: 1,
@@ -1127,7 +1268,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignSelf: 'center',
     marginBottom: 14,
   },
@@ -1149,7 +1289,7 @@ const styles = StyleSheet.create({
   reportModalCard: {
     width: '92%',
     maxWidth: 480,
-    borderRadius: 18,
+    borderRadius: 12,
     padding: 20,
     borderWidth: 1,
     marginVertical: 'auto',
@@ -1176,14 +1316,14 @@ const styles = StyleSheet.create({
   reportReasonPill: {
     paddingVertical: 9,
     paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
   },
   reportReasonPillText: {
     fontSize: 13,
   },
   reportInput: {
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     padding: 12,
     fontSize: 13,
@@ -1200,7 +1340,7 @@ const styles = StyleSheet.create({
   reportCancelBtn: {
     paddingVertical: 9,
     paddingHorizontal: 16,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
   },
   reportCancelBtnText: {
@@ -1210,7 +1350,7 @@ const styles = StyleSheet.create({
   reportSubmitBtn: {
     paddingVertical: 9,
     paddingHorizontal: 18,
-    borderRadius: 10,
+    borderRadius: 8,
   },
   reportSubmitBtnText: {
     color: '#ffffff',

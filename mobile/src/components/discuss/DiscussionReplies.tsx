@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native';
 import { DiscussionReply } from '../../services/communityService';
 import { ArrowBigUp, Check, CornerDownRight, Trash2, Flag } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
@@ -47,6 +47,10 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
   };
 
   const handleDeletePrompt = (item: DiscussionReply) => {
+    if (Platform.OS === 'web') {
+      onDeleteReply?.(item);
+      return;
+    }
     Alert.alert(
       'Delete Reply',
       'Are you sure you want to delete your reply?',
@@ -358,7 +362,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 9,
     paddingVertical: 4,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
   },
   voteCount: {

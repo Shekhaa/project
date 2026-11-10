@@ -215,7 +215,7 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 15,
     marginBottom: 10,
     borderWidth: 1,
@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 9,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 1,
   },
   voteCount: {

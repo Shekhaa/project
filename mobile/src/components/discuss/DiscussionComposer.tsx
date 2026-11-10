@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import { chatService } from '../../services/chatService';
 
 interface DiscussionComposerProps {
   visible: boolean;
+  autoStartVoice?: boolean;
   onClose: () => void;
   onSubmit: (payload: {
     title: string;
@@ -38,6 +39,7 @@ interface DiscussionComposerProps {
 
 export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
   visible,
+  autoStartVoice = false,
   onClose,
   onSubmit,
 }) => {
@@ -55,6 +57,23 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
   const voiceRecorder = useVoiceRecorder({
     onFallbackNative: () => setPickerVisible(true),
   });
+  const startRecordingRef = useRef(voiceRecorder.startRecording);
+  startRecordingRef.current = voiceRecorder.startRecording;
+  const autoVoiceTriggeredRef = useRef(false);
+
+  useEffect(() => {
+    if (!visible) {
+      autoVoiceTriggeredRef.current = false;
+      return;
+    }
+    if (autoStartVoice && !autoVoiceTriggeredRef.current) {
+      autoVoiceTriggeredRef.current = true;
+      const timer = setTimeout(() => {
+        startRecordingRef.current({ suppressAlert: true });
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [visible, autoStartVoice]);
 
   const handleClose = () => {
     if (submitting) return;
@@ -165,6 +184,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
               submitting && styles.publishBtnDisabled,
             ]}
             onPress={handleSubmit}
+            disabled={submitting}
             activeOpacity={0.8}
           >
             {submitting ? (
@@ -248,31 +268,8 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
             maxLength={250}
           />
 
-          {/* Content / Question Body */}
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Details or Voice Note *</Text>
-          <TextInput
-            style={[
-              styles.contentInput,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.cardBorder,
-                color: colors.textPrimary,
-              },
-            ]}
-            placeholder="Explain your problem, question, or type notes to go with your voice note..."
-            placeholderTextColor={colors.textMuted}
-            value={content}
-            onChangeText={(c) => {
-              setContent(c);
-              if (errorMessage) setErrorMessage(null);
-            }}
-            multiline
-            numberOfLines={6}
-            textAlignVertical="top"
-          />
-
-          {/* Voice Note Recorder / Draft Preview (Instagram Style) */}
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Voice Note (Optional)</Text>
+          {/* Voice Note Recorder / Draft Preview (Prominent above Details so typing + speaking work seamlessly) */}
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Voice Note</Text>
           {voiceRecorder.isRecording ? (
             <VoiceRecordingBar
               recordSeconds={voiceRecorder.recordSeconds}
@@ -302,7 +299,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
                   borderColor: isDark ? 'rgba(94, 106, 210, 0.30)' : 'rgba(79, 70, 229, 0.24)',
                 },
               ]}
-              onPress={voiceRecorder.startRecording}
+              onPress={() => voiceRecorder.startRecording()}
               activeOpacity={0.8}
             >
               <View style={[styles.voiceMicBadge, { backgroundColor: colors.primary }]}>
@@ -313,11 +310,36 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
                   Record Voice Explanation
                 </Text>
                 <Text style={[styles.voiceTriggerSub, { color: colors.textMuted }]}>
-                  Speak freely & optionally type details above
+                  Speak your doubt or explain clearly & type notes below
                 </Text>
               </View>
             </TouchableOpacity>
           )}
+
+          {/* Content / Question Body */}
+          <Text style={[styles.label, { color: colors.textSecondary }]}>
+            Details (or type alongside your voice note)
+          </Text>
+          <TextInput
+            style={[
+              styles.contentInput,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.cardBorder,
+                color: colors.textPrimary,
+              },
+            ]}
+            placeholder="Explain your problem, question, or add context to your voice note..."
+            placeholderTextColor={colors.textMuted}
+            value={content}
+            onChangeText={(c) => {
+              setContent(c);
+              if (errorMessage) setErrorMessage(null);
+            }}
+            multiline
+            numberOfLines={6}
+            textAlignVertical="top"
+          />
 
           {/* Tags */}
           <Text style={[styles.label, { color: colors.textSecondary }]}>Tags (Optional, comma separated)</Text>
@@ -388,6 +410,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
               submitting && styles.bigSubmitBtnDisabled,
             ]}
             onPress={handleSubmit}
+            disabled={submitting}
             activeOpacity={0.85}
           >
             {submitting ? (
@@ -526,7 +549,7 @@ const styles = StyleSheet.create({
   voiceMicBadge: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },

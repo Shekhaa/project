@@ -86,3 +86,53 @@ class ChatVoiceNoteTests(TestCase):
         self.assertIsNone(res.data["attachment"])
         self.assertEqual(len(res.data["attachments"]), 1)
         self.assertEqual(res.data["text"], "Listen to this assignment summary")
+
+    def test_pending_message_request_exposes_flag_and_blocks_followup_until_accepted(self):
+        sender = User.objects.create_user(
+            email="req_sender@geu.ac.in",
+            password="testpassword123",
+            full_name="Abhishek",
+        )
+        recipient = User.objects.create_user(
+            email="req_recip@geu.ac.in",
+            password="testpassword123",
+            full_name="Priya",
+        )
+
+        self.client.force_authenticate(user=sender)
+        start_res = self.client.post(f"/api/chat/start/{recipient.id}/")
+        self.assertEqual(start_res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(start_res.data["status"], "MESSAGE_REQUEST_SENT")
+        conv_data = start_res.data["conversation"]
+        self.assertTrue(conv_data["is_request_pending"])
+
+        # Inbox for sender also exposes is_request_pending=True
+        inbox_res = self.client.get("/api/chat/inbox/")
+        self.assertEqual(inbox_res.status_code, status.HTTP_200_OK)
+        self.assertTrue(inbox_res.data["results"][0]["is_request_pending"])
+
+        # Sending a follow-up voice note before acceptance returns 403 MESSAGE_REQUEST_PENDING
+        send_res = self.client.post(
+            f"/api/chat/{conv_data['id']}/send/",
+            {"text": "", "attachments": [make_dummy_webm()]},
+            format="multipart",
+        )
+        self.assertEqual(send_res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(send_res.data["status"], "MESSAGE_REQUEST_PENDING")
+
+        # Recipient accepts request -> is_request_pending flips False and voice note succeeds
+        self.client.force_authenticate(user=recipient)
+        req_id = start_res.data["message_request_id"]
+        accept_res = self.client.post(f"/api/chat/message-requests/{req_id}/accept/")
+        self.assertEqual(accept_res.status_code, status.HTTP_200_OK)
+
+        self.client.force_authenticate(user=sender)
+        inbox_after = self.client.get("/api/chat/inbox/")
+        self.assertFalse(inbox_after.data["results"][0]["is_request_pending"])
+
+        followup_res = self.client.post(
+            f"/api/chat/{conv_data['id']}/send/",
+            {"text": "", "attachments": [make_dummy_webm()]},
+            format="multipart",
+        )
+        self.assertEqual(followup_res.status_code, status.HTTP_201_CREATED)

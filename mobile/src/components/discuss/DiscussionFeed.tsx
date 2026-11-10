@@ -12,7 +12,7 @@ import {
 import { Discussion } from '../../services/communityService';
 import { DiscussionCard } from './DiscussionCard';
 import { useTheme } from '../../theme/ThemeContext';
-import { Search, Plus, X } from 'lucide-react-native';
+import { Search, Plus, X, Mic } from 'lucide-react-native';
 
 interface DiscussionFeedProps {
   discussions: Discussion[];
@@ -24,6 +24,7 @@ interface DiscussionFeedProps {
   sort: 'latest' | 'upvoted' | 'popular' | 'unanswered';
   setSort: (s: 'latest' | 'upvoted' | 'popular' | 'unanswered') => void;
   onOpenComposer: () => void;
+  onOpenVoiceComposer?: () => void;
   onSelectDiscussion: (d: Discussion) => void;
   onVoteDiscussion: (d: Discussion) => void;
   onRefresh: () => void;
@@ -40,6 +41,7 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
   sort,
   setSort,
   onOpenComposer,
+  onOpenVoiceComposer,
   onSelectDiscussion,
   onVoteDiscussion,
   onRefresh,
@@ -49,7 +51,7 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Top Search & Ask Bar */}
+      {/* Top Search, Voice & Ask Bar */}
       <View style={[styles.searchBarRow, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
         <View
           style={[
@@ -60,10 +62,10 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
             },
           ]}
         >
-          <Search size={15} color={colors.textMuted} style={{ marginRight: 6 }} />
+          <Search size={14} color={colors.textMuted} style={{ marginRight: 5 }} />
           <TextInput
             style={[styles.searchInput, { color: colors.textPrimary }]}
-            placeholder="Search questions, notes, topics..."
+            placeholder="Search discussions..."
             placeholderTextColor={colors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -76,12 +78,28 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
         </View>
 
         <TouchableOpacity
+          style={[
+            styles.voiceBtn,
+            {
+              backgroundColor: isDark ? '#141516' : '#f1f5f9',
+              borderColor: colors.cardBorder,
+            },
+          ]}
+          onPress={onOpenVoiceComposer || onOpenComposer}
+          activeOpacity={0.85}
+          accessibilityLabel="Post a voice discussion"
+        >
+          <Mic size={14} color={colors.primary} />
+          <Text style={[styles.voiceBtnText, { color: colors.textPrimary }]}>Voice</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={[styles.askBtn, { backgroundColor: colors.primary }]}
           onPress={onOpenComposer}
           activeOpacity={0.85}
         >
-          <Plus size={15} color="#fff" style={{ marginRight: 4 }} />
-          <Text style={styles.askBtnText}>Ask / Post</Text>
+          <Plus size={14} color="#fff" style={{ marginRight: 3 }} />
+          <Text style={styles.askBtnText}>Ask</Text>
         </TouchableOpacity>
       </View>
 
@@ -198,20 +216,38 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
               <Text style={styles.emptyIcon}>💡</Text>
               <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No discussions found</Text>
               <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-                Got a doubt about syllabus, exams, or projects? Be the first student to post a question!
+                Got a doubt about syllabus, exams, or projects? Post a question or record a quick voice note!
               </Text>
-              <TouchableOpacity
-                style={[
-                  styles.emptyActionBtn,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.primary,
-                  },
-                ]}
-                onPress={onOpenComposer}
-              >
-                <Text style={[styles.emptyActionText, { color: colors.primary }]}>+ Start a Discussion</Text>
-              </TouchableOpacity>
+              <View style={styles.emptyActionRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.emptyActionBtn,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.cardBorder,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                    },
+                  ]}
+                  onPress={onOpenVoiceComposer || onOpenComposer}
+                >
+                  <Mic size={14} color={colors.primary} />
+                  <Text style={[styles.emptyActionText, { color: colors.textPrimary }]}>Voice Note</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.emptyActionBtn,
+                    {
+                      backgroundColor: colors.primary,
+                      borderColor: colors.primary,
+                    },
+                  ]}
+                  onPress={onOpenComposer}
+                >
+                  <Text style={[styles.emptyActionText, { color: '#ffffff' }]}>+ Start Discussion</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           }
         />
@@ -227,9 +263,9 @@ const styles = StyleSheet.create({
   searchBarRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingTop: 10,
     paddingBottom: 10,
     borderBottomWidth: 1,
   },
@@ -239,19 +275,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 8,
     borderWidth: 1,
-    paddingHorizontal: 10,
-    height: 38,
+    paddingHorizontal: 9,
+    height: 36,
+    minWidth: 0,
   },
   searchInput: {
     flex: 1,
     fontSize: 13,
     padding: 0,
+    minWidth: 0,
+  },
+  voiceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  voiceBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   askBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    height: 38,
+    paddingHorizontal: 12,
+    height: 36,
     borderRadius: 8,
   },
   askBtnText: {
@@ -270,7 +321,7 @@ const styles = StyleSheet.create({
   filterChip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 14,
+    borderRadius: 8,
     borderWidth: 1,
   },
   filterChipText: {
@@ -292,7 +343,7 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
   },
   listContent: {
-    padding: 16,
+    padding: 14,
     paddingBottom: 40,
   },
   centerLoading: {
@@ -325,6 +376,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 19,
     marginBottom: 18,
+  },
+  emptyActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
   },
   emptyActionBtn: {
     borderWidth: 1,

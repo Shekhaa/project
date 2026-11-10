@@ -18,7 +18,7 @@ export interface RecordedVoiceNote extends StagedAttachment {
   durationSeconds: number;
 }
 
-const DEFAULT_LEVELS = Array.from({ length: 22 }, () => 0.18);
+const DEFAULT_LEVELS = Array.from({ length: 16 }, () => 0.18);
 
 interface UseVoiceRecorderOptions {
   onFallbackNative?: () => void;
@@ -77,7 +77,7 @@ export const useVoiceRecorder = (options?: UseVoiceRecorderOptions) => {
     };
   }, [cleanupResources]);
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(async (startOpts?: { suppressAlert?: boolean }) => {
     if (isRecording || stopLockRef.current) return false;
 
     if (
@@ -89,7 +89,7 @@ export const useVoiceRecorder = (options?: UseVoiceRecorderOptions) => {
     ) {
       if (options?.onFallbackNative) {
         options.onFallbackNative();
-      } else {
+      } else if (!startOpts?.suppressAlert) {
         Alert.alert(
           'Voice Recording Unavailable',
           'Live microphone recording is supported in the browser. Use Attach Audio Note on native devices.'
@@ -174,10 +174,12 @@ export const useVoiceRecorder = (options?: UseVoiceRecorderOptions) => {
       return true;
     } catch {
       cleanupResources();
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        window.alert('Please allow microphone access in your browser to record voice notes.');
-      } else {
-        Alert.alert('Microphone Access Needed', 'Please allow microphone access to record voice notes.');
+      if (!startOpts?.suppressAlert) {
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.alert('Please allow microphone access in your browser to record voice notes.');
+        } else {
+          Alert.alert('Microphone Access Needed', 'Please allow microphone access to record voice notes.');
+        }
       }
       return false;
     }
@@ -317,6 +319,7 @@ export const VoiceRecordingBar: React.FC<VoiceRecordingBarProps> = ({
 }) => {
   const { colors, isDark } = useTheme();
   const [dotBright, setDotBright] = useState(true);
+  const resolvedAttachLabel = attachLabel !== undefined ? attachLabel : 'Attach';
 
   useEffect(() => {
     const t = setInterval(() => setDotBright((d) => !d), 520);
@@ -328,12 +331,11 @@ export const VoiceRecordingBar: React.FC<VoiceRecordingBarProps> = ({
       style={[
         styles.barContainer,
         {
-          backgroundColor: isDark ? '#14151a' : '#f8fafc',
-          borderColor: isDark ? 'rgba(94, 106, 210, 0.38)' : 'rgba(79, 70, 229, 0.28)',
+          backgroundColor: isDark ? '#141516' : '#f8fafc',
+          borderColor: isDark ? 'rgba(94, 106, 210, 0.36)' : 'rgba(79, 70, 229, 0.28)',
         },
       ]}
     >
-      {/* Cancel / Trash Button */}
       <TouchableOpacity
         onPress={onCancel}
         disabled={isFinalizing}
@@ -346,10 +348,9 @@ export const VoiceRecordingBar: React.FC<VoiceRecordingBarProps> = ({
         ]}
         accessibilityLabel="Discard voice note"
       >
-        <Trash2 size={17} color="#ef4444" />
+        <Trash2 size={16} color="#ef4444" />
       </TouchableOpacity>
 
-      {/* Live Pulse Dot + Timer + Live Waveform */}
       <View style={styles.waveWrapper}>
         <View style={styles.timerBadge}>
           <View
@@ -374,7 +375,7 @@ export const VoiceRecordingBar: React.FC<VoiceRecordingBarProps> = ({
                 styles.liveBar,
                 {
                   height: Math.max(4, Math.round(4 + lvl * 18)),
-                  backgroundColor: lvl > 0.35 ? colors.primary : isDark ? '#3a3d46' : '#cbd5e1',
+                  backgroundColor: lvl > 0.35 ? colors.primary : isDark ? '#34343a' : '#cbd5e1',
                 },
               ]}
             />
@@ -382,7 +383,6 @@ export const VoiceRecordingBar: React.FC<VoiceRecordingBarProps> = ({
         </View>
       </View>
 
-      {/* Action Buttons */}
       <View style={styles.actionsRow}>
         {onAttachToDraft && (
           <TouchableOpacity
@@ -392,15 +392,17 @@ export const VoiceRecordingBar: React.FC<VoiceRecordingBarProps> = ({
             style={[
               styles.attachDraftBtn,
               {
-                backgroundColor: isDark ? '#23252a' : '#e2e8f0',
+                backgroundColor: isDark ? '#1f2022' : '#e2e8f0',
                 borderColor: colors.cardBorder,
               },
             ]}
             accessibilityLabel="Stop and attach voice note so you can also type"
           >
-            <Check size={15} color={colors.textPrimary} />
-            {attachLabel ? (
-              <Text style={[styles.attachDraftText, { color: colors.textPrimary }]}>{attachLabel}</Text>
+            <Check size={14} color={colors.textPrimary} />
+            {resolvedAttachLabel ? (
+              <Text style={[styles.attachDraftText, { color: colors.textPrimary }]}>
+                {resolvedAttachLabel}
+              </Text>
             ) : null}
           </TouchableOpacity>
         )}
@@ -420,7 +422,7 @@ export const VoiceRecordingBar: React.FC<VoiceRecordingBarProps> = ({
             {isFinalizing ? (
               <ActivityIndicator size="small" color="#ffffff" />
             ) : (
-              <Send size={16} color="#ffffff" />
+              <Send size={15} color="#ffffff" />
             )}
           </TouchableOpacity>
         )}
@@ -448,8 +450,8 @@ export const VoiceNoteDraftCard: React.FC<VoiceNoteDraftCardProps> = ({
         styles.draftCard,
         compact && styles.draftCardCompact,
         {
-          backgroundColor: isDark ? 'rgba(94, 106, 210, 0.10)' : 'rgba(79, 70, 229, 0.06)',
-          borderColor: isDark ? 'rgba(94, 106, 210, 0.30)' : 'rgba(79, 70, 229, 0.22)',
+          backgroundColor: isDark ? '#141516' : '#f8fafc',
+          borderColor: isDark ? 'rgba(94, 106, 210, 0.32)' : 'rgba(79, 70, 229, 0.24)',
         },
       ]}
     >
@@ -476,6 +478,7 @@ export const VoiceNoteDraftCard: React.FC<VoiceNoteDraftCardProps> = ({
         durationHintSeconds={voiceNote.durationSeconds}
         variant="preview"
         compact={compact}
+        borderless
       />
     </View>
   );
@@ -485,17 +488,17 @@ const styles = StyleSheet.create({
   barContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 24,
+    borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 8,
-    paddingVertical: 7,
-    gap: 8,
+    paddingVertical: 6,
+    gap: 6,
     width: '100%',
   },
   trashBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -503,22 +506,22 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     minWidth: 0,
   },
   timerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
   },
   liveDot: {
-    width: 8,
-    height: 8,
+    width: 7,
+    height: 7,
     borderRadius: 4,
   },
   timerText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
@@ -527,7 +530,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    height: 24,
+    height: 22,
     gap: 2,
     overflow: 'hidden',
   },
@@ -546,32 +549,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    height: 36,
-    paddingHorizontal: 10,
-    borderRadius: 18,
+    height: 32,
+    paddingHorizontal: 8,
+    borderRadius: 8,
     borderWidth: 1,
   },
   attachDraftText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
   },
   sendCircleBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   draftCard: {
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    padding: 10,
-    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    gap: 6,
   },
   draftCardCompact: {
-    padding: 8,
-    borderRadius: 12,
-    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+    gap: 4,
     marginBottom: 8,
   },
   draftHeaderRow: {
@@ -589,9 +594,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   draftRemoveBtn: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -54,6 +54,7 @@ class ConversationSerializer(serializers.ModelSerializer):
     last_message = serializers.SerializerMethodField()
     recipient = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
+    is_request_pending = serializers.SerializerMethodField()
     is_expired = serializers.BooleanField(read_only=True)
     members = ConversationMemberSerializer(many=True, read_only=True)
 
@@ -71,11 +72,18 @@ class ConversationSerializer(serializers.ModelSerializer):
             "recipient",
             "last_message",
             "unread_count",
+            "is_request_pending",
             "invite_code",
             "members",
             "updated_at",
             "created_at",
         ]
+
+    def get_is_request_pending(self, obj):
+        request = self.context.get("request")
+        if obj.is_group or not request or not request.user.is_authenticated:
+            return False
+        return obj.message_requests.filter(sender=request.user, status="PENDING").exists()
 
     def get_last_message(self, obj):
         request = self.context.get("request")
