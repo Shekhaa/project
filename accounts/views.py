@@ -116,6 +116,9 @@ class VerifyEmailOTPView(APIView):
             "short_name": domain_match.college.short_name,
         } if domain_match else None
 
+        from config.media_utils import resolve_media_url
+        prof = getattr(user, "profile", None)
+        avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
         return Response({
             "access": str(refresh.access_token),
             "refresh": str(refresh),
@@ -123,6 +126,9 @@ class VerifyEmailOTPView(APIView):
             "user": {
                 "id": user.id,
                 "email": user.email,
+                "full_name": user.full_name,
+                "username": prof.username if prof else user.email.split("@")[0],
+                "profile_picture": avatar_url,
                 "is_email_verified": user.is_email_verified,
                 "is_phone_verified": user.is_phone_verified,
                 "is_verified_student": user.is_verified_student,
@@ -266,6 +272,8 @@ class LoginView(APIView):
 
         refresh = RefreshToken.for_user(user)
         prof = getattr(user, "profile", None)
+        from config.media_utils import resolve_media_url
+        avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
         return Response({
             "access": str(refresh.access_token),
             "refresh": str(refresh),
@@ -274,6 +282,7 @@ class LoginView(APIView):
                 "email": user.email,
                 "full_name": user.full_name or (prof.username if prof else user.email.split("@")[0]),
                 "username": prof.username if prof else user.email.split("@")[0],
+                "profile_picture": avatar_url,
                 "is_verified_student": user.is_verified_student,
                 "profile_completed": user.profile_completed,
             }
@@ -308,7 +317,7 @@ class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        serializer = UserMeSerializer(request.user)
+        serializer = UserMeSerializer(request.user, context={"request": request})
         return Response(serializer.data)
 
 
@@ -623,6 +632,8 @@ class MicrosoftSSOView(APIView):
 
         # Generate JWT
         refresh = RefreshToken.for_user(user)
+        from config.media_utils import resolve_media_url
+        avatar_url = resolve_media_url(request, profile.profile_picture) if (profile and profile.profile_picture) else None
 
         return Response({
             "message": "Microsoft single-tap authentication successful.",
@@ -633,6 +644,8 @@ class MicrosoftSSOView(APIView):
                 "id": user.id,
                 "email": user.email,
                 "full_name": user.full_name,
+                "username": getattr(profile, "username", user.email.split("@")[0]),
+                "profile_picture": avatar_url,
                 "is_email_verified": user.is_email_verified,
                 "is_phone_verified": user.is_phone_verified,
                 "is_verified_student": user.is_verified_student,
@@ -686,19 +699,22 @@ class DemoUsersListView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
+        from config.media_utils import resolve_media_url
         gehu_users = list(User.objects.filter(is_verified_student=True, email__icontains="gehu.ac.in").select_related("profile", "profile__course", "profile__branch", "profile__college"))
         other_users = list(User.objects.filter(is_verified_student=True).exclude(email__icontains="gehu.ac.in").select_related("profile", "profile__course", "profile__branch", "profile__college")[:10])
         users = gehu_users + other_users
         data = []
         for u in users:
             prof = getattr(u, "profile", None)
+            avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
             data.append({
                 "id": u.id,
                 "email": u.email,
                 "phone_number": u.phone_number or "",
                 "full_name": u.full_name or (prof.username if prof else u.email.split("@")[0]),
                 "username": prof.username if prof else u.email.split("@")[0],
-                "avatar": prof.profile_picture.url if prof and prof.profile_picture else None,
+                "avatar": avatar_url,
+                "profile_picture": avatar_url,
                 "college": prof.college.short_name if prof and prof.college else "GEHU",
                 "course": prof.course.name if prof and prof.course else "B.Tech",
                 "branch": prof.branch.name if prof and prof.branch else "CSE",
@@ -747,14 +763,19 @@ class DevQuickLoginView(APIView):
             "short_name": domain_match.college.short_name,
         } if domain_match else None
 
+        from config.media_utils import resolve_media_url
+        prof = getattr(user, "profile", None)
+        avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
         return Response({
-            "message": f"Switched to @{getattr(user, 'profile', None) and user.profile.username or user.email}",
+            "message": f"Switched to @{prof and prof.username or user.email}",
             "access": str(refresh.access_token),
             "refresh": str(refresh),
             "user": {
                 "id": user.id,
                 "email": user.email,
                 "full_name": user.full_name,
+                "username": prof.username if prof else user.email.split("@")[0],
+                "profile_picture": avatar_url,
                 "is_email_verified": user.is_email_verified,
                 "is_phone_verified": user.is_phone_verified,
                 "is_verified_student": user.is_verified_student,
@@ -999,6 +1020,9 @@ class VerifyPhoneLoginOTPView(APIView):
             user.save(update_fields=["password"])
 
         refresh = RefreshToken.for_user(user)
+        from config.media_utils import resolve_media_url
+        prof = getattr(user, "profile", None)
+        avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
 
         return Response({
             "access": str(refresh.access_token),
@@ -1007,7 +1031,10 @@ class VerifyPhoneLoginOTPView(APIView):
             "user": {
                 "id": user.id,
                 "email": user.email,
+                "full_name": user.full_name,
+                "username": prof.username if prof else user.email.split("@")[0],
                 "phone_number": user.phone_number,
+                "profile_picture": avatar_url,
                 "is_email_verified": user.is_email_verified,
                 "is_phone_verified": user.is_phone_verified,
                 "is_verified_student": user.is_verified_student,
@@ -1029,6 +1056,7 @@ class IDCardLoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        import io
         import re
         import base64
         from django.utils import timezone
@@ -1189,6 +1217,8 @@ class IDCardLoginView(APIView):
 
         user.refresh_from_db()
         refresh = RefreshToken.for_user(user)
+        from config.media_utils import resolve_media_url
+        avatar_url = resolve_media_url(request, profile.profile_picture) if (profile and profile.profile_picture) else None
 
         return Response({
             "message": f"College ID Card scanned! Welcome, {full_name}.",
@@ -1213,6 +1243,7 @@ class IDCardLoginView(APIView):
                 "email": user.email,
                 "full_name": user.full_name,
                 "username": profile.username,
+                "profile_picture": avatar_url,
                 "is_email_verified": user.is_email_verified,
                 "is_phone_verified": user.is_phone_verified,
                 "is_verified_student": user.is_verified_student,
@@ -1234,6 +1265,7 @@ class SearchUsersView(APIView):
 
     def get(self, request):
         from profiles.models import Connection, Follow, UserBlock
+        from config.media_utils import resolve_media_url
 
         query = request.GET.get("q", "").strip()
         users_qs = User.objects.filter(is_active=True)
@@ -1263,7 +1295,7 @@ class SearchUsersView(APIView):
             college_name = prof.college.name if (prof and prof.college) else ""
             branch_name = prof.branch.name if (prof and prof.branch) else ""
             admission_no = prof.admission_number if (prof and prof.admission_number) else ""
-            avatar_url = prof.profile_picture.url if (prof and prof.profile_picture) else None
+            avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
 
             conn_status = Connection.get_status(request.user, u) if request.user.is_authenticated else "NOT_CONNECTED"
             follow_status = Follow.get_status(request.user, u) if request.user.is_authenticated else "NOT_FOLLOWING"
@@ -1275,6 +1307,7 @@ class SearchUsersView(APIView):
                 "full_name": display_name,
                 "username": username,
                 "avatar": avatar_url,
+                "profile_picture": avatar_url,
                 "admission_number": admission_no,
                 "college_name": college_name,
                 "branch_name": branch_name,

@@ -5,6 +5,10 @@ export interface User {
   id: number;
   email: string;
   full_name?: string;
+  username?: string;
+  phone_number?: string | null;
+  avatar?: string | null;
+  profile_picture?: string | null;
   is_verified_student: boolean;
   profile_completed: boolean;
   verification_tier?: 'FULLY_VERIFIED' | 'SEMI_VERIFIED' | 'UNVERIFIED';
@@ -212,7 +216,7 @@ export const authService = {
   // Instant Student Discovery Search (Instagram / TikTok style fuzzy discovery)
   async searchStudents(query: string = '') {
     const res = await api.get(`/authentication/users/search/?q=${encodeURIComponent(query)}`);
-    return res.data.results || [];
+    return res.data?.results || (Array.isArray(res.data) ? res.data : []);
   },
 };
 

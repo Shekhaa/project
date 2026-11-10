@@ -1,5 +1,6 @@
 import random
 from rest_framework import serializers
+from config.media_utils import resolve_media_url
 from communities.models import CommunityMember
 from attachments.serializers import MediaAttachmentSerializer
 from .models import Post, PostImage, PostLike, Comment
@@ -19,10 +20,7 @@ class PostImageSerializer(serializers.ModelSerializer):
     def get_image(self, obj):
         if not obj.image:
             return None
-        request = self.context.get("request")
-        if request:
-            return request.build_absolute_uri(obj.image.url)
-        return obj.image.url
+        return resolve_media_url(self.context.get("request"), obj.image)
 
 
 class CommentSerializer(serializers.ModelSerializer):
@@ -71,7 +69,7 @@ class CommentSerializer(serializers.ModelSerializer):
         if obj.is_anonymous:
             return None
         if hasattr(obj.user, "profile") and obj.user.profile.profile_picture:
-            return obj.user.profile.profile_picture.url
+            return resolve_media_url(self.context.get("request"), obj.user.profile.profile_picture)
         return None
 
     def get_replies_count(self, obj):
@@ -81,7 +79,7 @@ class CommentSerializer(serializers.ModelSerializer):
         if obj.parent is not None:
             return []
         replies = obj.replies.select_related("user", "user__profile").all()
-        return CommentSerializer(replies, many=True).data
+        return CommentSerializer(replies, many=True, context=self.context).data
 
 
 
@@ -201,29 +199,18 @@ class PostSerializer(serializers.ModelSerializer):
         if obj.is_anonymous:
             return None
         if hasattr(obj.author, "profile") and obj.author.profile.profile_picture:
-            url = obj.author.profile.profile_picture.url
-            request = self.context.get("request")
-            if request and not url.startswith("http"):
-                return request.build_absolute_uri(url)
-            return url
+            return resolve_media_url(self.context.get("request"), obj.author.profile.profile_picture)
         return None
 
     def get_media_url(self, obj):
         if not obj.media_url:
             return None
-        request = self.context.get("request")
-        if request and not str(obj.media_url).startswith("http"):
-            return request.build_absolute_uri(obj.media_url)
-        return obj.media_url
+        return resolve_media_url(self.context.get("request"), obj.media_url)
 
     def get_document(self, obj):
         if not obj.document:
             return None
-        url = obj.document.url if hasattr(obj.document, "url") else str(obj.document)
-        request = self.context.get("request")
-        if request and not url.startswith("http"):
-            return request.build_absolute_uri(url)
-        return url
+        return resolve_media_url(self.context.get("request"), obj.document)
 
     def get_author_verification_tier(self, obj):
         if obj.is_anonymous:

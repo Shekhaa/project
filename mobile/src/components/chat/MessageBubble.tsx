@@ -14,6 +14,7 @@ import { ExternalLink, Heart, MessageCircle, Play } from 'lucide-react-native';
 import { MediaGrid } from '../media/MediaGrid';
 import { DocumentCard } from '../media/DocumentCard';
 import { AudioPlayerPill, splitMediaAttachments } from '../media/VoiceNotePlayer';
+import { UserAvatar } from '../common/UserAvatar';
 import { getFullMediaUrl } from '../../config/api';
 
 export interface SharedPostCardData {
@@ -131,7 +132,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     }
   };
 
-  const senderInitial = (message.sender_name || 'S').charAt(0).toUpperCase();
   const isFailed = Boolean(isMe && (message as any).status === 'failed');
   const isSending = Boolean(isMe && (message as any).status === 'sending');
 
@@ -151,17 +151,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     <View style={[styles.row, isMe ? styles.rowMe : styles.rowThem]}>
       {!isMe && isGroup && (
         <TouchableOpacity
-          disabled={!message.sender}
-          onPress={() => message.sender && onSenderPress?.(message.sender)}
+          disabled={!message.sender || anonInfo.isAnon}
+          onPress={() => message.sender && !anonInfo.isAnon && onSenderPress?.(message.sender)}
           activeOpacity={0.7}
-          style={[
-            styles.groupAvatar,
-            { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
-          ]}
+          style={{ alignSelf: 'flex-end', marginBottom: 4, marginRight: 6 }}
         >
-          <Text style={[styles.groupAvatarText, { color: colors.textSecondary }]}>
-            {anonInfo.isAnon ? '🎭' : senderInitial}
-          </Text>
+          <UserAvatar
+            uri={!anonInfo.isAnon ? message.sender_avatar : undefined}
+            name={message.sender_name || 'Student'}
+            size={28}
+            isAnonymous={anonInfo.isAnon}
+          />
         </TouchableOpacity>
       )}
 
@@ -268,16 +268,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             activeOpacity={0.9}
           >
             <View style={styles.postCardHeader}>
-              <View
-                style={[
-                  styles.postCardAvatar,
-                  { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
-                ]}
-              >
-                <Text style={[styles.postCardAvatarText, { color: colors.primary }]}>
-                  {cardData.author_name.charAt(0).toUpperCase()}
-                </Text>
-              </View>
+              <UserAvatar name={cardData.author_name} size={24} />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.postCardAuthor, { color: colors.textPrimary }]} numberOfLines={1}>
                   {cardData.author_name}

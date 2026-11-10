@@ -31,11 +31,26 @@ export const BACKEND_ROOT_URL = API_BASE_URL.replace(/\/api\/?$/, '');
 export const getFullMediaUrl = (path?: string | null): string => {
   if (!path) return '';
   if (
-    path.startsWith('http://') ||
-    path.startsWith('https://') ||
     path.startsWith('data:') ||
-    path.startsWith('blob:')
+    path.startsWith('blob:') ||
+    path.startsWith('file:') ||
+    path.startsWith('content:') ||
+    path.startsWith('ph:')
   ) {
+    return path;
+  }
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    const isHttpsContext =
+      BACKEND_ROOT_URL.startsWith('https://') ||
+      (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.protocol === 'https:');
+    const isLocalHost =
+      path.startsWith('http://localhost') ||
+      path.startsWith('http://127.0.0.1') ||
+      path.startsWith('http://10.') ||
+      path.startsWith('http://192.168.');
+    if (isHttpsContext && path.startsWith('http://') && !isLocalHost) {
+      return `https://${path.slice(7)}`;
+    }
     return path;
   }
   const cleanPath = path.startsWith('/') ? path : `/${path}`;

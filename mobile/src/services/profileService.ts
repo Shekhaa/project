@@ -23,7 +23,8 @@ export interface PublicProfile {
   email: string;
   full_name: string;
   username: string;
-  avatar?: string;
+  avatar?: string | null;
+  profile_picture?: string | null;
   bio?: string;
   admission_number?: string;
   gender?: string;
@@ -62,7 +63,8 @@ export interface ConnectionItem {
     email: string;
     college_name: string;
     branch_name: string;
-    avatar?: string;
+    avatar?: string | null;
+    profile_picture?: string | null;
     is_verified: boolean;
   };
   created_at: string;
@@ -78,7 +80,8 @@ export interface FollowItem {
     username: string;
     email: string;
     college_name: string;
-    avatar?: string;
+    avatar?: string | null;
+    profile_picture?: string | null;
     is_verified: boolean;
   };
   created_at: string;

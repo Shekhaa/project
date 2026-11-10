@@ -1,33 +1,30 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Modal,
-  View,
-  Text,
-  Image,
-  TouchableOpacity,
-  StyleSheet,
-  Dimensions,
-  Platform,
-  PanResponder,
   GestureResponderEvent,
+  Image,
+  Modal,
+  PanResponder,
   PanResponderGestureState,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
 } from 'react-native';
-import {
-  X,
-  Check,
-  RotateCw,
-  RefreshCw,
-  Zap,
-} from 'lucide-react-native';
+import { Check, RefreshCw, RotateCw, X } from 'lucide-react-native';
+import { useTheme } from '../../theme/ThemeContext';
 
-export type AspectRatioOption = 'AUTO' | 'ORIGINAL' | '1:1' | '4:5' | '16:9' | 'FREE' | 'DOC';
+export type AspectRatioOption = 'FREE' | 'ORIGINAL' | '1:1' | '4:5' | '9:16' | '16:9';
 
 interface ImageCropperModalProps {
   visible: boolean;
   imageUri: string;
   onClose: () => void;
-  onCropComplete: (croppedUri: string) => void;
-  autoDetectOnOpen?: boolean;
+  onCropComplete: (croppedUri: string, width?: number, height?: number) => void;
+  initialAspectRatio?: AspectRatioOption;
+  maxDimension?: number;
+  jpegQuality?: number;
 }
 
 type HandleType = 'tl' | 'tr' | 'bl' | 'br' | 't' | 'b' | 'l' | 'r' | 'move';
@@ -39,166 +36,76 @@ interface Box {
   h: number;
 }
 
-/**
- * Intelligent standalone auto-crop algorithm.
- * Uses canvas edge & contrast scanning to detect document edges / paper boundaries or central focal region.
- */
-export const smartAutoCropImage = (imageUri: string): Promise<string> => {
-  return new Promise((resolve) => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') {
-      resolve(imageUri);
-      return;
-    }
+const ASPECT_OPTIONS: { key: AspectRatioOption; label: string }[] = [
+  { key: 'FREE', label: 'Freeform' },
+  { key: 'ORIGINAL', label: 'Original' },
+  { key: '1:1', label: '1:1' },
+  { key: '4:5', label: '4:5' },
+  { key: '9:16', label: '9:16' },
+  { key: '16:9', label: '16:9' },
+];
 
-    const img = new (window as any).Image();
-    if (!imageUri.startsWith('data:') && !imageUri.startsWith('blob:')) {
-      img.crossOrigin = 'anonymous';
-    }
-    img.onload = () => {
-      try {
-        const origW = img.naturalWidth || img.width;
-        const origH = img.naturalHeight || img.height;
-        if (!origW || !origH) {
-          resolve(imageUri);
-          return;
-        }
-
-        const sampleW = 320;
-        const sampleH = Math.max(10, Math.round((origH / origW) * sampleW));
-        const sampleCanvas = document.createElement('canvas');
-        sampleCanvas.width = sampleW;
-        sampleCanvas.height = sampleH;
-        const sCtx = sampleCanvas.getContext('2d');
-        if (!sCtx) {
-          resolve(imageUri);
-          return;
-        }
-
-        sCtx.drawImage(img, 0, 0, sampleW, sampleH);
-        const imgData = sCtx.getImageData(0, 0, sampleW, sampleH);
-        const data = imgData.data;
-
-        // Sample 4 corners for background estimation
-        const cornerIdxs = [
-          0,
-          (sampleW - 1) * 4,
-          (sampleH - 1) * sampleW * 4,
-          ((sampleH - 1) * sampleW + (sampleW - 1)) * 4,
-        ];
-        let bgR = 0, bgG = 0, bgB = 0;
-        for (const idx of cornerIdxs) {
-          bgR += data[idx];
-          bgG += data[idx + 1];
-          bgB += data[idx + 2];
-        }
-        bgR /= 4; bgG /= 4; bgB /= 4;
-
-        let minX = sampleW, maxX = 0, minY = sampleH, maxY = 0;
-        let contentCount = 0;
-
-        for (let y = 0; y < sampleH; y += 2) {
-          for (let x = 0; x < sampleW; x += 2) {
-            const idx = (y * sampleW + x) * 4;
-            const diff = Math.abs(data[idx] - bgR) + Math.abs(data[idx + 1] - bgG) + Math.abs(data[idx + 2] - bgB);
-            if (diff > 42 && data[idx + 3] > 20) {
-              contentCount++;
-              if (x < minX) minX = x;
-              if (x > maxX) maxX = x;
-              if (y < minY) minY = y;
-              if (y > maxY) maxY = y;
-            }
-          }
-        }
-
-        let cropX = 0, cropY = 0, cropW = origW, cropH = origH;
-        const totalSampled = (sampleW * sampleH) / 4;
-
-        if (contentCount > totalSampled * 0.05 && contentCount < totalSampled * 0.92 && maxX > minX + 20 && maxY > minY + 20) {
-          const padX = sampleW * 0.02;
-          const padY = sampleH * 0.02;
-          const normLeft = Math.max(0, (minX - padX) / sampleW);
-          const normTop = Math.max(0, (minY - padY) / sampleH);
-          const normRight = Math.min(1, (maxX + padX) / sampleW);
-          const normBottom = Math.min(1, (maxY + padY) / sampleH);
-
-          cropX = Math.round(normLeft * origW);
-          cropY = Math.round(normTop * origH);
-          cropW = Math.round((normRight - normLeft) * origW);
-          cropH = Math.round((normBottom - normTop) * origH);
-        } else {
-          const targetRatio = origW > origH ? 16 / 9 : 4 / 5;
-          cropW = Math.round(origW * 0.88);
-          cropH = Math.round(cropW / targetRatio);
-          if (cropH > origH * 0.88) {
-            cropH = Math.round(origH * 0.88);
-            cropW = Math.round(cropH * targetRatio);
-          }
-          cropX = Math.round((origW - cropW) / 2);
-          cropY = Math.round((origH - cropH) / 2);
-        }
-
-        const outCanvas = document.createElement('canvas');
-        outCanvas.width = cropW;
-        outCanvas.height = cropH;
-        const outCtx = outCanvas.getContext('2d');
-        if (!outCtx) {
-          resolve(imageUri);
-          return;
-        }
-
-        outCtx.imageSmoothingEnabled = true;
-        outCtx.imageSmoothingQuality = 'high';
-        outCtx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-        resolve(outCanvas.toDataURL('image/jpeg', 0.92));
-      } catch (err) {
-        console.warn('Smart auto crop failed', err);
-        resolve(imageUri);
-      }
-    };
-    img.onerror = () => resolve(imageUri);
-    img.src = imageUri;
-  });
+const getTargetRatio = (mode: AspectRatioOption, imgW: number, imgH: number): number | null => {
+  switch (mode) {
+    case '1:1':
+      return 1;
+    case '4:5':
+      return 4 / 5;
+    case '9:16':
+      return 9 / 16;
+    case '16:9':
+      return 16 / 9;
+    case 'ORIGINAL':
+      return imgH > 0 ? imgW / imgH : 1;
+    default:
+      return null;
+  }
 };
-
-const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
-const STAGE_SIZE = Math.min(WINDOW_WIDTH - 32, WINDOW_HEIGHT - 280, 520);
 
 export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
   visible,
   imageUri,
   onClose,
   onCropComplete,
-  autoDetectOnOpen = false,
+  initialAspectRatio = 'FREE',
+  maxDimension = 1440,
+  jpegQuality = 0.86,
 }) => {
-  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number }>({ width: 800, height: 600 });
+  const { colors } = useTheme();
+  const { width: winWidth, height: winHeight } = useWindowDimensions();
+  const stageSize = Math.max(240, Math.min(winWidth - 32, winHeight - 280, 520));
+
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number }>({
+    width: 800,
+    height: 600,
+  });
   const [rotation, setRotation] = useState<number>(0);
-  const [aspectRatio, setAspectRatio] = useState<AspectRatioOption>('FREE');
+  const [aspectRatio, setAspectRatio] = useState<AspectRatioOption>(initialAspectRatio);
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
 
   const [cropBox, setCropBox] = useState<Box>({
     x: 20,
     y: 20,
-    w: STAGE_SIZE - 40,
-    h: STAGE_SIZE - 40,
+    w: stageSize - 40,
+    h: stageSize - 40,
   });
 
-  // Mutable refs to prevent stale closure during drag operations
   const cropBoxRef = useRef<Box>(cropBox);
   cropBoxRef.current = cropBox;
 
   const dragStartRef = useRef<{ box: Box; touchX: number; touchY: number } | null>(null);
   const isDraggingRef = useRef(false);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Compute fitted dimensions in the stage
   const isRotatedSideways = rotation === 90 || rotation === 270;
   const currentImgW = isRotatedSideways ? naturalSize.height : naturalSize.width;
   const currentImgH = isRotatedSideways ? naturalSize.width : naturalSize.height;
 
-  const scale = Math.min(STAGE_SIZE / currentImgW, STAGE_SIZE / currentImgH);
+  const scale = Math.min(stageSize / currentImgW, stageSize / currentImgH);
   const renderedW = currentImgW * scale;
   const renderedH = currentImgH * scale;
-  const imgOffsetX = (STAGE_SIZE - renderedW) / 2;
-  const imgOffsetY = (STAGE_SIZE - renderedH) / 2;
+  const imgOffsetX = (stageSize - renderedW) / 2;
+  const imgOffsetY = (stageSize - renderedH) / 2;
 
   const boundsRef = useRef({
     renderedW,
@@ -220,49 +127,97 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
     aspectRatio,
   };
 
-  // Load natural dimensions of image
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    };
+  }, []);
+
+  // Load natural dimensions of image whenever modal opens with a new image
   useEffect(() => {
     if (!visible || !imageUri) return;
 
+    let cancelled = false;
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const img = new (window as any).Image();
+      const img = new window.Image();
+      if (!imageUri.startsWith('data:') && !imageUri.startsWith('blob:')) {
+        img.crossOrigin = 'anonymous';
+      }
       img.onload = () => {
-        setNaturalSize({ width: img.naturalWidth || 800, height: img.naturalHeight || 600 });
+        if (!cancelled) {
+          setNaturalSize({ width: img.naturalWidth || 800, height: img.naturalHeight || 600 });
+        }
       };
       img.src = imageUri;
     } else {
       Image.getSize(
         imageUri,
-        (w, h) => setNaturalSize({ width: w, height: h }),
-        () => setNaturalSize({ width: 800, height: 600 })
+        (w, h) => {
+          if (!cancelled) setNaturalSize({ width: w, height: h });
+        },
+        () => {
+          if (!cancelled) setNaturalSize({ width: 800, height: 600 });
+        }
       );
     }
-    setRotation(0);
-    setAspectRatio('FREE');
-  }, [visible, imageUri]);
 
-  // Sync crop box to initial image bounds whenever image loads or rotates
-  useEffect(() => {
-    const nextBox: Box = {
-      x: imgOffsetX,
-      y: imgOffsetY,
-      w: renderedW,
-      h: renderedH,
+    setRotation(0);
+    setAspectRatio(initialAspectRatio);
+
+    return () => {
+      cancelled = true;
     };
+  }, [visible, imageUri, initialAspectRatio]);
+
+  // Compute centered crop box matching a given aspect ratio
+  const computeBoxForRatio = (
+    mode: AspectRatioOption,
+    rW: number,
+    rH: number,
+    offX: number,
+    offY: number,
+    cW: number,
+    cH: number
+  ): Box => {
+    const ratio = getTargetRatio(mode, cW, cH);
+    if (!ratio) {
+      return { x: offX, y: offY, w: rW, h: rH };
+    }
+    let newW = rW;
+    let newH = newW / ratio;
+    if (newH > rH) {
+      newH = rH;
+      newW = newH * ratio;
+    }
+    return {
+      x: offX + (rW - newW) / 2,
+      y: offY + (rH - newH) / 2,
+      w: newW,
+      h: newH,
+    };
+  };
+
+  // Re-fit crop box when image dimensions, stage size, rotation, or preset changes
+  useEffect(() => {
+    const nextBox = computeBoxForRatio(
+      aspectRatio,
+      renderedW,
+      renderedH,
+      imgOffsetX,
+      imgOffsetY,
+      currentImgW,
+      currentImgH
+    );
     setCropBox(nextBox);
     cropBoxRef.current = nextBox;
-
-    if (autoDetectOnOpen) {
-      setTimeout(() => handleTriggerAutoCrop(), 120);
-    }
-  }, [renderedW, renderedH, imgOffsetX, imgOffsetY, rotation]);
+  }, [renderedW, renderedH, imgOffsetX, imgOffsetY, rotation, naturalSize.width, naturalSize.height]);
 
   const showNotice = (msg: string) => {
     setFeedbackNotice(msg);
-    setTimeout(() => setFeedbackNotice(null), 2500);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => setFeedbackNotice(null), 2000);
   };
 
-  // Delta Drag Calculator — calculates new box coordinates smoothly
   const applyDeltaToCropBox = (handle: HandleType, initialBox: Box, dx: number, dy: number) => {
     const {
       renderedW: rW,
@@ -274,83 +229,148 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
       aspectRatio: aMode,
     } = boundsRef.current;
 
-    const minW = 40;
-    const minH = 40;
+    const minDim = 40;
     const maxRight = offX + rW;
     const maxBottom = offY + rH;
+    const targetRatio = getTargetRatio(aMode, cW, cH);
 
-    let targetRatio: number | null = null;
-    if (aMode === '1:1') targetRatio = 1;
-    else if (aMode === '4:5') targetRatio = 4 / 5;
-    else if (aMode === '16:9') targetRatio = 16 / 9;
-    else if (aMode === 'ORIGINAL') targetRatio = cW / cH;
-    else if (aMode === 'DOC') targetRatio = 1 / 1.414;
-
-    let next = { ...initialBox };
+    let next: Box = { ...initialBox };
 
     if (handle === 'move') {
       const newX = Math.max(offX, Math.min(initialBox.x + dx, maxRight - initialBox.w));
       const newY = Math.max(offY, Math.min(initialBox.y + dy, maxBottom - initialBox.h));
       next = { ...initialBox, x: newX, y: newY };
-    } else if (handle === 'tl') {
-      let newX = Math.max(offX, Math.min(initialBox.x + dx, initialBox.x + initialBox.w - minW));
-      let newW = initialBox.w - (newX - initialBox.x);
-      let newH = targetRatio ? newW / targetRatio : initialBox.h - (Math.max(offY, Math.min(initialBox.y + dy, initialBox.y + initialBox.h - minH)) - initialBox.y);
-      if (targetRatio && initialBox.y + initialBox.h - newH < offY) {
-        newH = initialBox.y + initialBox.h - offY;
-        newW = newH * targetRatio;
-        newX = initialBox.x + initialBox.w - newW;
+    } else if (!targetRatio) {
+      // Freeform handles
+      if (handle === 'tl') {
+        const newX = Math.max(offX, Math.min(initialBox.x + dx, initialBox.x + initialBox.w - minDim));
+        const newY = Math.max(offY, Math.min(initialBox.y + dy, initialBox.y + initialBox.h - minDim));
+        next = {
+          x: newX,
+          y: newY,
+          w: initialBox.x + initialBox.w - newX,
+          h: initialBox.y + initialBox.h - newY,
+        };
+      } else if (handle === 'tr') {
+        const newW = Math.max(minDim, Math.min(initialBox.w + dx, maxRight - initialBox.x));
+        const newY = Math.max(offY, Math.min(initialBox.y + dy, initialBox.y + initialBox.h - minDim));
+        next = {
+          x: initialBox.x,
+          y: newY,
+          w: newW,
+          h: initialBox.y + initialBox.h - newY,
+        };
+      } else if (handle === 'bl') {
+        const newX = Math.max(offX, Math.min(initialBox.x + dx, initialBox.x + initialBox.w - minDim));
+        const newH = Math.max(minDim, Math.min(initialBox.h + dy, maxBottom - initialBox.y));
+        next = {
+          x: newX,
+          y: initialBox.y,
+          w: initialBox.x + initialBox.w - newX,
+          h: newH,
+        };
+      } else if (handle === 'br') {
+        const newW = Math.max(minDim, Math.min(initialBox.w + dx, maxRight - initialBox.x));
+        const newH = Math.max(minDim, Math.min(initialBox.h + dy, maxBottom - initialBox.y));
+        next = { x: initialBox.x, y: initialBox.y, w: newW, h: newH };
+      } else if (handle === 't') {
+        const newY = Math.max(offY, Math.min(initialBox.y + dy, initialBox.y + initialBox.h - minDim));
+        next = { ...initialBox, y: newY, h: initialBox.y + initialBox.h - newY };
+      } else if (handle === 'b') {
+        const newH = Math.max(minDim, Math.min(initialBox.h + dy, maxBottom - initialBox.y));
+        next = { ...initialBox, h: newH };
+      } else if (handle === 'l') {
+        const newX = Math.max(offX, Math.min(initialBox.x + dx, initialBox.x + initialBox.w - minDim));
+        next = { ...initialBox, x: newX, w: initialBox.x + initialBox.w - newX };
+      } else if (handle === 'r') {
+        const newW = Math.max(minDim, Math.min(initialBox.w + dx, maxRight - initialBox.x));
+        next = { ...initialBox, w: newW };
       }
-      let newY = initialBox.y + initialBox.h - newH;
-      next = { x: newX, y: newY, w: newW, h: newH };
-    } else if (handle === 'tr') {
-      let newW = Math.max(minW, Math.min(initialBox.w + dx, maxRight - initialBox.x));
-      let newH = targetRatio ? newW / targetRatio : initialBox.h - (Math.max(offY, Math.min(initialBox.y + dy, initialBox.y + initialBox.h - minH)) - initialBox.y);
-      if (targetRatio && initialBox.y + initialBox.h - newH < offY) {
-        newH = initialBox.y + initialBox.h - offY;
-        newW = newH * targetRatio;
+    } else {
+      // Strictly aspect-locked resize across BOTH corners AND edges
+      const minW = Math.max(minDim, minDim * targetRatio);
+      const minH = Math.max(minDim, minDim / targetRatio);
+
+      if (handle === 'tl') {
+        const anchorRight = initialBox.x + initialBox.w;
+        const anchorBottom = initialBox.y + initialBox.h;
+        const maxW = Math.min(anchorRight - offX, (anchorBottom - offY) * targetRatio);
+        const desiredW = Math.abs(dx) >= Math.abs(dy * targetRatio)
+          ? initialBox.w - dx
+          : (initialBox.h - dy) * targetRatio;
+        const newW = Math.max(minW, Math.min(maxW, desiredW));
+        const newH = newW / targetRatio;
+        next = { x: anchorRight - newW, y: anchorBottom - newH, w: newW, h: newH };
+      } else if (handle === 'tr') {
+        const anchorLeft = initialBox.x;
+        const anchorBottom = initialBox.y + initialBox.h;
+        const maxW = Math.min(maxRight - anchorLeft, (anchorBottom - offY) * targetRatio);
+        const desiredW = Math.abs(dx) >= Math.abs(dy * targetRatio)
+          ? initialBox.w + dx
+          : (initialBox.h - dy) * targetRatio;
+        const newW = Math.max(minW, Math.min(maxW, desiredW));
+        const newH = newW / targetRatio;
+        next = { x: anchorLeft, y: anchorBottom - newH, w: newW, h: newH };
+      } else if (handle === 'bl') {
+        const anchorRight = initialBox.x + initialBox.w;
+        const anchorTop = initialBox.y;
+        const maxW = Math.min(anchorRight - offX, (maxBottom - anchorTop) * targetRatio);
+        const desiredW = Math.abs(dx) >= Math.abs(dy * targetRatio)
+          ? initialBox.w - dx
+          : (initialBox.h + dy) * targetRatio;
+        const newW = Math.max(minW, Math.min(maxW, desiredW));
+        const newH = newW / targetRatio;
+        next = { x: anchorRight - newW, y: anchorTop, w: newW, h: newH };
+      } else if (handle === 'br') {
+        const anchorLeft = initialBox.x;
+        const anchorTop = initialBox.y;
+        const maxW = Math.min(maxRight - anchorLeft, (maxBottom - anchorTop) * targetRatio);
+        const desiredW = Math.abs(dx) >= Math.abs(dy * targetRatio)
+          ? initialBox.w + dx
+          : (initialBox.h + dy) * targetRatio;
+        const newW = Math.max(minW, Math.min(maxW, desiredW));
+        const newH = newW / targetRatio;
+        next = { x: anchorLeft, y: anchorTop, w: newW, h: newH };
+      } else if (handle === 't') {
+        const anchorBottom = initialBox.y + initialBox.h;
+        const centerX = initialBox.x + initialBox.w / 2;
+        const maxH = Math.min(anchorBottom - offY, rW / targetRatio);
+        const newH = Math.max(minH, Math.min(maxH, initialBox.h - dy));
+        const newW = newH * targetRatio;
+        const newX = Math.max(offX, Math.min(centerX - newW / 2, maxRight - newW));
+        next = { x: newX, y: anchorBottom - newH, w: newW, h: newH };
+      } else if (handle === 'b') {
+        const anchorTop = initialBox.y;
+        const centerX = initialBox.x + initialBox.w / 2;
+        const maxH = Math.min(maxBottom - anchorTop, rW / targetRatio);
+        const newH = Math.max(minH, Math.min(maxH, initialBox.h + dy));
+        const newW = newH * targetRatio;
+        const newX = Math.max(offX, Math.min(centerX - newW / 2, maxRight - newW));
+        next = { x: newX, y: anchorTop, w: newW, h: newH };
+      } else if (handle === 'l') {
+        const anchorRight = initialBox.x + initialBox.w;
+        const centerY = initialBox.y + initialBox.h / 2;
+        const maxW = Math.min(anchorRight - offX, rH * targetRatio);
+        const newW = Math.max(minW, Math.min(maxW, initialBox.w - dx));
+        const newH = newW / targetRatio;
+        const newY = Math.max(offY, Math.min(centerY - newH / 2, maxBottom - newH));
+        next = { x: anchorRight - newW, y: newY, w: newW, h: newH };
+      } else if (handle === 'r') {
+        const anchorLeft = initialBox.x;
+        const centerY = initialBox.y + initialBox.h / 2;
+        const maxW = Math.min(maxRight - anchorLeft, rH * targetRatio);
+        const newW = Math.max(minW, Math.min(maxW, initialBox.w + dx));
+        const newH = newW / targetRatio;
+        const newY = Math.max(offY, Math.min(centerY - newH / 2, maxBottom - newH));
+        next = { x: anchorLeft, y: newY, w: newW, h: newH };
       }
-      let newY = initialBox.y + initialBox.h - newH;
-      next = { x: initialBox.x, y: newY, w: newW, h: newH };
-    } else if (handle === 'bl') {
-      let newX = Math.max(offX, Math.min(initialBox.x + dx, initialBox.x + initialBox.w - minW));
-      let newW = initialBox.w - (newX - initialBox.x);
-      let newH = targetRatio ? newW / targetRatio : Math.max(minH, Math.min(initialBox.h + dy, maxBottom - initialBox.y));
-      if (targetRatio && initialBox.y + newH > maxBottom) {
-        newH = maxBottom - initialBox.y;
-        newW = newH * targetRatio;
-        newX = initialBox.x + initialBox.w - newW;
-      }
-      next = { x: newX, y: initialBox.y, w: newW, h: newH };
-    } else if (handle === 'br') {
-      let newW = Math.max(minW, Math.min(initialBox.w + dx, maxRight - initialBox.x));
-      let newH = targetRatio ? newW / targetRatio : Math.max(minH, Math.min(initialBox.h + dy, maxBottom - initialBox.y));
-      if (targetRatio && initialBox.y + newH > maxBottom) {
-        newH = maxBottom - initialBox.y;
-        newW = newH * targetRatio;
-      }
-      next = { x: initialBox.x, y: initialBox.y, w: newW, h: newH };
-    } else if (handle === 't') {
-      const newY = Math.max(offY, Math.min(initialBox.y + dy, initialBox.y + initialBox.h - minH));
-      const newH = initialBox.h - (newY - initialBox.y);
-      next = { ...initialBox, y: newY, h: newH };
-    } else if (handle === 'b') {
-      const newH = Math.max(minH, Math.min(initialBox.h + dy, maxBottom - initialBox.y));
-      next = { ...initialBox, h: newH };
-    } else if (handle === 'l') {
-      const newX = Math.max(offX, Math.min(initialBox.x + dx, initialBox.x + initialBox.w - minW));
-      const newW = initialBox.w - (newX - initialBox.x);
-      next = { ...initialBox, x: newX, w: newW };
-    } else if (handle === 'r') {
-      const newW = Math.max(minW, Math.min(initialBox.w + dx, maxRight - initialBox.x));
-      next = { ...initialBox, w: newW };
     }
 
     cropBoxRef.current = next;
     setCropBox(next);
   };
 
-  // Direct Web Pointer/Mouse Drag Handlers (100% butter-smooth on browsers)
+  // Direct Web Pointer/Mouse Drag Handlers
   const handleWebPointerDown = (e: any, handle: HandleType) => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
     if (isDraggingRef.current) return;
@@ -370,9 +390,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
       moveEvt.preventDefault?.();
       const curX = moveEvt.clientX ?? moveEvt.touches?.[0]?.clientX ?? startX;
       const curY = moveEvt.clientY ?? moveEvt.touches?.[0]?.clientY ?? startY;
-      const dx = curX - startX;
-      const dy = curY - startY;
-      applyDeltaToCropBox(handle, initialBox, dx, dy);
+      applyDeltaToCropBox(handle, initialBox, curX - startX, curY - startY);
     };
 
     const onPointerUp = () => {
@@ -389,7 +407,6 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
     window.addEventListener('touchend', onPointerUp);
   };
 
-  // React Native PanResponder for native mobile platforms
   const createPanResponder = (handle: HandleType) =>
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -402,7 +419,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
           touchY: pageY,
         };
       },
-      onPanResponderMove: (evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
+      onPanResponderMove: (_evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
         if (!dragStartRef.current) return;
         applyDeltaToCropBox(handle, dragStartRef.current.box, gestureState.dx, gestureState.dy);
       },
@@ -421,7 +438,6 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
   const lResponder = useRef(createPanResponder('l')).current;
   const rResponder = useRef(createPanResponder('r')).current;
 
-  // Unified prop binder for web or native
   const getHandleProps = (handle: HandleType) => {
     if (Platform.OS === 'web') {
       return {
@@ -443,159 +459,20 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
     return map[handle].panHandlers;
   };
 
-  // Trigger Intelligent Auto Crop
-  const handleTriggerAutoCrop = () => {
-    setAspectRatio('AUTO');
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const img = new (window as any).Image();
-      if (!imageUri.startsWith('data:') && !imageUri.startsWith('blob:')) {
-        img.crossOrigin = 'anonymous';
-      }
-      img.onload = () => {
-        try {
-          const sampleW = 220;
-          const sampleH = Math.max(10, Math.round((currentImgH / currentImgW) * sampleW));
-          const canvas = document.createElement('canvas');
-          canvas.width = sampleW;
-          canvas.height = sampleH;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            applyCenterFocalCrop();
-            return;
-          }
-
-          if (rotation !== 0) {
-            ctx.translate(sampleW / 2, sampleH / 2);
-            ctx.rotate((rotation * Math.PI) / 180);
-            ctx.drawImage(img, -sampleW / 2, -sampleH / 2, sampleW, sampleH);
-          } else {
-            ctx.drawImage(img, 0, 0, sampleW, sampleH);
-          }
-
-          const imgData = ctx.getImageData(0, 0, sampleW, sampleH);
-          const data = imgData.data;
-
-          const cIdxs = [
-            0,
-            (sampleW - 1) * 4,
-            (sampleH - 1) * sampleW * 4,
-            ((sampleH - 1) * sampleW + (sampleW - 1)) * 4,
-          ];
-          let bgR = 0, bgG = 0, bgB = 0;
-          for (const idx of cIdxs) {
-            bgR += data[idx];
-            bgG += data[idx + 1];
-            bgB += data[idx + 2];
-          }
-          bgR /= 4; bgG /= 4; bgB /= 4;
-
-          let minX = sampleW, maxX = 0, minY = sampleH, maxY = 0;
-          let contentCount = 0;
-
-          for (let y = 0; y < sampleH; y += 2) {
-            for (let x = 0; x < sampleW; x += 2) {
-              const idx = (y * sampleW + x) * 4;
-              const diff = Math.abs(data[idx] - bgR) + Math.abs(data[idx + 1] - bgG) + Math.abs(data[idx + 2] - bgB);
-              if (diff > 40 && data[idx + 3] > 20) {
-                contentCount++;
-                if (x < minX) minX = x;
-                if (x > maxX) maxX = x;
-                if (y < minY) minY = y;
-                if (y > maxY) maxY = y;
-              }
-            }
-          }
-
-          const totalSampled = (sampleW * sampleH) / 4;
-          if (contentCount > totalSampled * 0.05 && contentCount < totalSampled * 0.94 && maxX > minX + 15 && maxY > minY + 15) {
-            const padX = sampleW * 0.02;
-            const padY = sampleH * 0.02;
-            const normL = Math.max(0, (minX - padX) / sampleW);
-            const normT = Math.max(0, (minY - padY) / sampleH);
-            const normR = Math.min(1, (maxX + padX) / sampleW);
-            const normB = Math.min(1, (maxY + padY) / sampleH);
-
-            const newX = imgOffsetX + normL * renderedW;
-            const newY = imgOffsetY + normT * renderedH;
-            const newW = (normR - normL) * renderedW;
-            const newH = (normB - normT) * renderedH;
-
-            const nextBox: Box = {
-              x: Math.max(imgOffsetX, newX),
-              y: Math.max(imgOffsetY, newY),
-              w: Math.min(newW, renderedW),
-              h: Math.min(newH, renderedH),
-            };
-            setCropBox(nextBox);
-            cropBoxRef.current = nextBox;
-            showNotice('⚡ Auto-crop applied');
-            return;
-          }
-        } catch (e) {
-          console.warn('Auto crop detection fallback', e);
-        }
-        applyCenterFocalCrop();
-      };
-      img.src = imageUri;
-    } else {
-      applyCenterFocalCrop();
-    }
-  };
-
-  const applyCenterFocalCrop = () => {
-    const targetRatio = renderedW > renderedH ? 16 / 9 : 4 / 5;
-    let newW = renderedW * 0.88;
-    let newH = newW / targetRatio;
-    if (newH > renderedH * 0.88) {
-      newH = renderedH * 0.88;
-      newW = newH * targetRatio;
-    }
-    const nextBox: Box = {
-      x: imgOffsetX + (renderedW - newW) / 2,
-      y: imgOffsetY + (renderedH - newH) / 2,
-      w: newW,
-      h: newH,
-    };
-    setCropBox(nextBox);
-    cropBoxRef.current = nextBox;
-    showNotice('⚡ Focal crop applied');
-  };
-
-  // Handle Aspect Ratio switch
   const handleSetAspectRatio = (mode: AspectRatioOption) => {
     setAspectRatio(mode);
-    if (mode === 'AUTO') {
-      handleTriggerAutoCrop();
-      return;
-    }
-    if (mode === 'FREE') {
-      showNotice('Freeform crop unlocked');
-      return;
-    }
-
-    let targetRatio: number | null = null;
-    if (mode === 'ORIGINAL') targetRatio = currentImgW / currentImgH;
-    if (mode === '1:1') targetRatio = 1;
-    if (mode === '4:5') targetRatio = 4 / 5;
-    if (mode === '16:9') targetRatio = 16 / 9;
-    if (mode === 'DOC') targetRatio = 1 / 1.414;
-
-    if (!targetRatio) return;
-
-    let newW = renderedW * 0.92;
-    let newH = newW / targetRatio;
-    if (newH > renderedH * 0.92) {
-      newH = renderedH * 0.92;
-      newW = newH * targetRatio;
-    }
-    const nextBox: Box = {
-      x: imgOffsetX + (renderedW - newW) / 2,
-      y: imgOffsetY + (renderedH - newH) / 2,
-      w: newW,
-      h: newH,
-    };
+    const nextBox = computeBoxForRatio(
+      mode,
+      renderedW,
+      renderedH,
+      imgOffsetX,
+      imgOffsetY,
+      currentImgW,
+      currentImgH
+    );
     setCropBox(nextBox);
     cropBoxRef.current = nextBox;
+    showNotice(mode === 'FREE' ? 'Freeform crop unlocked' : `${mode} aspect locked`);
   };
 
   const handleRotate = () => {
@@ -613,14 +490,18 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
     };
     setCropBox(resetBox);
     cropBoxRef.current = resetBox;
-    showNotice('Full image restored');
+    showNotice('Original frame restored');
   };
 
-  // Execute Final Pixel-Perfect Crop
+  // Compute live pixel preview dimensions
+  const estOutW = Math.max(1, Math.round(cropBox.w / scale));
+  const estOutH = Math.max(1, Math.round(cropBox.h / scale));
+
+  // Execute Final Pixel-Perfect Crop + Compression
   const handleApplyCrop = () => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       try {
-        const img = new (window as any).Image();
+        const img = new window.Image();
         if (!imageUri.startsWith('data:') && !imageUri.startsWith('blob:')) {
           img.crossOrigin = 'anonymous';
         }
@@ -633,20 +514,34 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
             const relW = Math.max(1, Math.min(currentBox.w / scale, currentImgW - relX));
             const relH = Math.max(1, Math.min(currentBox.h / scale, currentImgH - relY));
 
+            let outW = Math.max(1, Math.round(relW));
+            let outH = Math.max(1, Math.round(relH));
+            if (maxDimension > 0 && (outW > maxDimension || outH > maxDimension)) {
+              if (outW >= outH) {
+                outH = Math.max(1, Math.round((outH * maxDimension) / outW));
+                outW = maxDimension;
+              } else {
+                outW = Math.max(1, Math.round((outW * maxDimension) / outH));
+                outH = maxDimension;
+              }
+            }
+
             const canvas = document.createElement('canvas');
-            canvas.width = Math.round(relW);
-            canvas.height = Math.round(relH);
+            canvas.width = outW;
+            canvas.height = outH;
             const ctx = canvas.getContext('2d');
             if (!ctx) {
-              onCropComplete(imageUri);
+              onCropComplete(imageUri, estOutW, estOutH);
               return;
             }
 
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, outW, outH);
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
 
             if (rotation === 0) {
-              ctx.drawImage(img, relX, relY, relW, relH, 0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, relX, relY, relW, relH, 0, 0, outW, outH);
             } else {
               const rotCanvas = document.createElement('canvas');
               rotCanvas.width = currentImgW;
@@ -655,18 +550,22 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
               if (rotCtx) {
                 rotCtx.translate(currentImgW / 2, currentImgH / 2);
                 rotCtx.rotate((rotation * Math.PI) / 180);
-                rotCtx.drawImage(img, -naturalSize.width / 2, -naturalSize.height / 2);
-                ctx.drawImage(rotCanvas, relX, relY, relW, relH, 0, 0, canvas.width, canvas.height);
+                rotCtx.drawImage(
+                  img,
+                  -(img.naturalWidth || naturalSize.width) / 2,
+                  -(img.naturalHeight || naturalSize.height) / 2
+                );
+                ctx.drawImage(rotCanvas, relX, relY, relW, relH, 0, 0, outW, outH);
               } else {
-                ctx.drawImage(img, relX, relY, relW, relH, 0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, relX, relY, relW, relH, 0, 0, outW, outH);
               }
             }
 
-            const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
-            onCropComplete(croppedDataUrl);
+            const croppedDataUrl = canvas.toDataURL('image/jpeg', jpegQuality);
+            onCropComplete(croppedDataUrl, outW, outH);
           } catch (canvasErr) {
             console.warn('Canvas export error during crop', canvasErr);
-            onCropComplete(imageUri);
+            onCropComplete(imageUri, estOutW, estOutH);
           }
         };
 
@@ -674,83 +573,115 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
           executeCrop();
         } else {
           img.onload = executeCrop;
-          img.onerror = () => onCropComplete(imageUri);
+          img.onerror = () => onCropComplete(imageUri, estOutW, estOutH);
           img.src = imageUri;
         }
       } catch (err) {
         console.warn('handleApplyCrop error', err);
-        onCropComplete(imageUri);
+        onCropComplete(imageUri, estOutW, estOutH);
       }
     } else {
-      onCropComplete(imageUri);
+      onCropComplete(imageUri, estOutW, estOutH);
     }
   };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        {/* Top Header Bar */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
-            <X size={20} color="#ffffff" />
+      <View style={[styles.overlay, { backgroundColor: colors.background }]}>
+        {/* Header Bar */}
+        <View
+          style={[
+            styles.header,
+            { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder },
+          ]}
+        >
+          <TouchableOpacity
+            onPress={onClose}
+            style={[styles.headerBtn, { backgroundColor: colors.surfaceLight }]}
+            accessibilityLabel="Cancel crop"
+          >
+            <X size={20} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.title}>Crop & Rotate</Text>
+          <View style={styles.titleBlock}>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>Crop & Rotate</Text>
+            <Text style={[styles.dimLabel, { color: colors.textMuted }]}>
+              {estOutW} × {estOutH} px
+            </Text>
+          </View>
           <View style={styles.headerRight}>
             <TouchableOpacity
-              onPress={handleTriggerAutoCrop}
-              style={[styles.headerBtn, styles.autoCropHeaderBtn]}
-              accessibilityLabel="Auto Crop"
+              onPress={handleRotate}
+              style={[styles.headerBtn, { backgroundColor: colors.surfaceLight }]}
+              accessibilityLabel="Rotate 90"
             >
-              <Zap size={16} color="#fbbf24" />
-              <Text style={styles.autoCropHeaderText}>Auto</Text>
+              <RotateCw size={18} color={colors.primaryHover} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleRotate} style={styles.headerBtn} accessibilityLabel="Rotate 90">
-              <RotateCw size={18} color="#38bdf8" />
+            <TouchableOpacity
+              onPress={handleReset}
+              style={[styles.headerBtn, { backgroundColor: colors.surfaceLight }]}
+              accessibilityLabel="Reset"
+            >
+              <RefreshCw size={17} color={colors.textMuted} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleReset} style={styles.headerBtn} accessibilityLabel="Reset">
-              <RefreshCw size={17} color="#94a3b8" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleApplyCrop} style={[styles.headerBtn, styles.doneBtn]} accessibilityLabel="Done">
+            <TouchableOpacity
+              onPress={handleApplyCrop}
+              style={[styles.headerBtn, { backgroundColor: colors.primary }]}
+              accessibilityLabel="Apply crop"
+            >
               <Check size={20} color="#ffffff" />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Feedback Notice Toast */}
         {feedbackNotice && (
-          <View style={styles.noticeToast}>
+          <View style={[styles.noticeToast, { backgroundColor: colors.primary }]}>
             <Text style={styles.noticeText}>{feedbackNotice}</Text>
           </View>
         )}
 
-        {/* Aspect Ratio Toolbar */}
-        <View style={styles.aspectBar}>
-          {(['AUTO', 'FREE', 'ORIGINAL', '1:1', '4:5', '16:9', 'DOC'] as AspectRatioOption[]).map((mode) => (
-            <TouchableOpacity
-              key={mode}
-              style={[styles.aspectPill, aspectRatio === mode && styles.aspectPillActive]}
-              onPress={() => handleSetAspectRatio(mode)}
-            >
-              {mode === 'AUTO' && <Zap size={12} color={aspectRatio === 'AUTO' ? '#ffffff' : '#fbbf24'} style={{ marginRight: 3 }} />}
-              <Text style={[styles.aspectPillText, aspectRatio === mode && styles.aspectPillTextActive]}>
-                {mode === 'AUTO'
-                  ? 'Auto ⚡'
-                  : mode === 'FREE'
-                  ? 'Freeform'
-                  : mode === 'ORIGINAL'
-                  ? 'Original'
-                  : mode === 'DOC'
-                  ? 'A4 Doc'
-                  : mode}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        {/* Instagram/X Style Aspect Ratio Presets */}
+        <View
+          style={[
+            styles.aspectBar,
+            { backgroundColor: colors.surface, borderBottomColor: colors.hairline },
+          ]}
+        >
+          {ASPECT_OPTIONS.map((opt) => {
+            const active = aspectRatio === opt.key;
+            return (
+              <TouchableOpacity
+                key={opt.key}
+                style={[
+                  styles.aspectPill,
+                  {
+                    backgroundColor: active ? colors.primary : colors.surfaceLight,
+                    borderColor: active ? colors.primary : colors.cardBorder,
+                  },
+                ]}
+                onPress={() => handleSetAspectRatio(opt.key)}
+              >
+                <Text
+                  style={[
+                    styles.aspectPillText,
+                    { color: active ? '#ffffff' : colors.textSecondary },
+                    active && styles.aspectPillTextActive,
+                  ]}
+                >
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Main Crop Stage */}
         <View style={styles.stageWrapper}>
-          <View style={[styles.stage, { width: STAGE_SIZE, height: STAGE_SIZE }]}>
-            {/* The Image */}
+          <View
+            style={[
+              styles.stage,
+              { width: stageSize, height: stageSize, backgroundColor: '#08090a' },
+            ]}
+          >
             <Image
               source={{ uri: imageUri }}
               style={[
@@ -766,38 +697,15 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
               resizeMode="contain"
             />
 
-            {/* Dark Masks around Crop Box */}
+            {/* Masks outside Crop Box */}
+            <View style={[styles.mask, { top: 0, left: 0, right: 0, height: cropBox.y }]} />
             <View
-              style={[
-                styles.mask,
-                {
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: cropBox.y,
-                },
-              ]}
+              style={[styles.mask, { top: cropBox.y + cropBox.h, left: 0, right: 0, bottom: 0 }]}
             />
             <View
               style={[
                 styles.mask,
-                {
-                  top: cropBox.y + cropBox.h,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                },
-              ]}
-            />
-            <View
-              style={[
-                styles.mask,
-                {
-                  top: cropBox.y,
-                  left: 0,
-                  width: cropBox.x,
-                  height: cropBox.h,
-                },
+                { top: cropBox.y, left: 0, width: cropBox.x, height: cropBox.h },
               ]}
             />
             <View
@@ -812,7 +720,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
               ]}
             />
 
-            {/* Interactive Crop Box Window */}
+            {/* Interactive Crop Window */}
             <View
               {...getHandleProps('move')}
               style={[
@@ -826,13 +734,13 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
                 },
               ]}
             >
-              {/* WhatsApp Rule of Thirds Grid Lines */}
+              {/* Rule of Thirds Grid Lines */}
               <View style={styles.gridRow1} />
               <View style={styles.gridRow2} />
               <View style={styles.gridCol1} />
               <View style={styles.gridCol2} />
 
-              {/* 4 Edge Resize Drag Bars */}
+              {/* 4 Edge Drag Bars */}
               <View {...getHandleProps('t')} style={[styles.edgeTouchH, styles.edgeT]}>
                 <View style={styles.edgeBarH} />
               </View>
@@ -846,27 +754,34 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
                 <View style={styles.edgeBarV} />
               </View>
 
-              {/* 4 Corner Resize Handles */}
+              {/* 4 Corner Handles */}
               <View {...getHandleProps('tl')} style={[styles.handleTouch, styles.handleTL]}>
-                <View style={styles.handleCorner} />
+                <View style={[styles.handleCorner, { borderColor: colors.primary }]} />
               </View>
               <View {...getHandleProps('tr')} style={[styles.handleTouch, styles.handleTR]}>
-                <View style={styles.handleCorner} />
+                <View style={[styles.handleCorner, { borderColor: colors.primary }]} />
               </View>
               <View {...getHandleProps('bl')} style={[styles.handleTouch, styles.handleBL]}>
-                <View style={styles.handleCorner} />
+                <View style={[styles.handleCorner, { borderColor: colors.primary }]} />
               </View>
               <View {...getHandleProps('br')} style={[styles.handleTouch, styles.handleBR]}>
-                <View style={styles.handleCorner} />
+                <View style={[styles.handleCorner, { borderColor: colors.primary }]} />
               </View>
             </View>
           </View>
         </View>
 
-        {/* Footer Hint */}
-        <View style={styles.footer}>
-          <Text style={styles.hintText}>
-            ⚡ Tap Auto for 1-click crop • Drag corners or edges to resize freely
+        {/* Footer */}
+        <View
+          style={[
+            styles.footer,
+            { backgroundColor: colors.surface, borderTopColor: colors.cardBorder },
+          ]}
+        >
+          <Text style={[styles.hintText, { color: colors.textMuted }]}>
+            {aspectRatio === 'FREE'
+              ? 'Drag corners or edges to crop freely • Drag inside to move'
+              : `${aspectRatio} ratio locked • Drag corners, edges, or pan to frame`}
           </Text>
         </View>
       </View>
@@ -877,7 +792,6 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: '#000000',
     justifyContent: 'space-between',
   },
   header: {
@@ -887,14 +801,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: Platform.OS === 'ios' ? 44 : 14,
     paddingBottom: 10,
-    backgroundColor: '#0f172a',
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
+  },
+  titleBlock: {
+    alignItems: 'center',
   },
   title: {
-    color: '#ffffff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  dimLabel: {
+    fontSize: 11,
+    marginTop: 1,
   },
   headerRight: {
     flexDirection: 'row',
@@ -905,30 +823,11 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#1e293b',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  autoCropHeaderBtn: {
-    width: 'auto',
-    flexDirection: 'row',
-    paddingHorizontal: 10,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#fbbf24',
-    gap: 4,
-  },
-  autoCropHeaderText: {
-    color: '#fbbf24',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  doneBtn: {
-    backgroundColor: '#0284c7',
-  },
   noticeToast: {
-    backgroundColor: '#0284c7',
-    paddingVertical: 6,
+    paddingVertical: 5,
     paddingHorizontal: 14,
     alignSelf: 'center',
     borderRadius: 14,
@@ -942,30 +841,23 @@ const styles = StyleSheet.create({
   aspectBar: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 6,
+    gap: 8,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    backgroundColor: '#0b0f19',
+    borderBottomWidth: 1,
     flexWrap: 'wrap',
   },
   aspectPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    backgroundColor: '#1e293b',
-  },
-  aspectPillActive: {
-    backgroundColor: '#0284c7',
+    borderWidth: 1,
   },
   aspectPillText: {
-    color: '#94a3b8',
     fontSize: 12,
     fontWeight: '600',
   },
   aspectPillTextActive: {
-    color: '#ffffff',
     fontWeight: '700',
   },
   stageWrapper: {
@@ -976,9 +868,8 @@ const styles = StyleSheet.create({
   },
   stage: {
     position: 'relative',
-    backgroundColor: '#0b0f19',
     overflow: 'hidden',
-    borderRadius: 8,
+    borderRadius: 10,
   },
   image: {
     position: 'absolute',
@@ -1059,7 +950,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 7,
     borderWidth: 2,
-    borderColor: '#0284c7',
   },
   edgeTouchH: {
     position: 'absolute',
@@ -1106,14 +996,13 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   footer: {
-    paddingVertical: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     alignItems: 'center',
-    backgroundColor: '#0f172a',
     borderTopWidth: 1,
-    borderTopColor: '#1e293b',
   },
   hintText: {
-    color: '#94a3b8',
     fontSize: 12,
+    textAlign: 'center',
   },
 });

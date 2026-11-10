@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from config.media_utils import resolve_media_url
 from colleges.models import CollegeDomain
 from .models import User
 
@@ -57,6 +58,7 @@ class LoginWithPasswordSerializer(serializers.Serializer):
 
 class UserMeSerializer(serializers.ModelSerializer):
     profile = serializers.SerializerMethodField()
+    profile_picture = serializers.SerializerMethodField()
     primary_device = serializers.SerializerMethodField()
 
     class Meta:
@@ -66,6 +68,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             "email",
             "full_name",
             "phone_number",
+            "profile_picture",
             "is_email_verified",
             "is_phone_verified",
             "is_verified_student",
@@ -78,15 +81,21 @@ class UserMeSerializer(serializers.ModelSerializer):
             "created_at",
         ]
 
+    def get_profile_picture(self, obj):
+        if hasattr(obj, "profile") and obj.profile.profile_picture:
+            return resolve_media_url(self.context.get("request"), obj.profile.profile_picture)
+        return None
+
     def get_profile(self, obj):
         if hasattr(obj, "profile"):
             p = obj.profile
+            request = self.context.get("request")
             return {
                 "id": p.id,
                 "username": p.username,
                 "bio": p.bio,
                 "gender": p.gender,
-                "profile_picture": p.profile_picture.url if p.profile_picture else None,
+                "profile_picture": resolve_media_url(request, p.profile_picture) if p.profile_picture else None,
                 "college": {
                     "id": p.college_id,
                     "name": p.college.name,

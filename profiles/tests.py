@@ -192,3 +192,129 @@ class SocialGraphAndPrivacyTests(TestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.data.get("email"), self.user_a.email)
         self.assertEqual(res.data.get("admission_number"), self.prof_a.admission_number)
+
+
+class AvatarUploadAndVisibilityTests(TestCase):
+    def setUp(self):
+        import tempfile
+        from django.test import override_settings
+
+        self._media_dir = tempfile.mkdtemp(prefix="campus_prof_media_")
+        self._override = override_settings(MEDIA_ROOT=self._media_dir)
+        self._override.enable()
+
+        self.college = College.objects.create(name="Graphic Era University", short_name="GEU")
+        self.course = Course.objects.create(name="B.Tech", code="BT", college=self.college, duration=4)
+        self.branch = Branch.objects.create(name="CSE", code="CSE", course=self.course)
+        self.year = AcademicYear.objects.create(year_number=2, display_name="2nd Year", course=self.course)
+
+        self.alice = User.objects.create_user(email="alice_ava@geu.ac.in", password="password123", full_name="Alice Avatar")
+        self.prof_alice = StudentProfile.objects.create(
+            user=self.alice, username="alice_ava", college=self.college, course=self.course,
+            branch=self.branch, academic_year=self.year, admission_number="GEU901",
+            is_private_account=False, profile_completed=True
+        )
+
+        self.bob = User.objects.create_user(email="bob_ava@geu.ac.in", password="password123", full_name="Bob Viewer")
+        self.prof_bob = StudentProfile.objects.create(
+            user=self.bob, username="bob_ava", college=self.college, course=self.course,
+            branch=self.branch, academic_year=self.year, admission_number="GEU902",
+            is_private_account=False, profile_completed=True
+        )
+
+        self.client_alice = APIClient()
+        self.client_alice.force_authenticate(user=self.alice)
+        self.client_bob = APIClient()
+        self.client_bob.force_authenticate(user=self.bob)
+
+    def tearDown(self):
+        import shutil
+        self._override.disable()
+        shutil.rmtree(self._media_dir, ignore_errors=True)
+
+    def _make_png_data_url(self, width=800, height=600, color=(94, 106, 210, 255)):
+        import io, base64
+        from PIL import Image as PILImage
+
+        buf = io.BytesIO()
+        PILImage.new("RGBA", (width, height), color=color).save(buf, "PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        return f"data:image/png;base64,{b64}"
+
+    def test_base64_avatar_upload_resizes_and_is_visible_across_all_surfaces(self):
+        from communities.models import Community, CommunityMember, Discussion
+        from chat.models import Conversation, ConversationMember
+        from posts.models import Comment
+        from notifications.views import create_notification
+
+        # 1. Alice uploads RGBA PNG base64 avatar -> normalized to <=512px JPEG
+        res = self.client_alice.patch(
+            "/api/profile/edit/",
+            {"profile_picture_base64": self._make_png_data_url()},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        pic_url = res.data["profile"]["profile_picture"]
+        self.assertIsNotNone(pic_url)
+        self.assertIn(f"avatar_{self.alice.id}_", pic_url)
+        self.assertEqual(res.data["user"]["profile_picture"], pic_url)
+
+        # Verify stored avatar on disk was resized to max 512px
+        from PIL import Image as PILImage
+        self.prof_alice.refresh_from_db()
+        with PILImage.open(self.prof_alice.profile_picture.path) as img:
+            self.assertEqual(img.size, (512, 384))
+            self.assertEqual(img.format, "JPEG")
+
+        # 2. Bob views Alice's public profile -> sees exact same resolved URL
+        prof_res = self.client_bob.get(f"/api/profile/{self.alice.id}/")
+        self.assertEqual(prof_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(prof_res.data["profile_picture"], pic_url)
+
+        # 3. Bob searches directory for Alice -> sees Alice's avatar & profile_picture
+        search_res = self.client_bob.get("/api/authentication/users/search/?q=alice_ava")
+        self.assertEqual(search_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(search_res.data["results"]), 1)
+        self.assertEqual(search_res.data["results"][0]["avatar"], pic_url)
+        self.assertEqual(search_res.data["results"][0]["profile_picture"], pic_url)
+
+        # 4. Alice's post and comment expose author_avatar for Bob
+        post = Post.objects.create(author=self.alice, content="Look at my new profile photo!", visibility="GLOBAL")
+        Comment.objects.create(post=post, user=self.alice, text="First comment!")
+
+        feed_res = self.client_bob.get("/api/posts/feed/?scope=GLOBAL")
+        self.assertEqual(feed_res.status_code, status.HTTP_200_OK)
+        post_data = next(p for p in feed_res.data["results"] if p["id"] == post.id)
+        self.assertEqual(post_data["author_avatar"], pic_url)
+
+        comm_res = self.client_bob.get(f"/api/posts/{post.id}/comments/")
+        self.assertEqual(comm_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(comm_res.data[0]["author_avatar"], pic_url)
+
+        # 5. Community discussion exposes Alice's author_avatar
+        community = Community.objects.create(name="GEU Coding Club", community_type="CUSTOM", description="Club")
+        CommunityMember.objects.create(community=community, user=self.alice, role="MEMBER")
+        CommunityMember.objects.create(community=community, user=self.bob, role="MEMBER")
+        disc = Discussion.objects.create(community=community, author=self.alice, title="Hello!", content="Avatar check")
+        disc_res = self.client_bob.get(f"/api/communities/{community.slug}/discussions/{disc.id}/")
+        self.assertEqual(disc_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(disc_res.data["author_avatar"], pic_url)
+
+        # 6. Chat inbox exposes Alice's avatar on recipient card
+        from chat.models import Message
+        conv = Conversation.objects.create(is_group=False)
+        ConversationMember.objects.create(conversation=conv, user=self.alice)
+        ConversationMember.objects.create(conversation=conv, user=self.bob)
+        Message.objects.create(conversation=conv, sender=self.alice, text="Hey Bob!")
+        inbox_res = self.client_bob.get("/api/chat/inbox/")
+        self.assertEqual(inbox_res.status_code, status.HTTP_200_OK)
+        recipient_data = inbox_res.data["results"][0]["recipient"]
+        self.assertEqual(recipient_data["avatar"], pic_url)
+        self.assertEqual(recipient_data["profile_picture"], pic_url)
+
+        # 7. Notification from Alice exposes sender_avatar
+        create_notification(recipient=self.bob, sender=self.alice, notification_type="FOLLOW", title="Followed", message="Hi")
+        notif_res = self.client_bob.get("/api/notifications/")
+        self.assertEqual(notif_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(notif_res.data["results"][0]["sender_avatar"], pic_url)
+

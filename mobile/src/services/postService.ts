@@ -17,6 +17,7 @@ export interface Post {
   document_name?: string;
   document_size?: string;
   attachments?: AttachmentItem[];
+  images?: Array<{ id: number; image: string; uploaded_at?: string }>;
   is_anonymous: boolean;
   author_name: string;
   author_username?: string;

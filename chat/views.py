@@ -347,6 +347,22 @@ class SendMessageView(APIView):
                     pending_req.status = "ACCEPTED"
                     pending_req.save(update_fields=["status", "updated_at"])
 
+        # Validate attachments upfront so oversized (>20 MB docs) or corrupt files return 400 clearly
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from attachments.services import MAX_DOC_SIZE
+        for att_file in (attachments or []):
+            try:
+                AttachmentService.validate_and_process_file(att_file)
+            except DjangoValidationError as err:
+                msg_err = err.message if hasattr(err, "message") else str(err)
+                return Response({"error": msg_err}, status=status.HTTP_400_BAD_REQUEST)
+
+        if attachment and attachment.size > MAX_DOC_SIZE:
+            return Response(
+                {"error": f"Document '{attachment.name}' exceeds the 20 MB limit. Try uploading 2 different files."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # If conversation was hidden by any member, unhide it upon new message
         ConversationMember.objects.filter(
             conversation=conv,
@@ -371,8 +387,10 @@ class SendMessageView(APIView):
                         message=msg,
                         order=idx
                     )
-                except Exception as e:
-                    pass
+                except DjangoValidationError as err:
+                    msg.delete()
+                    msg_err = err.message if hasattr(err, "message") else str(err)
+                    return Response({"error": msg_err}, status=status.HTTP_400_BAD_REQUEST)
 
         conv.save()  # update updated_at timestamp
 

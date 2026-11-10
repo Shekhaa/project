@@ -51,6 +51,7 @@ import { DiscussTab } from '../components/discuss/DiscussTab';
 import { AddMembersModal } from '../components/chat/AddMembersModal';
 import { InviteLinkModal } from '../components/chat/InviteLinkModal';
 import { JoinByInviteModal } from '../components/chat/JoinByInviteModal';
+import { UserAvatar } from '../components/common/UserAvatar';
 
 interface CommunitiesScreenProps {
   currentUser?: any;
@@ -1276,18 +1277,13 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                         }}
                         activeOpacity={0.7}
                       >
-                        <View
-                          style={[
-                            styles.memberAvatar,
-                            {
-                              backgroundColor: isDark ? 'rgba(94, 106, 210, 0.2)' : '#e0e7ff',
-                            },
-                          ]}
-                        >
-                          <Text style={[styles.memberAvatarText, { color: colors.primary }]}>
-                            {item.user.full_name.charAt(0).toUpperCase()}
-                          </Text>
-                        </View>
+                        <UserAvatar
+                          uri={item.user.avatar || item.user.profile_picture}
+                          name={item.user.full_name}
+                          size={36}
+                          backgroundColor={isDark ? 'rgba(94, 106, 210, 0.2)' : '#e0e7ff'}
+                          textColor={colors.primary}
+                        />
                         <View style={{ flex: 1 }}>
                           <Text style={[styles.memberName, { color: colors.textPrimary }]}>{item.user.full_name}</Text>
                           <Text style={[styles.memberCourse, { color: colors.textSecondary }]}>

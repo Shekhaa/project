@@ -9,14 +9,13 @@ import {
   ScrollView,
   Alert,
   Platform,
-  Image,
 } from 'react-native';
 import { useTheme } from '../../theme/ThemeContext';
-import { colors } from '../../theme/colors';
 import { profileService, PublicProfile } from '../../services/profileService';
 import { chatService } from '../../services/chatService';
 import { postService, Post } from '../../services/postService';
-import { getFullMediaUrl } from '../../config/api';
+import { UserAvatar } from '../common/UserAvatar';
+import { showCrossPlatformAlert } from '../../utils/mediaUtils';
 import {
   X,
   Shield,
@@ -81,7 +80,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
         setPosts([]);
       }
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Could not load student profile.');
+      showCrossPlatformAlert('Error', e.response?.data?.error || 'Could not load student profile.');
       onClose();
     } finally {
       setLoading(false);
@@ -95,15 +94,15 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
       setActionLoading(true);
       if (profile.connection_status === 'NOT_CONNECTED' || profile.connection_status === 'DECLINED') {
         const res = await profileService.sendConnectionRequest(profile.id);
-        Alert.alert('Request Sent 🤝', res.message || 'Connection request sent.');
+        showCrossPlatformAlert('Request Sent 🤝', res.message || 'Connection request sent.');
       } else if (profile.connection_status === 'REQUEST_SENT') {
         // Cancel request
         await profileService.removeConnection(profile.id);
-        Alert.alert('Cancelled', 'Connection request was cancelled.');
+        showCrossPlatformAlert('Cancelled', 'Connection request was cancelled.');
       } else if (profile.connection_status === 'REQUEST_RECEIVED') {
         // Accept incoming request
         await profileService.respondConnection(profile.id, 'ACCEPT');
-        Alert.alert('Connected! 🎉', `You and ${profile.full_name} are now connected.`);
+        showCrossPlatformAlert('Connected! 🎉', `You and ${profile.full_name} are now connected.`);
       } else if (profile.connection_status === 'CONNECTED') {
         // Remove connection confirmation
         const confirmed = Platform.OS === 'web'
@@ -116,7 +115,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
             });
         if (confirmed) {
           await profileService.removeConnection(profile.id);
-          Alert.alert('Removed', 'Connection removed.');
+          showCrossPlatformAlert('Removed', 'Connection removed.');
         } else {
           setActionLoading(false);
           return;
@@ -124,7 +123,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
       }
       await loadProfile(profile.id);
     } catch (e: any) {
-      Alert.alert('Action Failed', e.response?.data?.error || 'Could not update connection.');
+      showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update connection.');
     } finally {
       setActionLoading(false);
     }
@@ -138,18 +137,18 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
       if (profile.follow_status === 'NOT_FOLLOWING') {
         const res = await profileService.followUser(profile.id);
         if (res.follow_status === 'REQUEST_SENT') {
-          Alert.alert('Follow Requested ⏳', 'This account is private. Your request has been sent for approval.');
+          showCrossPlatformAlert('Follow Requested ⏳', 'This account is private. Your request has been sent for approval.');
         } else {
-          Alert.alert('Following! 🎉', `You are now following ${profile.full_name}.`);
+          showCrossPlatformAlert('Following! 🎉', `You are now following ${profile.full_name}.`);
         }
       } else {
         // Unfollow
         const res = await profileService.unfollowUser(profile.id);
-        Alert.alert('Unfollowed', res.message || `You unfollowed ${profile.full_name}.`);
+        showCrossPlatformAlert('Unfollowed', res.message || `You unfollowed ${profile.full_name}.`);
       }
       await loadProfile(profile.id);
     } catch (e: any) {
-      Alert.alert('Action Failed', e.response?.data?.error || 'Could not update follow status.');
+      showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update follow status.');
     } finally {
       setActionLoading(false);
     }
@@ -170,9 +169,9 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
             }
           : null
       );
-      Alert.alert(res.endorsed ? 'Endorsed ⭐' : 'Endorsement Removed', res.message);
+      showCrossPlatformAlert(res.endorsed ? 'Endorsed ⭐' : 'Endorsement Removed', res.message);
     } catch (e: any) {
-      Alert.alert('Action Failed', e.response?.data?.error || 'Could not update endorsement.');
+      showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update endorsement.');
     } finally {
       setActionLoading(false);
     }
@@ -185,7 +184,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
       setActionLoading(true);
       const res: any = await chatService.startDirectChat(profile.email || String(profile.id));
       if (res.request_created) {
-        Alert.alert(
+        showCrossPlatformAlert(
           'Message Request Sent 📩',
           res.message || 'Your message request was submitted and is awaiting approval.'
         );
@@ -193,10 +192,10 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
         onClose();
         onOpenChat(res);
       } else {
-        Alert.alert('Direct Chat Ready 💬', 'Conversation is available in your messages.');
+        showCrossPlatformAlert('Direct Chat Ready 💬', 'Conversation is available in your messages.');
       }
     } catch (e: any) {
-      Alert.alert('Message Failed', e.response?.data?.error || 'Could not initiate chat.');
+      showCrossPlatformAlert('Message Failed', e.response?.data?.error || 'Could not initiate chat.');
     } finally {
       setActionLoading(false);
     }
@@ -227,24 +226,20 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
       setActionLoading(true);
       if (isCurrentlyBlocked) {
         await profileService.unblockUser(profile.id);
-        Alert.alert('Unblocked', `${profile.full_name} has been unblocked.`);
+        showCrossPlatformAlert('Unblocked', `${profile.full_name} has been unblocked.`);
       } else {
         await profileService.blockUser(profile.id);
-        Alert.alert('Blocked', `${profile.full_name} has been blocked.`);
+        showCrossPlatformAlert('Blocked', `${profile.full_name} has been blocked.`);
       }
       await loadProfile(profile.id);
     } catch (e: any) {
-      Alert.alert('Action Failed', e.response?.data?.error || 'Could not update block status.');
+      showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update block status.');
     } finally {
       setActionLoading(false);
     }
   };
 
   if (!visible) return null;
-
-  const initials = profile?.full_name
-    ? profile.full_name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
-    : (profile?.username || 'U').substring(0, 2).toUpperCase();
 
   const isSelf = profile?.connection_status === 'SELF';
 
@@ -301,15 +296,11 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                 <View style={styles.heroBody}>
                   {/* Large Student Avatar */}
                   <View style={[styles.avatarCircle, { borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : colors.cardBorder }]}>
-                    {profile.profile_picture ? (
-                      <Image
-                        source={{ uri: getFullMediaUrl(profile.profile_picture) }}
-                        style={styles.avatarImage}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <Text style={[styles.avatarInitials, { color: colors.primary }]}>{initials}</Text>
-                    )}
+                    <UserAvatar
+                      uri={profile.profile_picture || profile.avatar}
+                      name={profile.full_name}
+                      size={77}
+                    />
                     {profile.is_private_account && (
                       <View style={[styles.lockBadge, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
                         <Lock size={12} color={colors.textSecondary} />
@@ -538,24 +529,43 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                   </View>
 
                   {/* Authorized Student Posts */}
-                  <View style={styles.postsCard}>
-                    <Text style={styles.detailsCardTitle}>Posts ({posts.length})</Text>
+                  <View
+                    style={[
+                      styles.postsCard,
+                      {
+                        backgroundColor: colors.surfaceLight,
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.cardBorder,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.detailsCardTitle, { color: colors.textPrimary }]}>
+                      Posts ({posts.length})
+                    </Text>
                     {postsLoading ? (
-                      <ActivityIndicator size="small" color="#38bdf8" style={{ marginVertical: 14 }} />
+                      <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 14 }} />
                     ) : posts.length === 0 ? (
-                      <Text style={styles.noPostsText}>No posts yet.</Text>
+                      <Text style={[styles.noPostsText, { color: colors.textMuted }]}>No posts yet.</Text>
                     ) : (
                       posts.map((p) => (
-                        <View key={p.id} style={styles.miniPostCard}>
+                        <View
+                          key={p.id}
+                          style={[
+                            styles.miniPostCard,
+                            {
+                              backgroundColor: colors.surface,
+                              borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.cardBorder,
+                            },
+                          ]}
+                        >
                           <View style={styles.miniPostTopRow}>
-                            <Text style={styles.miniPostOrigin}>
+                            <Text style={[styles.miniPostOrigin, { color: colors.primary }]}>
                               {p.community_name
                                 ? p.community_name
                                 : p.author_college_name
                                 ? p.author_college_name
                                 : 'Campus Feed'}
                             </Text>
-                            <Text style={styles.miniPostTime}>
+                            <Text style={[styles.miniPostTime, { color: colors.textMuted }]}>
                               {new Date(p.created_at).toLocaleDateString(undefined, {
                                 month: 'short',
                                 day: 'numeric',
@@ -563,13 +573,17 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                             </Text>
                           </View>
                           {p.content ? (
-                            <Text style={styles.miniPostContent} numberOfLines={3}>
+                            <Text style={[styles.miniPostContent, { color: colors.textSecondary }]} numberOfLines={3}>
                               {p.content}
                             </Text>
                           ) : null}
                           <View style={styles.miniPostStats}>
-                            <Text style={styles.miniPostStat}>❤️ {p.likes_count || 0}</Text>
-                            <Text style={styles.miniPostStat}>💬 {p.comments_count || 0}</Text>
+                            <Text style={[styles.miniPostStat, { color: colors.textMuted }]}>
+                              ❤️ {p.likes_count || 0}
+                            </Text>
+                            <Text style={[styles.miniPostStat, { color: colors.textMuted }]}>
+                              💬 {p.comments_count || 0}
+                            </Text>
                           </View>
                         </View>
                       ))

@@ -8,12 +8,14 @@ import {
   StyleSheet,
   ActivityIndicator,
   Share as NativeShare,
-  Alert,
 } from 'react-native';
 import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 import { Post } from '../../services/postService';
 import { chatService, Conversation } from '../../services/chatService';
-import { X, Send, Share2, Check } from 'lucide-react-native';
+import { UserAvatar } from '../common/UserAvatar';
+import { showCrossPlatformAlert } from '../../utils/mediaUtils';
+import { X, Share2, Check } from 'lucide-react-native';
 
 interface ShareModalProps {
   visible: boolean;
@@ -26,6 +28,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   post,
   onClose,
 }) => {
+  const { colors: themeColors } = useTheme();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(false);
   const [sendingTo, setSendingTo] = useState<string | null>(null);
@@ -85,8 +88,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
       await chatService.sendMessage(conv.id, shareMessage);
       setSentMap((prev) => ({ ...prev, [conv.id]: true }));
-    } catch (e) {
-      Alert.alert('Send Failed', 'Could not share post to this conversation.');
+    } catch {
+      showCrossPlatformAlert('Send Failed', 'Could not share post to this conversation.');
     } finally {
       setSendingTo(null);
     }
@@ -98,22 +101,29 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     const name = item.name || item.recipient?.full_name || item.recipient?.email?.split('@')[0] || 'Campus Chat';
 
     return (
-      <View style={styles.convRow}>
-        <View style={styles.convAvatar}>
-          <Text style={styles.convAvatarText}>{name.charAt(0).toUpperCase()}</Text>
-        </View>
+      <View style={[styles.convRow, { borderBottomColor: themeColors.hairline }]}>
+        <UserAvatar
+          uri={!item.is_group ? item.recipient?.avatar || item.recipient?.profile_picture : undefined}
+          name={name}
+          size={38}
+          style={{ marginRight: 12 }}
+        />
 
         <View style={styles.convInfo}>
-          <Text style={styles.convName} numberOfLines={1}>
+          <Text style={[styles.convName, { color: themeColors.textPrimary }]} numberOfLines={1}>
             {name}
           </Text>
-          <Text style={styles.convSub} numberOfLines={1}>
+          <Text style={[styles.convSub, { color: themeColors.textSecondary }]} numberOfLines={1}>
             {item.is_group ? '👥 Campus Group' : '💬 Direct Message'}
           </Text>
         </View>
 
         <TouchableOpacity
-          style={[styles.sendPill, isSent && styles.sendPillSuccess]}
+          style={[
+            styles.sendPill,
+            { backgroundColor: themeColors.primary },
+            isSent && styles.sendPillSuccess,
+          ]}
           onPress={() => !isSent && handleSendToChat(item)}
           disabled={isSent || isSending}
         >
@@ -134,34 +144,51 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      <View style={[styles.backdrop, { backgroundColor: themeColors.modalOverlay }]}>
         <TouchableOpacity style={styles.dismissOverlay} onPress={onClose} activeOpacity={1} />
 
-        <View style={styles.sheetContainer}>
-          <View style={styles.dragHandle} />
+        <View
+          style={[
+            styles.sheetContainer,
+            { backgroundColor: themeColors.surface, borderColor: themeColors.cardBorder },
+          ]}
+        >
+          <View style={[styles.dragHandle, { backgroundColor: themeColors.hairline }]} />
 
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>Share Post</Text>
+          <View style={[styles.header, { borderBottomColor: themeColors.cardBorder }]}>
+            <Text style={[styles.headerTitle, { color: themeColors.textPrimary }]}>Share Post</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X size={20} color={colors.textPrimary} />
+              <X size={20} color={themeColors.textPrimary} />
             </TouchableOpacity>
           </View>
 
           {/* Native Share button */}
-          <TouchableOpacity style={styles.nativeShareBtn} onPress={handleNativeShare}>
-            <Share2 size={18} color="#fff" />
-            <Text style={styles.nativeShareText}>Share via other apps...</Text>
+          <TouchableOpacity
+            style={[
+              styles.nativeShareBtn,
+              { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.cardBorder },
+            ]}
+            onPress={handleNativeShare}
+          >
+            <Share2 size={18} color={themeColors.primary} />
+            <Text style={[styles.nativeShareText, { color: themeColors.textPrimary }]}>
+              Share via other apps...
+            </Text>
           </TouchableOpacity>
 
-          <Text style={styles.sectionTitle}>Send via Campus Connect</Text>
+          <Text style={[styles.sectionTitle, { color: themeColors.textSecondary }]}>
+            Send via Campus Connect
+          </Text>
 
           {loading ? (
             <View style={styles.centerBox}>
-              <ActivityIndicator size="small" color={colors.primary} />
+              <ActivityIndicator size="small" color={themeColors.primary} />
             </View>
           ) : conversations.length === 0 ? (
             <View style={styles.centerBox}>
-              <Text style={styles.emptyText}>No recent chats found.</Text>
+              <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>
+                No recent chats found.
+              </Text>
             </View>
           ) : (
             <FlatList

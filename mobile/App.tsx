@@ -117,6 +117,7 @@ function AppMain() {
 
   const handleUserSwitched = (newUser: User) => {
     setCurrentUser(newUser);
+    authService.updateCurrentUser(newUser).catch(() => {});
   };
 
   const handleProfileComplete = async () => {

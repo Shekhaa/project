@@ -6,6 +6,7 @@ import { useTheme } from '../../theme/ThemeContext';
 import { AudioPlayerPill, splitMediaAttachments } from '../media/VoiceNotePlayer';
 import { MediaGrid } from '../media/MediaGrid';
 import { DocumentCard } from '../media/DocumentCard';
+import { UserAvatar } from '../common/UserAvatar';
 
 interface DiscussionRepliesProps {
   replies: DiscussionReply[];
@@ -66,7 +67,6 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
   };
 
   const renderReplyItem = (item: DiscussionReply, depth = 0, parentName?: string) => {
-    const initial = (item.author_name || 'S').trim()[0]?.toUpperCase() || 'S';
     const isNested = depth > 0;
     const isDeep = depth >= 3;
     // Cap indent to prevent horizontal blowout: depth 1 gets 14px, depth 2 gets 10px, depth >= 3 gets 0px
@@ -117,17 +117,11 @@ export const DiscussionReplies: React.FC<DiscussionRepliesProps> = ({
             activeOpacity={0.7}
             style={styles.authorRow}
           >
-            <View
-              style={[
-                styles.avatar,
-                {
-                  backgroundColor: colors.surfaceLight,
-                  borderColor: colors.cardBorder,
-                },
-              ]}
-            >
-              <Text style={[styles.avatarText, { color: colors.primary }]}>{initial}</Text>
-            </View>
+            <UserAvatar
+              uri={item.author_avatar}
+              name={item.author_name}
+              size={26}
+            />
             <View>
               <Text style={[styles.authorName, { color: colors.textPrimary }]}>{item.author_name}</Text>
               <Text style={[styles.replyTime, { color: colors.textMuted }]}>{formatTimeAgo(item.created_at)}</Text>

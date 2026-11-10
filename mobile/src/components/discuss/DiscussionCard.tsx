@@ -4,6 +4,7 @@ import { Discussion } from '../../services/communityService';
 import { ArrowBigUp, MessageSquare, Paperclip, CheckCircle, Pin, Mic } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { AudioPlayerPill, splitMediaAttachments } from '../media/VoiceNotePlayer';
+import { UserAvatar } from '../common/UserAvatar';
 
 interface DiscussionCardProps {
   discussion: Discussion;
@@ -34,7 +35,6 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
   };
 
   const badgeColor = getTypeBadgeColor(discussion.discussion_type);
-  const authorInitial = (discussion.author_name || 'S').trim()[0]?.toUpperCase() || 'S';
   const { audioAttachments, allAttachments } = splitMediaAttachments(discussion.attachments);
   const nonAudioCount = Math.max(0, allAttachments.length - audioAttachments.length);
 
@@ -141,17 +141,11 @@ export const DiscussionCard: React.FC<DiscussionCardProps> = ({
           activeOpacity={0.7}
           style={styles.authorGroup}
         >
-          <View
-            style={[
-              styles.authorAvatar,
-              {
-                backgroundColor: colors.surfaceLight,
-                borderColor: colors.cardBorder,
-              },
-            ]}
-          >
-            <Text style={[styles.authorAvatarText, { color: colors.primary }]}>{authorInitial}</Text>
-          </View>
+          <UserAvatar
+            uri={discussion.author_avatar}
+            name={discussion.author_name}
+            size={22}
+          />
           <Text style={[styles.authorName, { color: colors.textSecondary }]} numberOfLines={1}>
             {discussion.author_name}
           </Text>

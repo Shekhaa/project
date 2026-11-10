@@ -1,4 +1,5 @@
 import { api } from '../config/api';
+import { dataUrlToWebFile } from '../utils/mediaUtils';
 
 export interface Conversation {
   id: string;
@@ -14,6 +15,8 @@ export interface Conversation {
     full_name: string;
     email: string;
     username?: string;
+    avatar?: string | null;
+    profile_picture?: string | null;
   };
   last_message?: {
     id: string;
@@ -169,28 +172,10 @@ export const chatService = {
     if (text) {
       formData.append('text', text);
     }
-    const toFile = (dataurl: string, filename: string): any => {
-      if (typeof window === 'undefined' || !dataurl.startsWith('data:')) return null;
-      try {
-        const arr = dataurl.split(',');
-        const mimeMatch = arr[0].match(/:(.*?);/);
-        const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-        const bstr = atob(arr[1]);
-        let n = bstr.length;
-        const u8arr = new Uint8Array(n);
-        while (n--) {
-          u8arr[n] = bstr.charCodeAt(n);
-        }
-        return new File([u8arr], filename, { type: mime });
-      } catch (e) {
-        return null;
-      }
-    };
-
     files.forEach((item, index) => {
       let fileToAppend = item.file;
       if (!fileToAppend && item.uri && typeof window !== 'undefined' && item.uri.startsWith('data:')) {
-        fileToAppend = toFile(item.uri, item.name || `attachment_${index}.jpg`);
+        fileToAppend = dataUrlToWebFile(item.uri, item.name || `attachment_${index}.jpg`);
       }
 
       if (fileToAppend) {
@@ -201,7 +186,7 @@ export const chatService = {
         formData.append('attachments', {
           uri: item.uri,
           name: item.name || `attachment_${index}.jpg`,
-          type: item.type || 'image/jpeg',
+          type: item.mimeType || item.type || 'image/jpeg',
         } as any);
       }
     });
@@ -240,8 +225,13 @@ export const chatService = {
 
   async uploadAttachmentFile(fileItem: any): Promise<{ id: string }> {
     const formData = new FormData();
-    if (fileItem.file) {
-      formData.append('file', fileItem.file);
+    let fileToUpload = fileItem.file;
+    if (!fileToUpload && fileItem.uri && typeof window !== 'undefined' && fileItem.uri.startsWith('data:')) {
+      fileToUpload = dataUrlToWebFile(fileItem.uri, fileItem.name || 'attachment.jpg');
+    }
+
+    if (fileToUpload) {
+      formData.append('file', fileToUpload);
     } else if (fileItem.uri) {
       const fallbackType =
         fileItem.mimeType ||

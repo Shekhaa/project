@@ -1,37 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
   Image,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
+  Linking,
   Modal,
   Platform,
-  Linking,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  Archive,
+  Bookmark,
+  Download,
+  FileText,
+  Heart,
+  MessageCircle,
+  MoreVertical,
+  Play,
+  Share2,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
-import { colors } from '../../theme/colors';
 import { Post } from '../../services/postService';
 import { MediaGrid } from '../media/MediaGrid';
 import { DocumentCard } from '../media/DocumentCard';
+import { ImageViewerModal } from '../media/ImageViewerModal';
+import { UserAvatar } from '../common/UserAvatar';
 import { getFullMediaUrl } from '../../config/api';
-import {
-  Heart,
-  MessageCircle,
-  Share2,
-  Bookmark,
-  MoreVertical,
-  Trash2,
-  Archive,
-  FileText,
-  Download,
-  ShieldCheck,
-  Sparkles,
-  Image as ImageIcon,
-  Play,
-} from 'lucide-react-native';
+import { clampAspectRatio, measureImageSize, showCrossPlatformAlert } from '../../utils/mediaUtils';
 
 interface PostCardProps {
   post: Post;
@@ -59,6 +58,8 @@ const PostCardComponent: React.FC<PostCardProps> = ({
   const { colors, isDark } = useTheme();
   const [menuVisible, setMenuVisible] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [legacyRatio, setLegacyRatio] = useState<number>(4 / 3);
+  const [legacyViewerVisible, setLegacyViewerVisible] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
 
   useEffect(() => {
@@ -107,20 +108,20 @@ const PostCardComponent: React.FC<PostCardProps> = ({
     return '🎭';
   };
 
-  const postAuthorId = typeof post.author === 'object' && post.author !== null
-    ? (post.author as any).id
-    : post.author;
+  const postAuthorId =
+    typeof post.author === 'object' && post.author !== null
+      ? (post.author as any).id
+      : post.author;
 
   const isAuthor = Boolean(
     post.is_author ||
-    currentUser?.is_staff ||
-    currentUser?.is_superuser ||
-    (currentUser && (
-      (postAuthorId && currentUser.id && String(postAuthorId) === String(currentUser.id)) ||
-      (currentUser.email && post.author_name === currentUser.email.split('@')[0]) ||
-      (currentUser.full_name && post.author_name === currentUser.full_name) ||
-      (currentUser.username && post.author_username === currentUser.username)
-    ))
+      currentUser?.is_staff ||
+      currentUser?.is_superuser ||
+      (currentUser &&
+        ((postAuthorId && currentUser.id && String(postAuthorId) === String(currentUser.id)) ||
+          (currentUser.email && post.author_name === currentUser.email.split('@')[0]) ||
+          (currentUser.full_name && post.author_name === currentUser.full_name) ||
+          (currentUser.username && post.author_username === currentUser.username)))
   );
 
   const formatTimestamp = (dateStr: string) => {
@@ -145,7 +146,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
 
   const handleOpenDocument = (url?: string) => {
     if (!url) {
-      Alert.alert('Document', 'Document file is being processed.');
+      showCrossPlatformAlert('Document', 'Document file is being processed.');
       return;
     }
     const fullUrl = getFullMediaUrl(url);
@@ -153,12 +154,10 @@ const PostCardComponent: React.FC<PostCardProps> = ({
       window.open(fullUrl, '_blank');
     } else {
       Linking.openURL(fullUrl).catch(() => {
-        Alert.alert('Cannot Open File', 'Could not open document URL.');
+        showCrossPlatformAlert('Cannot Open File', 'Could not open document URL.');
       });
     }
   };
-
-  const authorInitial = (post.author_name || 'S').charAt(0).toUpperCase();
 
   // Unified Media Attachments with backend host resolution
   const imageAttachments = (post.attachments || [])
@@ -191,7 +190,43 @@ const PostCardComponent: React.FC<PostCardProps> = ({
     post.media_type === 'VIDEO' ||
     Boolean(videoAttachment) ||
     Boolean(singleMediaUrl && singleMediaUrl.match(/\.(mp4|webm|mov|mkv|avi|m4v)(\?.*)?$/i));
-  const postVideoUrl = videoAttachment ? getFullMediaUrl(videoAttachment.file_url) : (isVideoMedia ? singleMediaUrl : null);
+  const postVideoUrl = videoAttachment
+    ? getFullMediaUrl(videoAttachment.file_url)
+    : isVideoMedia
+    ? singleMediaUrl
+    : null;
+
+  useEffect(() => {
+    setImageError(false);
+    if (!singleMediaUrl || isVideoMedia || allImages.length > 0) return;
+    let cancelled = false;
+    measureImageSize(singleMediaUrl).then((dims) => {
+      if (!cancelled && dims) {
+        setLegacyRatio(clampAspectRatio(dims.width, dims.height, 4 / 3));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [singleMediaUrl, isVideoMedia, allImages.length]);
+
+  const renderContentWithMentions = (text: string) => {
+    const tokens = text.split(/(\s+)/);
+    return (
+      <Text style={[styles.content, { color: colors.textPrimary }]}>
+        {tokens.map((tok, idx) => {
+          if (/^@[a-zA-Z0-9_.-]{1,32}[.,!?:;)]*$/.test(tok)) {
+            return (
+              <Text key={idx} style={{ color: colors.primaryHover, fontWeight: '700' }}>
+                {tok}
+              </Text>
+            );
+          }
+          return tok;
+        })}
+      </Text>
+    );
+  };
 
   return (
     <View
@@ -203,7 +238,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
         },
       ]}
     >
-      {/* 1. Header: Author & Campus Origin */}
+      {/* 1. Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.authorRow}
@@ -211,39 +246,16 @@ const PostCardComponent: React.FC<PostCardProps> = ({
           onPress={() => post.author && onAuthorPress?.(post.author)}
           activeOpacity={0.75}
         >
-          {post.is_anonymous ? (
-            <View
-              style={[
-                styles.avatar,
-                styles.anonAvatar,
-                {
-                  backgroundColor: isDark ? 'rgba(113, 112, 255, 0.15)' : '#eef2ff',
-                  borderColor: isDark ? 'rgba(113, 112, 255, 0.3)' : '#c7d2fe',
-                },
-              ]}
-            >
-              <Text style={styles.avatarText}>
-                {getAnonymousMascot(post.author_name || (post as any).anonymous_alias)}
-              </Text>
-            </View>
-          ) : post.author_avatar ? (
-            <Image
-              source={{ uri: getFullMediaUrl(post.author_avatar) }}
-              style={[styles.avatar, { borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : colors.cardBorder }]}
-            />
-          ) : (
-            <View
-              style={[
-                styles.avatar,
-                {
-                  backgroundColor: isDark ? '#18191b' : colors.surfaceLight,
-                  borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : colors.cardBorder,
-                },
-              ]}
-            >
-              <Text style={[styles.avatarText, { color: colors.primary }]}>{authorInitial}</Text>
-            </View>
-          )}
+          <UserAvatar
+            uri={post.author_avatar}
+            name={post.author_name}
+            size={42}
+            borderWidth={1.5}
+            borderColor={isDark ? 'rgba(255, 255, 255, 0.12)' : colors.cardBorder}
+            isAnonymous={post.is_anonymous}
+            mascot={getAnonymousMascot(post.author_name || post.anonymous_alias)}
+            style={{ marginRight: 11 }}
+          />
 
           <View style={styles.authorInfo}>
             <View style={styles.nameLine}>
@@ -261,12 +273,14 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                   style={[
                     styles.anonPill,
                     {
-                      backgroundColor: isDark ? 'rgba(113, 112, 255, 0.12)' : '#eef2ff',
-                      borderColor: isDark ? 'rgba(113, 112, 255, 0.25)' : '#c7d2fe',
+                      backgroundColor: colors.anonBadge,
+                      borderColor: colors.anonPurple + '44',
                     },
                   ]}
                 >
-                  <Text style={[styles.anonPillText, { color: isDark ? '#a5b4fc' : '#4f46e5' }]}>Anonymous</Text>
+                  <Text style={[styles.anonPillText, { color: colors.anonPurple }]}>
+                    Anonymous
+                  </Text>
                 </View>
               )}
             </View>
@@ -276,8 +290,12 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                 style={[
                   styles.communityBadge,
                   {
-                    backgroundColor: isDark ? 'rgba(94, 106, 210, 0.12)' : 'rgba(79, 70, 229, 0.08)',
-                    borderColor: isDark ? 'rgba(94, 106, 210, 0.24)' : 'rgba(79, 70, 229, 0.15)',
+                    backgroundColor: isDark
+                      ? 'rgba(94, 106, 210, 0.12)'
+                      : 'rgba(79, 70, 229, 0.08)',
+                    borderColor: isDark
+                      ? 'rgba(94, 106, 210, 0.24)'
+                      : 'rgba(79, 70, 229, 0.15)',
                   },
                 ]}
               >
@@ -286,14 +304,19 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                 </Text>
               </View>
               <Text style={[styles.metaDot, { color: colors.textTertiary }]}>•</Text>
-              <Text style={[styles.timestamp, { color: colors.textMuted }]}>{formatTimestamp(post.created_at)}</Text>
+              <Text style={[styles.timestamp, { color: colors.textMuted }]}>
+                {formatTimestamp(post.created_at)}
+              </Text>
             </View>
           </View>
         </TouchableOpacity>
 
         {/* 3-dots Menu Button */}
         <TouchableOpacity
-          style={[styles.moreButton, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'transparent' }]}
+          style={[
+            styles.moreButton,
+            { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'transparent' },
+          ]}
           onPress={() => setMenuVisible(true)}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           accessibilityLabel="Post options"
@@ -305,11 +328,11 @@ const PostCardComponent: React.FC<PostCardProps> = ({
       {/* 2. Post Text Content */}
       {post.content ? (
         <TouchableOpacity onPress={() => onCommentPress(post)} activeOpacity={0.92}>
-          <Text style={[styles.content, { color: colors.textPrimary }]}>{post.content}</Text>
+          {renderContentWithMentions(post.content)}
         </TouchableOpacity>
       ) : null}
 
-      {/* 3. Post Attachments (Playable Video, Images, & Academic Documents) */}
+      {/* 3. Post Video */}
       {postVideoUrl ? (
         <View style={styles.videoWrapper}>
           {Platform.OS === 'web' ? (
@@ -319,7 +342,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
               playsInline
               style={{
                 width: '100%',
-                maxHeight: 380,
+                maxHeight: 400,
                 objectFit: 'contain',
                 display: 'block',
                 borderRadius: 12,
@@ -328,7 +351,10 @@ const PostCardComponent: React.FC<PostCardProps> = ({
             />
           ) : (
             <TouchableOpacity
-              style={[styles.imageContainer, { height: 210, justifyContent: 'center', alignItems: 'center', backgroundColor: '#090d16' }]}
+              style={[
+                styles.videoPlaceholder,
+                { backgroundColor: '#090d16' },
+              ]}
               onPress={() => Linking.openURL(postVideoUrl)}
             >
               <View style={styles.playButtonCircle}>
@@ -338,26 +364,68 @@ const PostCardComponent: React.FC<PostCardProps> = ({
             </TouchableOpacity>
           )}
         </View>
-      ) : allImages.length > 0 ? (
+      ) : null}
+
+      {/* 4. Post Images (Proportional up to 9:16 via MediaGrid or adaptive legacy frame) */}
+      {allImages.length > 0 ? (
         <View style={styles.mediaGridWrapper}>
           <MediaGrid images={allImages} />
         </View>
-      ) : singleMediaUrl && (post.media_type === 'IMAGE' || !post.media_type) && !imageError ? (
-        <TouchableOpacity
-          style={[styles.imageContainer, { backgroundColor: isDark ? '#121315' : '#f1f5f9' }]}
-          onPress={() => onCommentPress(post)}
-          activeOpacity={0.95}
-        >
-          <Image
-            source={{ uri: singleMediaUrl }}
-            style={styles.postImage}
-            resizeMode="cover"
-            onError={() => setImageError(true)}
+      ) : !isVideoMedia &&
+        singleMediaUrl &&
+        (post.media_type === 'IMAGE' || !post.media_type) &&
+        !imageError ? (
+        <>
+          <TouchableOpacity
+            style={[
+              styles.imageContainer,
+              {
+                aspectRatio: legacyRatio,
+                maxHeight: 520,
+                backgroundColor: colors.surfaceLight,
+              },
+            ]}
+            onPress={() => setLegacyViewerVisible(true)}
+            activeOpacity={0.95}
+          >
+            <Image
+              source={{ uri: singleMediaUrl }}
+              style={styles.postImage}
+              resizeMode="contain"
+              onLoad={(e: any) => {
+                const src = e?.nativeEvent?.source;
+                const w = src?.width || e?.target?.naturalWidth;
+                const h = src?.height || e?.target?.naturalHeight;
+                if (w && h) {
+                  setLegacyRatio(clampAspectRatio(w, h, legacyRatio));
+                }
+              }}
+              onError={() => setImageError(true)}
+            />
+          </TouchableOpacity>
+          <ImageViewerModal
+            visible={legacyViewerVisible}
+            images={[
+              {
+                id: String(post.id),
+                file_url: singleMediaUrl,
+                download_url: singleMediaUrl,
+                file_name: 'post_image.jpg',
+                file_type: 'IMAGE',
+                file_extension: 'jpg',
+                mime_type: 'image/jpeg',
+                file_size: 0,
+                file_size_formatted: '',
+                created_at: post.created_at,
+              },
+            ]}
+            initialIndex={0}
+            onClose={() => setLegacyViewerVisible(false)}
           />
-        </TouchableOpacity>
+        </>
       ) : null}
 
-      {/* Unified Academic Documents */}
+      {/* 5. Academic Documents */}
       {docAttachments.length > 0 ? (
         <View style={{ marginHorizontal: 12, marginVertical: 6, gap: 6 }}>
           {docAttachments.map((doc, idx) => (
@@ -401,7 +469,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
         </TouchableOpacity>
       ) : null}
 
-      {/* 4. Footer Action Bar (Tactile Engagement Pills) */}
+      {/* 6. Footer Action Bar */}
       <View
         style={[
           styles.footer,
@@ -411,7 +479,6 @@ const PostCardComponent: React.FC<PostCardProps> = ({
         ]}
       >
         <View style={styles.actionGroup}>
-          {/* Like Pill */}
           <TouchableOpacity
             style={[
               styles.actionPill,
@@ -438,7 +505,6 @@ const PostCardComponent: React.FC<PostCardProps> = ({
             </Text>
           </TouchableOpacity>
 
-          {/* Comment Pill */}
           <TouchableOpacity
             style={styles.actionPill}
             onPress={() => onCommentPress(post)}
@@ -450,7 +516,6 @@ const PostCardComponent: React.FC<PostCardProps> = ({
             </Text>
           </TouchableOpacity>
 
-          {/* Share Pill */}
           <TouchableOpacity
             style={styles.actionIconBtn}
             onPress={() => onSharePress(post)}
@@ -459,7 +524,6 @@ const PostCardComponent: React.FC<PostCardProps> = ({
             <Share2 size={17} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          {/* Bookmark Pill */}
           <TouchableOpacity
             style={[
               styles.actionIconBtn,
@@ -479,7 +543,6 @@ const PostCardComponent: React.FC<PostCardProps> = ({
           </TouchableOpacity>
         </View>
 
-        {/* Post Visibility / Audience Badge */}
         {(() => {
           let label = 'All campus';
           if (post.visibility === 'COLLEGE') label = 'My college';
@@ -548,7 +611,9 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                   }}
                 >
                   <Archive size={17} color={colors.textPrimary} />
-                  <Text style={[styles.menuItemText, { color: colors.textPrimary }]}>Archive Post</Text>
+                  <Text style={[styles.menuItemText, { color: colors.textPrimary }]}>
+                    Archive Post
+                  </Text>
                 </TouchableOpacity>
               )}
 
@@ -556,7 +621,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                 style={styles.menuItem}
                 onPress={() => {
                   setMenuVisible(false);
-                  Alert.alert('Reported', 'Thank you for keeping our campus safe.');
+                  showCrossPlatformAlert('Reported', 'Thank you for keeping our campus safe.');
                 }}
               >
                 <Text style={[styles.menuItemText, { color: colors.textSecondary }]}>
@@ -591,23 +656,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-  },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 11,
-    borderWidth: 1.5,
-  },
-  anonAvatar: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontWeight: '700',
-    fontSize: 16,
   },
   authorInfo: {
     flex: 1,
@@ -693,6 +741,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#000',
   },
+  videoPlaceholder: {
+    width: '100%',
+    height: 220,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   playButtonCircle: {
     width: 56,
     height: 56,
@@ -713,7 +767,6 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     width: '100%',
-    aspectRatio: 4 / 3,
     marginTop: 6,
     overflow: 'hidden',
   },

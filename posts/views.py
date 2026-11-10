@@ -9,7 +9,7 @@ from django.db.models import Count, Q, Exists, OuterRef, Subquery, IntegerField
 from django.db.models.functions import Coalesce
 from django.contrib.auth import get_user_model
 from communities.models import Community, CommunityMember
-from notifications.views import create_notification
+from notifications.views import create_notification, resolve_mentioned_users
 from attachments.services import AttachmentService
 from profiles.models import Connection, Follow, UserBlock, StudentProfile
 from .models import Post, PostImage, PostLike, Comment
@@ -195,17 +195,61 @@ class CreatePostView(APIView):
                 if college_comm:
                     community_id = college_comm.id
 
-        post_data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
+        # Validate uploaded attachments upfront before creating the Post so errors (e.g. >20 MB doc) fail loudly
+        attachments = request.FILES.getlist("attachments") or request.FILES.getlist("files")
+        doc = request.FILES.get("document")
+        images = request.FILES.getlist("images")
+
+        from attachments.services import MAX_DOC_SIZE
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        validated_meta = []
+        for att_file in attachments:
+            try:
+                meta = AttachmentService.validate_and_process_file(att_file)
+                validated_meta.append(meta)
+            except DjangoValidationError as err:
+                msg = err.message if hasattr(err, "message") else str(err)
+                return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
+
+        if doc and doc.size > MAX_DOC_SIZE:
+            return Response(
+                {"error": f"Document '{doc.name}' exceeds the 20 MB limit. Try uploading 2 different files."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Shallow dict copy avoids QueryDict.copy() deepcopy crash on >2.5MB TemporaryUploadedFile BufferedRandom handles
+        post_data = {
+            k: request.data.get(k)
+            for k in request.data.keys()
+            if k not in request.FILES
+        }
         post_data["visibility"] = visibility
         post_data["community"] = community_id
+
+        # Never persist massive inline data: base64 URIs in Post.media_url when binary uploads are used
+        raw_media_url = post_data.get("media_url", "")
+        if isinstance(raw_media_url, str) and raw_media_url.startswith("data:"):
+            post_data["media_url"] = ""
+
+        # Infer accurate media_type from validated attachments when present
+        if validated_meta:
+            file_types = [m["file_type"] for m in validated_meta]
+            if "VIDEO" in file_types:
+                post_data["media_type"] = "VIDEO"
+            elif "IMAGE" in file_types:
+                post_data["media_type"] = "IMAGE"
+            elif "DOCUMENT" in file_types:
+                post_data["media_type"] = "DOCUMENT"
+        elif images:
+            post_data["media_type"] = "IMAGE"
 
         serializer = PostSerializer(data=post_data, context={"request": request})
         serializer.is_valid(raise_exception=True)
 
         post = serializer.save(author=request.user)
 
-        # Handle unified attachments (images, PDFs, documents)
-        attachments = request.FILES.getlist("attachments") or request.FILES.getlist("files")
+        # Persist validated unified attachments (images, videos, PDFs, documents)
         for idx, att_file in enumerate(attachments):
             try:
                 AttachmentService.create_attachment(
@@ -214,17 +258,16 @@ class CreatePostView(APIView):
                     post=post,
                     order=idx
                 )
-            except Exception as e:
-                # Still allow post creation even if an attachment fails
-                pass
+            except DjangoValidationError as err:
+                post.delete()
+                msg = err.message if hasattr(err, "message") else str(err)
+                return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
 
         # Handle legacy multiple image uploads
-        images = request.FILES.getlist("images")
         for img in images:
             PostImage.objects.create(post=post, image=img)
 
         # Handle legacy document/PDF upload
-        doc = request.FILES.get("document")
         if doc:
             post.document = doc
             if not post.document_name:
@@ -233,6 +276,23 @@ class CreatePostView(APIView):
             post.document_size = f"{size_kb:.1f} KB" if size_kb < 1024 else f"{(size_kb/1024):.1f} MB"
             post.media_type = "DOCUMENT"
             post.save(update_fields=["document", "document_name", "document_size", "media_type"])
+
+        # Parse @mentions in post caption (exact username priority, excluding blocked users)
+        if post.content:
+            sender_name = (
+                post.anonymous_alias or "Anonymous Student"
+                if post.is_anonymous
+                else (request.user.full_name or request.user.email.split("@")[0])
+            )
+            for tagged_user in resolve_mentioned_users(post.content, actor_user=request.user):
+                create_notification(
+                    recipient=tagged_user,
+                    sender=request.user if not post.is_anonymous else None,
+                    notification_type='TAG',
+                    title='You were mentioned 🏷️',
+                    message=f"{sender_name} mentioned you in a post.",
+                    data={'post_id': post.id}
+                )
 
         output_serializer = PostSerializer(post, context={"request": request})
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
@@ -313,7 +373,9 @@ class PostDetailView(APIView):
         return Response(serializer.data)
 
     def _safe_unauthorized_response(self, request, post, reason_message):
+        from config.media_utils import resolve_media_url
         prof = getattr(post.author, "profile", None)
+        avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
         return Response({
             "detail": reason_message,
             "is_private": True,
@@ -323,7 +385,7 @@ class PostDetailView(APIView):
                 "id": post.author.id,
                 "full_name": post.author.full_name or (prof.username if prof else post.author.email.split("@")[0]),
                 "username": prof.username if prof else "",
-                "avatar": prof.profile_picture.url if (prof and prof.profile_picture) else None,
+                "avatar": avatar_url,
                 "college_name": prof.college.name if (prof and prof.college) else "",
                 "branch_name": prof.branch.name if (prof and prof.branch) else "",
                 "is_verified": getattr(post.author, "is_verified_student", False),
@@ -387,7 +449,7 @@ class PostCommentsView(APIView):
     def get(self, request, post_id):
         post = get_object_or_404(Post, id=post_id, is_deleted=False)
         comments = post.comments.filter(parent=None).select_related("user", "user__profile").prefetch_related("replies")
-        serializer = CommentSerializer(comments, many=True)
+        serializer = CommentSerializer(comments, many=True, context={"request": request})
         return Response(serializer.data)
 
     def post(self, request, post_id):
@@ -436,25 +498,19 @@ class PostCommentsView(APIView):
                 data={'post_id': post.id, 'comment_id': comment.id}
             )
 
-        # Parse @mentions for tagging notifications
-        mention_tags = set(re.findall(r'@([a-zA-Z0-9_\.]+)', text))
-        for tag in mention_tags:
-            matching_users = User.objects.filter(
-                Q(email__istartswith=tag) | Q(full_name__icontains=tag)
-            ).exclude(id__in=notified_user_ids)[:3]
+        # Parse @mentions for tagging notifications (prioritize exact username, exclude blocked)
+        for tagged_user in resolve_mentioned_users(text, actor_user=request.user, exclude_ids=notified_user_ids):
+            notified_user_ids.add(tagged_user.id)
+            create_notification(
+                recipient=tagged_user,
+                sender=request.user if not is_anonymous else None,
+                notification_type='TAG',
+                title='You were tagged 🏷️',
+                message=f"{sender_name} mentioned you in a comment.",
+                data={'post_id': post.id, 'comment_id': comment.id}
+            )
 
-            for tagged_user in matching_users:
-                notified_user_ids.add(tagged_user.id)
-                create_notification(
-                    recipient=tagged_user,
-                    sender=request.user if not is_anonymous else None,
-                    notification_type='TAG',
-                    title='You were tagged 🏷️',
-                    message=f"{sender_name} mentioned you in a comment.",
-                    data={'post_id': post.id, 'comment_id': comment.id}
-                )
-
-        serializer = CommentSerializer(comment)
+        serializer = CommentSerializer(comment, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from config.media_utils import resolve_media_url
 from attachments.serializers import MediaAttachmentSerializer
 from .models import Conversation, ConversationMember, Message
 
@@ -27,7 +28,7 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def get_sender_avatar(self, obj):
         if hasattr(obj.sender, "profile") and obj.sender.profile.profile_picture:
-            return obj.sender.profile.profile_picture.url
+            return resolve_media_url(self.context.get("request"), obj.sender.profile.profile_picture)
         return None
 
 
@@ -46,7 +47,7 @@ class ConversationMemberSerializer(serializers.ModelSerializer):
 
     def get_avatar(self, obj):
         if hasattr(obj.user, "profile") and obj.user.profile.profile_picture:
-            return obj.user.profile.profile_picture.url
+            return resolve_media_url(self.context.get("request"), obj.user.profile.profile_picture)
         return None
 
 
@@ -116,13 +117,16 @@ class ConversationSerializer(serializers.ModelSerializer):
             return None
         other_user = obj.get_other_member(request.user)
         if other_user:
+            prof = getattr(other_user, "profile", None)
+            avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
             return {
                 "id": other_user.id,
                 "email": other_user.email,
                 "name": other_user.full_name or other_user.email.split("@")[0],
                 "full_name": other_user.full_name or other_user.email.split("@")[0],
-                "username": getattr(other_user.profile, "username", "") if hasattr(other_user, "profile") else "",
-                "avatar": other_user.profile.profile_picture.url if hasattr(other_user, "profile") and other_user.profile.profile_picture else None,
+                "username": getattr(prof, "username", "") if prof else "",
+                "avatar": avatar_url,
+                "profile_picture": avatar_url,
             }
         return None
 
@@ -170,6 +174,7 @@ class MessageRequestSerializer(serializers.ModelSerializer):
         s = obj.sender
         prof = getattr(s, "profile", None)
         conn_status = Connection.get_status(current_user, s) if current_user else "NOT_CONNECTED"
+        avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
         return {
             "id": s.id,
             "full_name": s.full_name or (prof.username if prof else s.email.split("@")[0]),
@@ -177,7 +182,8 @@ class MessageRequestSerializer(serializers.ModelSerializer):
             "email": s.email,
             "college_name": prof.college.name if (prof and prof.college) else "",
             "branch_name": prof.branch.name if (prof and prof.branch) else "",
-            "avatar": prof.profile_picture.url if (prof and prof.profile_picture) else None,
+            "avatar": avatar_url,
+            "profile_picture": avatar_url,
             "is_verified": getattr(s, "is_verified_student", False),
             "connection_status": conn_status,
         }

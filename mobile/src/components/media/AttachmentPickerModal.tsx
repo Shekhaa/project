@@ -1,31 +1,46 @@
 import React, { useState } from 'react';
 import {
-  Modal,
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Image,
-  ScrollView,
-  TextInput,
   ActivityIndicator,
+  Image,
+  Modal,
   Platform,
-  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import {
-  X,
-  Image as ImageIcon,
-  FileText,
-  Camera,
-  Send,
-  Trash2,
+  AlertCircle,
   Crop,
-  Zap,
+  FileText,
+  Image as ImageIcon,
   Mic,
   Music,
+  Send,
   Video,
+  X,
 } from 'lucide-react-native';
-import { ImageCropperModal, smartAutoCropImage } from './ImageCropperModal';
+import { ImageCropperModal } from './ImageCropperModal';
+import { useTheme } from '../../theme/ThemeContext';
+import {
+  IMAGE_QUALITY_OPTIONS,
+  IMAGE_QUALITY_PRESETS,
+  ImageQualityPreset,
+  MAX_DOCUMENT_BYTES,
+  MAX_DOCUMENT_MB,
+  MAX_VIDEO_BYTES,
+  MAX_VIDEO_MB,
+  alertOversizedDocuments,
+  dataUrlToWebFile,
+  formatFileSize,
+  processWebImageForUpload,
+  showCrossPlatformAlert,
+  splitDocumentsBySizeLimit,
+} from '../../utils/mediaUtils';
+
+export { dataUrlToWebFile as dataURLtoFile } from '../../utils/mediaUtils';
 
 export interface StagedAttachment {
   id: string;
@@ -38,6 +53,10 @@ export interface StagedAttachment {
   file?: any; // Native File on Web
   caption?: string;
   mimeType?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  sourceUri?: string;
+  sourceFile?: any;
 }
 
 interface AttachmentPickerModalProps {
@@ -46,76 +65,81 @@ interface AttachmentPickerModalProps {
   onSend: (attachments: StagedAttachment[], messageText: string) => Promise<void>;
 }
 
-export const dataURLtoFile = (dataurl: string, filename: string): any => {
-  if (typeof window === 'undefined' || !dataurl.startsWith('data:')) return null;
-  try {
-    const arr = dataurl.split(',');
-    const mimeMatch = arr[0].match(/:(.*?);/);
-    const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
-    }
-    return new File([u8arr], filename, { type: mime });
-  } catch (e) {
-    console.warn('dataURLtoFile failed', e);
-    return null;
-  }
-};
-
 export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
   visible,
   onClose,
   onSend,
 }) => {
+  const { colors } = useTheme();
   const [stagedFiles, setStagedFiles] = useState<StagedAttachment[]>([]);
   const [messageText, setMessageText] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [processingImages, setProcessingImages] = useState(false);
+  const [imageQuality, setImageQuality] = useState<ImageQualityPreset>('HIGH');
+  const [docSizeError, setDocSizeError] = useState<string | null>(null);
   const [croppingImage, setCroppingImage] = useState<StagedAttachment | null>(null);
-  const [autoCropping, setAutoCropping] = useState(false);
 
-  const handleCropComplete = (croppedUri: string) => {
+  const hasStagedImages = stagedFiles.some((f) => f.type === 'IMAGE');
+
+  const handleCropComplete = (croppedUri: string, cropW?: number, cropH?: number) => {
     if (!croppingImage) return;
     const newFile = croppedUri.startsWith('data:')
-      ? (dataURLtoFile(croppedUri, croppingImage.name || 'cropped.jpg') || croppingImage.file)
+      ? dataUrlToWebFile(croppedUri, croppingImage.name || 'cropped.jpg') || croppingImage.file
       : croppingImage.file;
+    const newSize = newFile?.size || croppingImage.size;
 
     setStagedFiles((prev) =>
       prev.map((item) =>
         item.id === croppingImage.id
-          ? { ...item, uri: croppedUri, file: newFile }
+          ? {
+              ...item,
+              uri: croppedUri,
+              file: newFile,
+              sourceUri: croppedUri,
+              sourceFile: newFile,
+              size: newSize,
+              sizeFormatted: formatFileSize(newSize),
+              imageWidth: cropW || item.imageWidth,
+              imageHeight: cropH || item.imageHeight,
+            }
           : item
       )
     );
     setCroppingImage(null);
   };
 
-  const handleDirectAutoCrop = async (targetFile: StagedAttachment) => {
+  const handleQualityPresetChange = async (preset: ImageQualityPreset) => {
+    setImageQuality(preset);
+    if (Platform.OS !== 'web') return;
+
+    const currentImages = stagedFiles.filter((f) => f.type === 'IMAGE');
+    if (currentImages.length === 0) return;
+
+    setProcessingImages(true);
     try {
-      setAutoCropping(true);
-      const cropped = await smartAutoCropImage(targetFile.uri);
-      const newFile = cropped.startsWith('data:')
-        ? (dataURLtoFile(cropped, targetFile.name || 'cropped.jpg') || targetFile.file)
-        : targetFile.file;
-
+      const updatedMap = new Map<string, Partial<StagedAttachment>>();
+      for (const item of currentImages) {
+        const src = item.sourceFile || item.sourceUri || item.uri;
+        if (!src) continue;
+        const processed = await processWebImageForUpload(src, item.name, preset);
+        updatedMap.set(item.id, {
+          uri: processed.uri || item.uri,
+          file: processed.file || item.file,
+          size: processed.size || item.size,
+          sizeFormatted: formatFileSize(processed.size || item.size),
+          imageWidth: processed.width || item.imageWidth,
+          imageHeight: processed.height || item.imageHeight,
+          mimeType: processed.mimeType || item.mimeType,
+        });
+      }
       setStagedFiles((prev) =>
-        prev.map((item) => (item.id === targetFile.id ? { ...item, uri: cropped, file: newFile } : item))
+        prev.map((item) =>
+          updatedMap.has(item.id) ? { ...item, ...updatedMap.get(item.id)! } : item
+        )
       );
-    } catch (e) {
-      console.warn('Direct auto crop error', e);
     } finally {
-      setAutoCropping(false);
+      setProcessingImages(false);
     }
-  };
-
-  const formatBytes = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    const kb = bytes / 1024;
-    if (kb < 1024) return `${kb.toFixed(1)} KB`;
-    return `${(kb / 1024).toFixed(1)} MB`;
   };
 
   const handlePickWeb = (accept: string, isDoc: boolean) => {
@@ -124,34 +148,116 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
     input.type = 'file';
     input.multiple = true;
     input.accept = accept;
-    input.onchange = (e: any) => {
+    input.onchange = async (e: any) => {
       const files: File[] = Array.from(e.target.files || []);
-      const newItems: StagedAttachment[] = files.map((file) => {
-        const ext = file.name.split('.').pop()?.toLowerCase() || '';
-        const isAud =
-          file.type.startsWith('audio/') ||
-          ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus'].includes(ext) ||
-          (ext === 'webm' && !file.type.startsWith('video/'));
-        const isVid = !isAud && (file.type.startsWith('video/') || ['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v'].includes(ext));
-        const isImage = !isDoc && !isVid && !isAud && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
-        let fileType: 'IMAGE' | 'DOCUMENT' | 'AUDIO' | 'VIDEO' = 'DOCUMENT';
-        if (isAud) fileType = 'AUDIO';
-        else if (isVid) fileType = 'VIDEO';
-        else if (isImage) fileType = 'IMAGE';
+      if (files.length === 0) return;
 
-        return {
-          id: Math.random().toString(36).substring(7),
-          uri: URL.createObjectURL(file),
-          name: file.name,
-          size: file.size,
-          sizeFormatted: formatBytes(file.size),
-          type: fileType,
-          extension: ext,
-          file,
-          mimeType: file.type,
-        };
-      });
-      setStagedFiles((prev) => [...prev, ...newItems]);
+      if (isDoc) {
+        const candidates = files.map((file) => ({ file, name: file.name, size: file.size }));
+        const { valid, oversized } = splitDocumentsBySizeLimit(candidates, MAX_DOCUMENT_BYTES);
+        if (oversized.length > 0) {
+          const msg = alertOversizedDocuments(oversized);
+          setDocSizeError(msg);
+        } else {
+          setDocSizeError(null);
+        }
+        const newDocs: StagedAttachment[] = valid.map(({ file }) => {
+          const ext = file.name.split('.').pop()?.toLowerCase() || '';
+          return {
+            id: Math.random().toString(36).substring(7),
+            uri: URL.createObjectURL(file),
+            name: file.name,
+            size: file.size,
+            sizeFormatted: formatFileSize(file.size),
+            type: 'DOCUMENT',
+            extension: ext,
+            file,
+            mimeType: file.type || 'application/octet-stream',
+          };
+        });
+        if (newDocs.length > 0) {
+          setStagedFiles((prev) => [...prev, ...newDocs]);
+        }
+        return;
+      }
+
+      setProcessingImages(true);
+      const newItems: StagedAttachment[] = [];
+      try {
+        for (const file of files) {
+          const ext = file.name.split('.').pop()?.toLowerCase() || '';
+          const isAud =
+            file.type.startsWith('audio/') ||
+            ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus'].includes(ext) ||
+            (ext === 'webm' && !file.type.startsWith('video/'));
+          const isVid =
+            !isAud &&
+            (file.type.startsWith('video/') ||
+              ['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v'].includes(ext));
+          const isImage =
+            !isVid && !isAud && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
+
+          if (isVid) {
+            if (file.size > MAX_VIDEO_BYTES) {
+              showCrossPlatformAlert(
+                `Video Exceeds ${MAX_VIDEO_MB} MB`,
+                `"${file.name}" (${formatFileSize(file.size)}) is larger than ${MAX_VIDEO_MB} MB.`
+              );
+              continue;
+            }
+            newItems.push({
+              id: Math.random().toString(36).substring(7),
+              uri: URL.createObjectURL(file),
+              name: file.name,
+              size: file.size,
+              sizeFormatted: formatFileSize(file.size),
+              type: 'VIDEO',
+              extension: ext || 'mp4',
+              file,
+              mimeType: file.type || 'video/mp4',
+            });
+          } else if (isImage) {
+            const processed = await processWebImageForUpload(file, file.name, imageQuality);
+            newItems.push({
+              id: Math.random().toString(36).substring(7),
+              uri: processed.uri || URL.createObjectURL(file),
+              name: file.name,
+              size: processed.size || file.size,
+              sizeFormatted: formatFileSize(processed.size || file.size),
+              type: 'IMAGE',
+              extension: ext || 'jpg',
+              file: processed.file || file,
+              sourceFile: file,
+              mimeType: processed.mimeType || file.type || 'image/jpeg',
+              imageWidth: processed.width || undefined,
+              imageHeight: processed.height || undefined,
+            });
+          } else {
+            // Audio or misc file
+            if (!isAud && file.size > MAX_DOCUMENT_BYTES) {
+              const msg = alertOversizedDocuments([{ name: file.name, size: file.size }]);
+              setDocSizeError(msg);
+              continue;
+            }
+            newItems.push({
+              id: Math.random().toString(36).substring(7),
+              uri: URL.createObjectURL(file),
+              name: file.name,
+              size: file.size,
+              sizeFormatted: formatFileSize(file.size),
+              type: isAud ? 'AUDIO' : 'DOCUMENT',
+              extension: ext,
+              file,
+              mimeType: file.type,
+            });
+          }
+        }
+        if (newItems.length > 0) {
+          setStagedFiles((prev) => [...prev, ...newItems]);
+        }
+      } finally {
+        setProcessingImages(false);
+      }
     };
     input.click();
   };
@@ -169,24 +275,35 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
         quality: 1,
       });
       if (!result.canceled && result.assets) {
-        const newItems: StagedAttachment[] = result.assets.map((asset: any) => {
+        const newItems: StagedAttachment[] = [];
+        for (const asset of result.assets) {
+          const size = asset.fileSize || 0;
           const fileName = asset.fileName || `video_${Date.now()}.mp4`;
+          if (size > MAX_VIDEO_BYTES) {
+            showCrossPlatformAlert(
+              `Video Exceeds ${MAX_VIDEO_MB} MB`,
+              `"${fileName}" (${formatFileSize(size)}) is larger than ${MAX_VIDEO_MB} MB.`
+            );
+            continue;
+          }
           const ext = fileName.split('.').pop()?.toLowerCase() || 'mp4';
-          return {
+          newItems.push({
             id: Math.random().toString(36).substring(7),
             uri: asset.uri,
             name: fileName,
-            size: asset.fileSize || 0,
-            sizeFormatted: formatBytes(asset.fileSize || 0),
+            size,
+            sizeFormatted: formatFileSize(size),
             type: 'VIDEO',
             extension: ext,
             mimeType: 'video/mp4',
-          };
-        });
-        setStagedFiles((prev) => [...prev, ...newItems]);
+          });
+        }
+        if (newItems.length > 0) {
+          setStagedFiles((prev) => [...prev, ...newItems]);
+        }
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Could not pick video.');
+      showCrossPlatformAlert('Error', err.message || 'Could not pick video.');
     }
   };
 
@@ -200,13 +317,17 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
       const ImagePicker = require('expo-image-picker');
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Camera roll permission is required to select photos.');
+        showCrossPlatformAlert(
+          'Permission Denied',
+          'Camera roll permission is required to select photos.'
+        );
         return;
       }
+      const preset = IMAGE_QUALITY_PRESETS[imageQuality];
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsMultipleSelection: true,
-        quality: 0.85,
+        quality: preset.jpegQuality,
       });
 
       if (!result.canceled && result.assets) {
@@ -216,17 +337,20 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
           return {
             id: Math.random().toString(36).substring(7),
             uri: asset.uri,
+            sourceUri: asset.uri,
             name: fileName,
             size: asset.fileSize || 0,
-            sizeFormatted: formatBytes(asset.fileSize || 0),
+            sizeFormatted: formatFileSize(asset.fileSize || 0),
             type: 'IMAGE',
             extension: ext,
+            imageWidth: asset.width,
+            imageHeight: asset.height,
           };
         });
         setStagedFiles((prev) => [...prev, ...newItems]);
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Could not pick photos.');
+      showCrossPlatformAlert('Error', err.message || 'Could not pick photos.');
     }
   };
 
@@ -245,23 +369,38 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
       });
 
       if (!result.canceled && result.assets) {
-        const newItems: StagedAttachment[] = result.assets.map((asset: any) => {
-          const fileName = asset.name || 'document';
-          const ext = fileName.split('.').pop()?.toLowerCase() || '';
+        const mapped: Array<{ asset: any; name: string; size: number }> = result.assets.map((asset: any) => ({
+          asset,
+          name: asset.name || 'document',
+          size: asset.size || 0,
+        }));
+        const { valid, oversized } = splitDocumentsBySizeLimit(mapped, MAX_DOCUMENT_BYTES);
+        if (oversized.length > 0) {
+          const msg = alertOversizedDocuments(oversized);
+          setDocSizeError(msg);
+        } else {
+          setDocSizeError(null);
+        }
+
+        const newItems: StagedAttachment[] = valid.map(({ asset, name, size }) => {
+          const ext = name.split('.').pop()?.toLowerCase() || '';
           return {
             id: Math.random().toString(36).substring(7),
             uri: asset.uri,
-            name: fileName,
-            size: asset.size || 0,
-            sizeFormatted: formatBytes(asset.size || 0),
+            name,
+            size,
+            sizeFormatted: formatFileSize(size),
             type: 'DOCUMENT',
             extension: ext,
+            mimeType: asset.mimeType,
           };
         });
-        setStagedFiles((prev) => [...prev, ...newItems]);
+        if (newItems.length > 0) {
+          setStagedFiles((prev) => [...prev, ...newItems]);
+        }
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Could not pick documents.');
+      showCrossPlatformAlert('Error', err.message || 'Could not pick documents.');
     }
   };
 
@@ -281,7 +420,7 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
             uri: URL.createObjectURL(file),
             name: file.name,
             size: file.size,
-            sizeFormatted: formatBytes(file.size),
+            sizeFormatted: formatFileSize(file.size),
             type: 'AUDIO',
             extension: ext,
             file,
@@ -311,7 +450,7 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
             uri: asset.uri,
             name: fileName,
             size: asset.size || 0,
-            sizeFormatted: formatBytes(asset.size || 0),
+            sizeFormatted: formatFileSize(asset.size || 0),
             type: 'AUDIO',
             extension: ext,
           };
@@ -319,7 +458,7 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
         setStagedFiles((prev) => [...prev, ...newItems]);
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Could not pick audio file.');
+      showCrossPlatformAlert('Error', err.message || 'Could not pick audio file.');
     }
   };
 
@@ -329,11 +468,21 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
 
   const handleSend = async () => {
     if (stagedFiles.length === 0 && !messageText.trim()) return;
+
+    // Defense-in-depth 20 MB document validation before dispatching
+    const docs = stagedFiles.filter((f) => f.type === 'DOCUMENT');
+    const { oversized } = splitDocumentsBySizeLimit(docs, MAX_DOCUMENT_BYTES);
+    if (oversized.length > 0) {
+      const msg = alertOversizedDocuments(oversized);
+      setDocSizeError(msg);
+      return;
+    }
+
     const filesToSend = [...stagedFiles];
     const textToSend = messageText.trim();
-    // Instantly close drawer so user can immediately see optimistic delivery in chat list
     setStagedFiles([]);
     setMessageText('');
+    setDocSizeError(null);
     onClose();
     try {
       await onSend(filesToSend, textToSend);
@@ -346,41 +495,46 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
     if (uploading) return;
     setStagedFiles([]);
     setMessageText('');
+    setDocSizeError(null);
     onClose();
   };
 
+  const cropPresetConfig = IMAGE_QUALITY_PRESETS[imageQuality];
+
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={handleClose}
-    >
-      <View style={styles.overlay}>
-        <View style={styles.sheet}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      <View style={[styles.overlay, { backgroundColor: colors.modalOverlay }]}>
+        <View
+          style={[
+            styles.sheet,
+            { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+          ]}
+        >
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Share Media & Documents</Text>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>
+              Share Media & Documents
+            </Text>
             <TouchableOpacity
-              style={styles.closeBtn}
+              style={[styles.closeBtn, { backgroundColor: colors.surfaceLight }]}
               onPress={handleClose}
               disabled={uploading}
             >
-              <X size={20} color="#94a3b8" />
+              <X size={20} color={colors.textMuted} />
             </TouchableOpacity>
           </View>
 
-          {/* WhatsApp-Style Action Icons */}
-          <View style={styles.actionRow}>
+          {/* Picker Action Icons */}
+          <View style={[styles.actionRow, { borderBottomColor: colors.hairline }]}>
             <TouchableOpacity
               style={styles.actionPill}
               onPress={handlePickPhotos}
-              disabled={uploading}
+              disabled={uploading || processingImages}
             >
               <View style={[styles.iconCircle, { backgroundColor: '#3b82f6' }]}>
                 <ImageIcon size={22} color="#ffffff" />
               </View>
-              <Text style={styles.actionLabel}>Photos</Text>
+              <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Photos</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -391,7 +545,7 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
               <View style={[styles.iconCircle, { backgroundColor: '#ef4444' }]}>
                 <Video size={22} color="#ffffff" />
               </View>
-              <Text style={styles.actionLabel}>Videos</Text>
+              <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Videos</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -402,7 +556,7 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
               <View style={[styles.iconCircle, { backgroundColor: '#10b981' }]}>
                 <FileText size={22} color="#ffffff" />
               </View>
-              <Text style={styles.actionLabel}>Document</Text>
+              <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Document</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -413,14 +567,88 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
               <View style={[styles.iconCircle, { backgroundColor: '#8b5cf6' }]}>
                 <Mic size={22} color="#ffffff" />
               </View>
-              <Text style={styles.actionLabel}>Audio Note</Text>
+              <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Audio Note</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Helper note on Document limit */}
+          <Text style={[styles.docLimitHint, { color: colors.textMuted }]}>
+            Documents: Original quality preserved • Max {MAX_DOCUMENT_MB} MB per file
+          </Text>
+
+          {/* 20 MB Oversized Document Warning Banner */}
+          {docSizeError && (
+            <View
+              style={[
+                styles.errorBanner,
+                {
+                  backgroundColor: colors.danger + '18',
+                  borderColor: colors.danger,
+                },
+              ]}
+            >
+              <AlertCircle size={16} color={colors.danger} style={{ marginTop: 1 }} />
+              <Text style={[styles.errorBannerText, { color: colors.danger }]}>
+                {docSizeError}
+              </Text>
+              <TouchableOpacity onPress={() => setDocSizeError(null)}>
+                <X size={15} color={colors.danger} />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Image Quality Control (shown ONLY when images are staged; NEVER for documents) */}
+          {hasStagedImages && (
+            <View
+              style={[
+                styles.qualityBar,
+                { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+              ]}
+            >
+              <View style={styles.qualityHeader}>
+                <Text style={[styles.qualityTitle, { color: colors.textSecondary }]}>
+                  Image Quality
+                </Text>
+                <Text style={[styles.qualityHint, { color: colors.textMuted }]}>
+                  {IMAGE_QUALITY_PRESETS[imageQuality].description}
+                </Text>
+              </View>
+              <View style={styles.qualityPillsRow}>
+                {IMAGE_QUALITY_OPTIONS.map((opt) => {
+                  const active = imageQuality === opt.key;
+                  return (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[
+                        styles.qualityPill,
+                        {
+                          backgroundColor: active ? colors.primary : colors.card,
+                          borderColor: active ? colors.primary : colors.cardBorder,
+                        },
+                      ]}
+                      onPress={() => handleQualityPresetChange(opt.key)}
+                      disabled={processingImages}
+                    >
+                      <Text
+                        style={[
+                          styles.qualityPillText,
+                          { color: active ? '#ffffff' : colors.textSecondary },
+                        ]}
+                      >
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                {processingImages && <ActivityIndicator size="small" color={colors.primary} />}
+              </View>
+            </View>
+          )}
 
           {/* Selected Files Preview List */}
           {stagedFiles.length > 0 && (
             <View style={styles.stagedSection}>
-              <Text style={styles.sectionSubtitle}>
+              <Text style={[styles.sectionSubtitle, { color: colors.textMuted }]}>
                 Ready to send ({stagedFiles.length} file{stagedFiles.length > 1 ? 's' : ''}):
               </Text>
               <ScrollView
@@ -430,7 +658,13 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
                 contentContainerStyle={{ paddingHorizontal: 4, gap: 10 }}
               >
                 {stagedFiles.map((file) => (
-                  <View key={file.id} style={styles.stagedCard}>
+                  <View
+                    key={file.id}
+                    style={[
+                      styles.stagedCard,
+                      { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                    ]}
+                  >
                     {file.type === 'IMAGE' ? (
                       <View style={{ position: 'relative' }}>
                         <TouchableOpacity
@@ -439,21 +673,15 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
                         >
                           <Image
                             source={{ uri: file.uri }}
-                            style={styles.stagedThumb}
+                            style={[styles.stagedThumb, { backgroundColor: colors.card }]}
                             resizeMode="cover"
                           />
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={styles.autoCropBadge}
-                          onPress={() => handleDirectAutoCrop(file)}
-                          disabled={autoCropping}
-                          activeOpacity={0.8}
-                          accessibilityLabel="⚡ Auto Crop photo"
-                        >
-                          <Zap size={10} color="#fbbf24" />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.cropBtnBadge}
+                          style={[
+                            styles.cropBtnBadge,
+                            { backgroundColor: colors.primary, borderColor: '#ffffff' },
+                          ]}
                           onPress={() => setCroppingImage(file)}
                           activeOpacity={0.8}
                           accessibilityLabel="Crop photo"
@@ -462,32 +690,63 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
                         </TouchableOpacity>
                       </View>
                     ) : file.type === 'VIDEO' ? (
-                      <View style={[styles.docPlaceholder, { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.35)' }]}>
-                        <Video size={24} color="#f87171" />
-                        <Text style={[styles.docExtBadge, { backgroundColor: '#ef4444' }]}>VIDEO</Text>
+                      <View
+                        style={[
+                          styles.docPlaceholder,
+                          {
+                            backgroundColor: 'rgba(239, 68, 68, 0.14)',
+                            borderColor: 'rgba(239, 68, 68, 0.35)',
+                          },
+                        ]}
+                      >
+                        <Video size={22} color={colors.danger} />
+                        <Text style={[styles.docExtBadge, { color: colors.danger }]}>VIDEO</Text>
                       </View>
                     ) : file.type === 'AUDIO' ? (
-                      <View style={[styles.docPlaceholder, { backgroundColor: 'rgba(139, 92, 246, 0.15)', borderColor: 'rgba(139, 92, 246, 0.35)' }]}>
-                        <Music size={24} color="#a78bfa" />
-                        <Text style={[styles.docExtBadge, { backgroundColor: '#8b5cf6' }]}>AUDIO</Text>
+                      <View
+                        style={[
+                          styles.docPlaceholder,
+                          {
+                            backgroundColor: 'rgba(139, 92, 246, 0.14)',
+                            borderColor: 'rgba(139, 92, 246, 0.35)',
+                          },
+                        ]}
+                      >
+                        <Music size={22} color={colors.anonPurple} />
+                        <Text style={[styles.docExtBadge, { color: colors.anonPurple }]}>
+                          AUDIO
+                        </Text>
                       </View>
                     ) : (
-                      <View style={styles.docPlaceholder}>
-                        <FileText size={24} color="#38bdf8" />
-                        <Text style={styles.docExtBadge}>{file.extension.toUpperCase() || 'FILE'}</Text>
+                      <View
+                        style={[
+                          styles.docPlaceholder,
+                          {
+                            backgroundColor: colors.primary + '1A',
+                            borderColor: colors.primary + '44',
+                          },
+                        ]}
+                      >
+                        <FileText size={22} color={colors.primary} />
+                        <Text style={[styles.docExtBadge, { color: colors.primary }]}>
+                          {file.extension.toUpperCase() || 'FILE'}
+                        </Text>
                       </View>
                     )}
                     <TouchableOpacity
-                      style={styles.removeBtn}
+                      style={[styles.removeBtn, { backgroundColor: colors.danger }]}
                       onPress={() => handleRemoveAttachment(file.id)}
                       disabled={uploading}
                     >
                       <X size={12} color="#ffffff" />
                     </TouchableOpacity>
-                    <Text style={styles.stagedName} numberOfLines={1}>
+                    <Text
+                      style={[styles.stagedName, { color: colors.textPrimary }]}
+                      numberOfLines={1}
+                    >
                       {file.name}
                     </Text>
-                    <Text style={styles.stagedSize}>
+                    <Text style={[styles.stagedSize, { color: colors.textMuted }]}>
                       {file.sizeFormatted}
                     </Text>
                   </View>
@@ -497,11 +756,16 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
           )}
 
           {/* Caption / Message Input Box */}
-          <View style={styles.inputContainer}>
+          <View
+            style={[
+              styles.inputContainer,
+              { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+            ]}
+          >
             <TextInput
-              style={styles.input}
+              style={[styles.input, { color: colors.textPrimary }]}
               placeholder="Add a caption or message..."
-              placeholderTextColor="#64748b"
+              placeholderTextColor={colors.textMuted}
               value={messageText}
               onChangeText={setMessageText}
               multiline
@@ -512,7 +776,12 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
             <TouchableOpacity
               style={[
                 styles.sendBtn,
-                (stagedFiles.length === 0 && !messageText.trim()) && styles.sendBtnDisabled,
+                {
+                  backgroundColor:
+                    stagedFiles.length === 0 && !messageText.trim()
+                      ? colors.textTertiary
+                      : colors.primary,
+                },
               ]}
               onPress={handleSend}
               disabled={uploading || (stagedFiles.length === 0 && !messageText.trim())}
@@ -527,13 +796,15 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
         </View>
       </View>
 
-      {/* Interactive Custom Crop & Rotate Modal */}
+      {/* Interactive Crop & Rotate Modal */}
       {croppingImage && (
         <ImageCropperModal
           visible={!!croppingImage}
-          imageUri={croppingImage.uri}
+          imageUri={croppingImage.sourceUri || croppingImage.uri}
           onClose={() => setCroppingImage(null)}
           onCropComplete={handleCropComplete}
+          maxDimension={cropPresetConfig.maxDimension}
+          jpegQuality={cropPresetConfig.jpegQuality}
         />
       )}
     </Modal>
@@ -543,15 +814,12 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: '#0f172a',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderTopWidth: 1,
-    borderColor: '#1e293b',
     padding: 16,
     paddingBottom: Platform.OS === 'ios' ? 36 : 20,
   },
@@ -559,10 +827,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   title: {
-    color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
   },
@@ -570,7 +837,6 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#1e293b',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -579,29 +845,82 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
   },
   actionPill: {
     alignItems: 'center',
     gap: 6,
   },
   iconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
   },
   actionLabel: {
-    color: '#cbd5e1',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  docLimitHint: {
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 10,
+    gap: 8,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
+  },
+  qualityBar: {
+    marginTop: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 10,
+    gap: 8,
+  },
+  qualityHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  qualityTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  qualityHint: {
+    fontSize: 11,
+  },
+  qualityPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  qualityPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  qualityPillText: {
     fontSize: 12,
     fontWeight: '600',
   },
   stagedSection: {
-    marginTop: 14,
+    marginTop: 12,
   },
   sectionSubtitle: {
-    color: '#94a3b8',
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 8,
@@ -610,29 +929,27 @@ const styles = StyleSheet.create({
     maxHeight: 125,
   },
   stagedCard: {
-    width: 86,
+    width: 88,
     alignItems: 'center',
     position: 'relative',
-    backgroundColor: '#1e293b',
-    borderRadius: 8,
+    borderRadius: 10,
+    borderWidth: 1,
     padding: 6,
   },
   stagedThumb: {
     width: 74,
     height: 60,
     borderRadius: 6,
-    backgroundColor: '#0f172a',
   },
   docPlaceholder: {
     width: 74,
     height: 60,
     borderRadius: 6,
-    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   docExtBadge: {
-    color: '#38bdf8',
     fontSize: 9,
     fontWeight: '800',
     marginTop: 2,
@@ -644,21 +961,6 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#ef4444',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 5,
-  },
-  autoCropBadge: {
-    position: 'absolute',
-    bottom: 2,
-    left: 2,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#fbbf24',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,
@@ -670,15 +972,12 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#0284c7',
     borderWidth: 1,
-    borderColor: '#38bdf8',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,
   },
   stagedName: {
-    color: '#f8fafc',
     fontSize: 10,
     fontWeight: '500',
     marginTop: 4,
@@ -686,24 +985,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   stagedSize: {
-    color: '#64748b',
     fontSize: 9,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
     borderRadius: 24,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    marginTop: 16,
+    marginTop: 14,
     borderWidth: 1,
-    borderColor: '#334155',
     gap: 8,
   },
   input: {
     flex: 1,
-    color: '#ffffff',
     fontSize: 14,
     maxHeight: 80,
   },
@@ -711,11 +1006,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#0284c7',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  sendBtnDisabled: {
-    backgroundColor: '#475569',
   },
 });

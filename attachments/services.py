@@ -10,7 +10,7 @@ from .models import MediaAttachment
 
 # Upload Restrictions
 MAX_IMAGE_SIZE = 15 * 1024 * 1024  # 15 MB
-MAX_DOC_SIZE = 25 * 1024 * 1024    # 25 MB
+MAX_DOC_SIZE = 20 * 1024 * 1024    # 20 MB
 MAX_AUDIO_SIZE = 25 * 1024 * 1024  # 25 MB
 MAX_VIDEO_SIZE = 100 * 1024 * 1024 # 100 MB
 
@@ -87,7 +87,9 @@ class AttachmentService:
         elif ext in ALLOWED_DOC_EXTENSIONS:
             file_type = "DOCUMENT"
             if size > MAX_DOC_SIZE:
-                raise ValidationError(f"Document '{sanitized_name}' exceeds 25 MB limit.")
+                raise ValidationError(
+                    f"Document '{sanitized_name}' exceeds the 20 MB limit. Try uploading 2 different files."
+                )
         else:
             allowed_all = ", ".join(sorted(ALLOWED_IMAGE_EXTENSIONS | ALLOWED_DOC_EXTENSIONS | ALLOWED_AUDIO_EXTENSIONS | ALLOWED_VIDEO_EXTENSIONS))
             raise ValidationError(f"Unsupported file type '{ext}'. Allowed types: {allowed_all}")

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from config.media_utils import resolve_media_url
 from .models import MediaAttachment
 
 class MediaAttachmentSerializer(serializers.ModelSerializer):
@@ -26,16 +27,7 @@ class MediaAttachmentSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_file_url(self, obj):
-        if not obj.file:
-            return ""
-        request = self.context.get("request")
-        if request:
-            return request.build_absolute_uri(obj.file.url)
-        return obj.file.url
+        return resolve_media_url(self.context.get("request"), obj.file) or ""
 
     def get_download_url(self, obj):
-        request = self.context.get("request")
-        path = f"/api/attachments/{obj.id}/download/"
-        if request:
-            return request.build_absolute_uri(path)
-        return path
+        return resolve_media_url(self.context.get("request"), f"/api/attachments/{obj.id}/download/")

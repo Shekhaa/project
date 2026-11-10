@@ -9,6 +9,7 @@ from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.contrib.auth import get_user_model
+from config.media_utils import resolve_media_url, process_avatar_image
 from colleges.models import College, CollegeDomain, Course, Branch, AcademicYear, Section
 from communities.models import CommunityMember
 from notifications.views import create_notification
@@ -34,7 +35,8 @@ class CompleteProfileView(APIView):
     def post(self, request):
         user = request.user
 
-        data = request.data.copy()
+        # Shallow dict copy avoids QueryDict.copy() deepcopy crash if a TemporaryUploadedFile >2.5MB is attached
+        data = {k: request.data.get(k) for k in request.data.keys()} if hasattr(request.data, "keys") else dict(request.data)
         
         # 1. Resolve College
         if not data.get("college"):
@@ -149,13 +151,14 @@ class CompleteProfileView(APIView):
 
         return Response({
             "message": f"Welcome to Campus Connect, @{profile.username}! Your college communities have been configured.",
-            "profile": StudentProfileSerializer(profile).data,
+            "profile": StudentProfileSerializer(profile, context={"request": request}).data,
             "communities_joined": enrolled_communities,
             "user": {
                 "id": user.id,
                 "email": user.email,
                 "full_name": user.full_name,
                 "phone_number": user.phone_number,
+                "profile_picture": resolve_media_url(request, profile.profile_picture) if profile.profile_picture else None,
                 "is_email_verified": user.is_email_verified,
                 "is_phone_verified": user.is_phone_verified,
                 "is_verified_student": user.is_verified_student,
@@ -176,7 +179,7 @@ class MyProfileView(APIView):
                 {"error": "Profile not created yet. Please complete onboarding."},
                 status=status.HTTP_404_NOT_FOUND
             )
-        serializer = StudentProfileSerializer(profile)
+        serializer = StudentProfileSerializer(profile, context={"request": request})
         return Response(serializer.data)
 
 
@@ -195,24 +198,44 @@ class EditProfileView(APIView):
             request.user.full_name = str(full_name).strip()
             request.user.save(update_fields=["full_name"])
 
-        # 2. Update profile picture if uploaded via multipart
+        # 2. Update profile picture if uploaded via multipart (resized & JPEG-normalized with cache-busting filename)
         if "profile_picture" in request.FILES:
-            profile.profile_picture = request.FILES["profile_picture"]
+            uploaded_avatar = request.FILES["profile_picture"]
+            try:
+                old_avatar = profile.profile_picture
+                avatar_file, avatar_name = process_avatar_image(uploaded_avatar.read(), request.user.id)
+                profile.profile_picture.save(avatar_name, avatar_file, save=False)
+                if old_avatar and old_avatar.name and old_avatar.name != profile.profile_picture.name:
+                    try:
+                        old_avatar.delete(save=False)
+                    except Exception:
+                        pass
+            except ValueError as err:
+                return Response({"error": str(err)}, status=status.HTTP_400_BAD_REQUEST)
 
         # 3. Update profile picture if passed as base64 string
         pic_b64 = request.data.get("profile_picture_base64") or request.data.get("image_base64")
-        if pic_b64 and isinstance(pic_b64, str):
+        if pic_b64 and isinstance(pic_b64, str) and pic_b64.strip():
             try:
-                if "," in pic_b64:
-                    pic_b64 = pic_b64.split(",", 1)[1]
-                decoded_image = base64.b64decode(pic_b64)
-                profile.profile_picture.save(
-                    f"avatar_{request.user.id}_{int(request.user.id)}.jpg",
-                    ContentFile(decoded_image),
-                    save=False
+                raw_b64 = pic_b64.split(",", 1)[1] if "," in pic_b64 else pic_b64
+                raw_b64 = raw_b64.strip()
+                rem = len(raw_b64) % 4
+                if rem:
+                    raw_b64 += "=" * (4 - rem)
+                decoded_image = base64.b64decode(raw_b64)
+                old_avatar = profile.profile_picture
+                avatar_file, avatar_name = process_avatar_image(decoded_image, request.user.id)
+                profile.profile_picture.save(avatar_name, avatar_file, save=False)
+                if old_avatar and old_avatar.name and old_avatar.name != profile.profile_picture.name:
+                    try:
+                        old_avatar.delete(save=False)
+                    except Exception:
+                        pass
+            except Exception as err:
+                return Response(
+                    {"error": f"Invalid profile photo data: {err}"},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
-            except Exception:
-                pass
 
         # 4. Update bio / caption
         bio = request.data.get("bio")
@@ -230,14 +253,21 @@ class EditProfileView(APIView):
                     return Response({"error": "This username is already taken by another student."}, status=status.HTTP_400_BAD_REQUEST)
                 profile.username = clean_u
 
-        # 6. Update other fields
-        for field in ["gender", "show_gender", "anonymous_enabled"]:
-            if field in request.data:
-                setattr(profile, field, request.data[field])
+        # 6. Update other fields safely
+        if "gender" in request.data and request.data["gender"] is not None:
+            profile.gender = str(request.data["gender"]).strip()
+        for bool_field in ["show_gender", "anonymous_enabled"]:
+            if bool_field in request.data:
+                val = request.data[bool_field]
+                if isinstance(val, str):
+                    setattr(profile, bool_field, val.strip().lower() in ("true", "1", "yes"))
+                else:
+                    setattr(profile, bool_field, bool(val))
 
         profile.save()
 
         serializer = StudentProfileSerializer(profile, context={"request": request})
+        resolved_avatar = resolve_media_url(request, profile.profile_picture) if profile.profile_picture else None
         return Response({
             "message": "Profile updated successfully.",
             "profile": serializer.data,
@@ -245,7 +275,8 @@ class EditProfileView(APIView):
                 "id": request.user.id,
                 "email": request.user.email,
                 "full_name": request.user.full_name,
-                "profile_picture": profile.profile_picture.url if profile.profile_picture else None,
+                "username": profile.username,
+                "profile_picture": resolved_avatar,
             }
         })
 
@@ -790,12 +821,14 @@ class UserProfileDetailView(APIView):
         credibility_count = CredibilityEndorsement.objects.filter(recipient=target_user).count()
         posts_count = Post.objects.filter(author=target_user, is_deleted=False).count()
 
+        resolved_avatar = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
         base_data = {
             "id": target_user.id,
             "email": target_user.email if is_self else "",
             "full_name": target_user.full_name or (prof.username if prof else ""),
             "username": prof.username if prof else "",
-            "avatar": prof.profile_picture.url if (prof and prof.profile_picture) else None,
+            "avatar": resolved_avatar,
+            "profile_picture": resolved_avatar,
             "college_name": prof.college.name if (prof and prof.college) else "",
             "college_short_name": prof.college.short_name if (prof and prof.college) else "",
             "branch_name": prof.branch.name if (prof and prof.branch) else "",
@@ -984,13 +1017,14 @@ class BlockedUsersListView(APIView):
             target = b.blocked
             prof = getattr(target, "profile", None)
             college_name = prof.college.name if (prof and prof.college) else ""
-            avatar_url = prof.profile_picture.url if (prof and prof.profile_picture) else None
+            avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
             results.append({
                 "id": target.id,
                 "full_name": target.full_name or (prof.username if prof else target.email.split("@")[0]),
                 "username": prof.username if prof else "",
                 "email": target.email,
                 "avatar": avatar_url,
+                "profile_picture": avatar_url,
                 "college_name": college_name,
                 "blocked_at": b.created_at,
             })

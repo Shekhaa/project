@@ -37,6 +37,7 @@ import { AddMembersModal } from '../components/chat/AddMembersModal';
 import { InviteLinkModal } from '../components/chat/InviteLinkModal';
 import { JoinByInviteModal } from '../components/chat/JoinByInviteModal';
 import { MessageRequestsModal } from '../components/chat/MessageRequestsModal';
+import { UserAvatar } from '../components/common/UserAvatar';
 import {
   Search,
   Plus,
@@ -594,19 +595,22 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             onPress={() => activeConv.recipient?.id && onOpenProfile?.(activeConv.recipient.id)}
             activeOpacity={0.7}
           >
-            <View
-              style={[
-                styles.roomAvatar,
-                {
-                  backgroundColor: isDark ? 'rgba(94, 106, 210, 0.22)' : 'rgba(79, 70, 229, 0.12)',
-                  borderColor: colors.cardBorder,
-                },
-              ]}
-            >
-              <Text style={[styles.roomAvatarText, { color: colors.primary }]}>
-                {roomTitle.charAt(0).toUpperCase()}
-              </Text>
-            </View>
+            <UserAvatar
+              uri={
+                !activeConv.is_group
+                  ? activeConv.recipient?.avatar || activeConv.recipient?.profile_picture
+                  : undefined
+              }
+              name={roomTitle}
+              size={36}
+              borderWidth={1}
+              borderColor={colors.cardBorder}
+              backgroundColor={
+                isDark ? 'rgba(94, 106, 210, 0.22)' : 'rgba(79, 70, 229, 0.12)'
+              }
+              textColor={colors.primary}
+              style={{ marginRight: 10 }}
+            />
 
             <View style={styles.roomMeta}>
               <Text style={[styles.roomTitle, { color: colors.textPrimary }]} numberOfLines={1}>
@@ -1163,16 +1167,16 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                   style={[styles.directoryRow, { borderBottomColor: colors.hairline }]}
                   onPress={() => handleStartDirectChat(item)}
                 >
-                  <View
-                    style={[
-                      styles.directoryAvatar,
-                      { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
-                    ]}
-                  >
-                    <Text style={[styles.directoryAvatarText, { color: colors.textSecondary }]}>
-                      {(item.full_name || item.email).charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
+                  <UserAvatar
+                    uri={item.avatar || item.profile_picture}
+                    name={item.full_name || item.email}
+                    size={34}
+                    borderWidth={1}
+                    borderColor={colors.cardBorder}
+                    backgroundColor={colors.surfaceLight}
+                    textColor={colors.textSecondary}
+                    style={{ marginRight: 10 }}
+                  />
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.directoryName, { color: colors.textPrimary }]}>{item.full_name || item.email}</Text>
                     <Text style={[styles.directoryEmail, { color: colors.textSecondary }]}>{item.email}</Text>
@@ -1230,19 +1234,20 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 }}
                 activeOpacity={0.7}
               >
-                <View
-                  style={[
-                    styles.convAvatar,
-                    {
-                      backgroundColor: colors.surfaceLight,
-                      borderColor: item.is_ephemeral ? colors.ephemeralFire : colors.cardBorder,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.convAvatarText, { color: colors.textPrimary }]}>
-                    {name.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
+                <UserAvatar
+                  uri={
+                    !item.is_group
+                      ? item.recipient?.avatar || item.recipient?.profile_picture
+                      : undefined
+                  }
+                  name={name}
+                  size={44}
+                  borderWidth={item.is_ephemeral ? 1.5 : 1}
+                  borderColor={item.is_ephemeral ? colors.ephemeralFire : colors.cardBorder}
+                  backgroundColor={colors.surfaceLight}
+                  textColor={colors.textPrimary}
+                  style={{ marginRight: 12 }}
+                />
 
                 <View style={styles.convBody}>
                   <View style={styles.convTopRow}>

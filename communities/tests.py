@@ -290,3 +290,65 @@ class CommunityPlatformTests(TestCase):
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         self.assertEqual(res.data["status"], "PENDING")
 
+    def test_discussion_and_reply_mentions_trigger_tag_notifications_with_exact_priority(self):
+        from colleges.models import College, Course, Branch, AcademicYear
+        from profiles.models import StudentProfile, UserBlock
+
+        col = College.objects.create(name="GEU Mention Col", short_name="GEUM")
+        crs = Course.objects.create(name="B.Tech", code="BTM", college=col, duration=4)
+        brn = Branch.objects.create(name="CSE", code="CSEM", course=crs)
+        yr = AcademicYear.objects.create(year_number=2, display_name="2nd Year", course=crs)
+
+        StudentProfile.objects.create(
+            user=self.user1, username="aman_s", admission_number="G01",
+            college=col, course=crs, branch=brn, academic_year=yr, profile_completed=True
+        )
+        StudentProfile.objects.create(
+            user=self.user2, username="priya", admission_number="G02",
+            college=col, course=crs, branch=brn, academic_year=yr, profile_completed=True
+        )
+        user3 = User.objects.create_user(email="priyanshu@geu.ac.in", password="testpassword123", full_name="Priya Twin")
+        StudentProfile.objects.create(
+            user=user3, username="priya_twin", admission_number="G03",
+            college=col, course=crs, branch=brn, academic_year=yr, profile_completed=True
+        )
+
+        # Create discussion mentioning @priya -> exact match only notifies user2, not user3
+        url = f"/api/communities/{self.community.slug}/discussions/"
+        res = self.client.post(
+            url,
+            {
+                "title": "Need review from @priya",
+                "content": "Hey @priya please check these slides.",
+                "discussion_type": "GENERAL",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        mentioned_usernames = [u["username"] for u in res.data["mentioned_users"]]
+        self.assertEqual(mentioned_usernames, ["priya"])
+        self.assertTrue(Notification.objects.filter(recipient=self.user2, notification_type="TAG").exists())
+        self.assertFalse(Notification.objects.filter(recipient=user3, notification_type="TAG").exists())
+
+        # User2 replies mentioning @aman_s while User1 has NOT blocked User2 -> TAG notification sent
+        disc_id = res.data["id"]
+        self.client.force_authenticate(user=self.user2)
+        reply_res = self.client.post(
+            f"/api/communities/{self.community.slug}/discussions/{disc_id}/replies/",
+            {"content": "Checking now @aman_s!"},
+            format="json",
+        )
+        self.assertEqual(reply_res.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(Notification.objects.filter(recipient=self.user1, notification_type="TAG").exists())
+
+        # Blocked user cannot be notified via reply @mention
+        UserBlock.objects.create(blocker=self.user1, blocked=user3)
+        self.client.force_authenticate(user=user3)
+        blocked_reply = self.client.post(
+            f"/api/communities/{self.community.slug}/discussions/{disc_id}/replies/",
+            {"content": "Spam ping @aman_s"},
+            format="json",
+        )
+        self.assertEqual(blocked_reply.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(blocked_reply.data["mentioned_users"]), 0)
+

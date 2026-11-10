@@ -12,7 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { X, Paperclip, FileText, Check, Send, AlertCircle, Mic } from 'lucide-react-native';
+import { X, Paperclip, FileText, Check, Send, AlertCircle, Mic, AtSign } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { AttachmentPickerModal, StagedAttachment } from '../media/AttachmentPickerModal';
 import {
@@ -23,6 +23,13 @@ import {
 } from '../media/VoiceNoteRecorder';
 import { pauseAllActiveVoiceNotes } from '../media/VoiceNotePlayer';
 import { chatService } from '../../services/chatService';
+import {
+  MentionCandidate,
+  MentionSuggestionsBar,
+  applyMentionSelection,
+  extractActiveMention,
+} from '../common/MentionSuggestionsBar';
+import { showCrossPlatformAlert } from '../../utils/mediaUtils';
 
 interface DiscussionComposerProps {
   visible: boolean;
@@ -46,6 +53,8 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
   const { colors, isDark } = useTheme();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [contentCursorPos, setContentCursorPos] = useState(0);
+  const [mentionDismissed, setMentionDismissed] = useState(false);
   const [type, setType] = useState<'GENERAL' | 'QUESTION' | 'RESOURCE' | 'ANNOUNCEMENT'>('QUESTION');
   const [tags, setTags] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -64,6 +73,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
   useEffect(() => {
     if (!visible) {
       autoVoiceTriggeredRef.current = false;
+      setMentionDismissed(false);
       return;
     }
     if (autoStartVoice && !autoVoiceTriggeredRef.current) {
@@ -79,16 +89,48 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
     if (submitting) return;
     voiceRecorder.cancelRecording();
     pauseAllActiveVoiceNotes();
+    setMentionDismissed(false);
     onClose();
+  };
+
+  const activeMention = mentionDismissed
+    ? null
+    : extractActiveMention(content, contentCursorPos);
+
+  const handleContentChange = (nextVal: string) => {
+    const delta = nextVal.length - content.length;
+    setContent(nextVal);
+    setContentCursorPos((prev) => Math.max(0, Math.min(nextVal.length, prev + delta)));
+    setMentionDismissed(false);
+    if (errorMessage) setErrorMessage(null);
+  };
+
+  const handleSelectMention = (candidate: MentionCandidate & { username: string }) => {
+    if (!activeMention) return;
+    const { nextText, nextCursor } = applyMentionSelection(
+      content,
+      activeMention,
+      candidate.username
+    );
+    setContent(nextText);
+    setContentCursorPos(nextCursor);
+    setMentionDismissed(false);
+  };
+
+  const handleInsertTag = () => {
+    setMentionDismissed(false);
+    const pos = Math.min(contentCursorPos, content.length);
+    const before = content.slice(0, pos);
+    const after = content.slice(pos);
+    const prefix = before.length === 0 || /\s$/.test(before) ? '@' : ' @';
+    const next = `${before}${prefix}${after}`;
+    setContent(next);
+    setContentCursorPos(before.length + prefix.length);
   };
 
   const notify = (titleStr: string, msg: string) => {
     setErrorMessage(`${titleStr}: ${msg}`);
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      console.warn(`[DiscussionComposer] ${titleStr}: ${msg}`);
-    } else {
-      Alert.alert(titleStr, msg);
-    }
+    showCrossPlatformAlert(titleStr, msg);
   };
 
   const handleSubmit = async () => {
@@ -140,6 +182,8 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
       pauseAllActiveVoiceNotes();
       setTitle('');
       setContent('');
+      setContentCursorPos(0);
+      setMentionDismissed(false);
       setType('QUESTION');
       setTags('');
       setStagedFiles([]);
@@ -317,9 +361,27 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
           )}
 
           {/* Content / Question Body */}
-          <Text style={[styles.label, { color: colors.textSecondary }]}>
-            Details (or type alongside your voice note)
-          </Text>
+          <View style={styles.labelRow}>
+            <Text style={[styles.label, { color: colors.textSecondary, marginTop: 0, marginBottom: 0 }]}>
+              Details (type @ to tag)
+            </Text>
+            <TouchableOpacity
+              onPress={handleInsertTag}
+              activeOpacity={0.75}
+              style={[
+                styles.tagTriggerBtn,
+                {
+                  backgroundColor: activeMention ? colors.primary + '1E' : colors.surface,
+                  borderColor: activeMention ? colors.primary : colors.cardBorder,
+                },
+              ]}
+            >
+              <AtSign size={12} color={activeMention ? colors.primary : colors.textSecondary} />
+              <Text style={[styles.tagTriggerText, { color: activeMention ? colors.primary : colors.textSecondary }]}>
+                Tag Student
+              </Text>
+            </TouchableOpacity>
+          </View>
           <TextInput
             style={[
               styles.contentInput,
@@ -329,17 +391,26 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
                 color: colors.textPrimary,
               },
             ]}
-            placeholder="Explain your problem, question, or add context to your voice note..."
+            placeholder="Explain your problem, question, or type @name to tag someone..."
             placeholderTextColor={colors.textMuted}
             value={content}
-            onChangeText={(c) => {
-              setContent(c);
-              if (errorMessage) setErrorMessage(null);
-            }}
+            onChangeText={handleContentChange}
+            onSelectionChange={(e) => setContentCursorPos(e.nativeEvent.selection.end)}
             multiline
             numberOfLines={6}
             textAlignVertical="top"
           />
+
+          {activeMention && !voiceRecorder.isRecording && (
+            <View style={styles.mentionBarWrapper}>
+              <MentionSuggestionsBar
+                query={activeMention.query}
+                onSelect={handleSelectMention}
+                onClose={() => setMentionDismissed(true)}
+                maxHeight={200}
+              />
+            </View>
+          )}
 
           {/* Tags */}
           <Text style={[styles.label, { color: colors.textSecondary }]}>Tags (Optional, comma separated)</Text>
@@ -373,7 +444,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
           >
             <Paperclip size={16} color={colors.primary} />
             <Text style={[styles.attachBtnText, { color: colors.primary }]}>
-              Attach Notes, PDFs, Images or Audio Files
+              Attach Notes, PDFs, Images, Video or Audio
             </Text>
           </TouchableOpacity>
 
@@ -504,6 +575,29 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 8,
     marginTop: 14,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  tagTriggerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  tagTriggerText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  mentionBarWrapper: {
+    marginTop: 8,
   },
   typeRow: {
     flexDirection: 'row',

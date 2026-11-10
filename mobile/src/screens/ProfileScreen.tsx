@@ -7,13 +7,13 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Image,
   Modal,
   TextInput,
   KeyboardAvoidingView,
   Platform,
   Switch,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { authService, User, DemoUser } from '../services/authService';
@@ -22,8 +22,9 @@ import { postService, Post } from '../services/postService';
 import { PostCard } from '../components/feed/PostCard';
 import { StudentProfileModal } from '../components/profile/StudentProfileModal';
 import { SocialListModal, SocialModalType } from '../components/profile/SocialListModal';
+import { UserAvatar } from '../components/common/UserAvatar';
+import { processWebImageForUpload, showCrossPlatformAlert } from '../utils/mediaUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getFullMediaUrl } from '../config/api';
 import {
   ShieldCheck,
   Settings,
@@ -246,7 +247,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       list = list.filter((id) => id !== postId);
       await AsyncStorage.setItem('campus_saved_posts', JSON.stringify(list));
       setSavedPosts((prev) => prev.filter((p) => p.id !== postId));
-      Alert.alert('Bookmark Removed', 'Post removed from your saved collection.');
+      showCrossPlatformAlert('Bookmark Removed', 'Post removed from your saved collection.');
     } catch (e) {
       console.log('Error removing saved post', e);
     }
@@ -269,9 +270,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     try {
       await profileService.unblockUser(userId);
       setBlockedUsers((prev) => prev.filter((u) => (u.user?.id || u.id) !== userId));
-      Alert.alert('Student Unblocked', `${name} has been unblocked.`);
+      showCrossPlatformAlert('Student Unblocked', `${name} has been unblocked.`);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.message || 'Could not unblock student.');
+      showCrossPlatformAlert('Error', e.response?.data?.message || 'Could not unblock student.');
     } finally {
       setUnblockingId(null);
     }
@@ -280,8 +281,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const handleToggleNotificationsBlocked = async (val: boolean) => {
     setNotificationsBlocked(val);
     await AsyncStorage.setItem('@campus_connect_notifications_blocked', val ? 'true' : 'false').catch(() => {});
-    Alert.alert(
-      val ? 'Quiet Campus Mode Active 🔕' : 'Notifications Active 🔔',
+    showCrossPlatformAlert(
+      val ? 'Quiet Campus Mode Active' : 'Notifications Active',
       val
         ? 'All sound and alert notifications have been muted. You can un-mute anytime.'
         : 'You will receive notifications for likes, comments, and direct messages.'
@@ -311,15 +312,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     try {
       const reason = action === 'FLAG_FAKE' ? 'Flagged fake profile during admin campus audit' : undefined;
       await profileService.auditUserAction(userId, action, reason);
-      Alert.alert(
-        action === 'APPROVE' ? 'Student Approved ✅' : 'Profile Flagged ⚠️',
+      showCrossPlatformAlert(
+        action === 'APPROVE' ? 'Student Approved' : 'Profile Flagged',
         action === 'APPROVE'
           ? 'Account marked as verified student.'
           : 'Account flagged as fake. Student will be restricted from posting.'
       );
       loadAuditList();
     } catch (e: any) {
-      Alert.alert('Action Failed', e.response?.data?.error || 'Could not update student status.');
+      showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update student status.');
     }
   };
 
@@ -363,15 +364,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       setUpdatingPrivacy(true);
       await profileService.updatePrivacySettings({ is_private_account: val });
       setProfile((prev) => (prev ? { ...prev, is_private_account: val } : null));
-      Alert.alert(
-        val ? 'Private Account Enabled 🔒' : 'Public Account Enabled 🌐',
+      showCrossPlatformAlert(
+        val ? 'Private Account Enabled' : 'Public Account Enabled',
         val
           ? 'Only students you approve can follow you and view your posts.'
           : 'Anyone on campus can now follow you and view your posts.'
       );
     } catch (e: any) {
       setIsPrivateAccount(!val);
-      Alert.alert('Error', e.response?.data?.error || 'Could not update account privacy.');
+      showCrossPlatformAlert('Error', e.response?.data?.error || 'Could not update account privacy.');
     } finally {
       setUpdatingPrivacy(false);
     }
@@ -383,9 +384,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       setUpdatingPrivacy(true);
       await profileService.updatePrivacySettings({ messaging_preference: pref });
       setProfile((prev) => (prev ? { ...prev, messaging_preference: pref } : null));
-      Alert.alert('Preference Saved 💬', `Direct message requests updated to: ${pref.replace('_', ' ')}.`);
+      showCrossPlatformAlert('Preference Saved', `Direct message requests updated to: ${pref.replace('_', ' ')}.`);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Could not update messaging preference.');
+      showCrossPlatformAlert('Error', e.response?.data?.error || 'Could not update messaging preference.');
     } finally {
       setUpdatingPrivacy(false);
     }
@@ -402,46 +403,85 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       const res = await authService.devQuickLogin(targetEmail);
       setSwitcherModalVisible(false);
       onUserSwitched(res.user);
-      Alert.alert(
-        'Account Switched! 🚀',
+      showCrossPlatformAlert(
+        'Account Switched',
         `Logged in as ${res.user.full_name || res.user.email}. All chats, posts & communities are updated.`
       );
     } catch (e: any) {
-      Alert.alert('Switch Failed', e.response?.data?.error || 'Could not switch account.');
+      showCrossPlatformAlert('Switch Failed', e.response?.data?.error || 'Could not switch account.');
     } finally {
       setSwitchingUser(null);
     }
   };
 
-  const handlePickPhoto = () => {
+  const handlePickPhoto = async () => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = 'image/*';
-      input.onchange = (e: any) => {
+      input.accept = 'image/jpeg,image/png,image/webp,image/*';
+      input.onchange = async (e: any) => {
         const file = e.target.files?.[0];
-        if (file) {
-          const reader = new FileReader();
-          reader.onload = (uploadEvent: any) => {
-            const base64Str = uploadEvent.target.result as string;
-            setEditAvatarBase64(base64Str);
-            setEditAvatarPreview(base64Str);
-          };
-          reader.readAsDataURL(file);
+        if (!file) return;
+        try {
+          const processed = await processWebImageForUpload(file, file.name || 'avatar.jpg', 'STANDARD');
+          if (processed.uri && processed.uri.startsWith('data:')) {
+            setEditAvatarBase64(processed.uri);
+            setEditAvatarPreview(processed.uri);
+            return;
+          }
+        } catch {
+          // Fallback to raw FileReader below
         }
+        const reader = new FileReader();
+        reader.onload = (uploadEvent: any) => {
+          const base64Str = uploadEvent.target.result as string;
+          setEditAvatarBase64(base64Str);
+          setEditAvatarPreview(base64Str);
+        };
+        reader.readAsDataURL(file);
       };
       input.click();
-    } else {
-      Alert.alert('Change Profile Picture', 'Select a picture from your device gallery.', [
-        { text: 'Cancel', style: 'cancel' },
-      ]);
+      return;
+    }
+
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        showCrossPlatformAlert(
+          'Permission Needed',
+          'Please allow camera roll access to update your profile photo.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const mime = asset.mimeType || 'image/jpeg';
+        const dataUrl = asset.base64 ? `data:${mime};base64,${asset.base64}` : null;
+        if (dataUrl) {
+          setEditAvatarBase64(dataUrl);
+          setEditAvatarPreview(asset.uri || dataUrl);
+        } else if (asset.uri) {
+          setEditAvatarPreview(asset.uri);
+        }
+      }
+    } catch (err: any) {
+      showCrossPlatformAlert('Photo Error', err?.message || 'Could not select a profile photo.');
     }
   };
 
   // Save Profile Details
   const handleSaveProfile = async () => {
     if (!editUsername.trim()) {
-      Alert.alert('Error', 'Username cannot be empty.');
+      showCrossPlatformAlert('Error', 'Username cannot be empty.');
       return;
     }
 
@@ -461,20 +501,34 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       }
 
       const res = await profileService.updateProfile(payload);
-      setProfile((prev) => (prev ? { ...prev, ...res.profile } : null));
+      const savedPic =
+        res.user?.profile_picture ||
+        res.profile?.profile_picture ||
+        profile?.profile_picture ||
+        currentUser.profile_picture;
+
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              ...res.profile,
+              profile_picture: savedPic || prev.profile_picture,
+            }
+          : res.profile || prev
+      );
       setEditAvatarBase64(null);
       setEditAvatarPreview(null);
 
-      if (editFullName.trim() !== currentUser.full_name || res.user?.profile_picture) {
-        onUserSwitched({
-          ...currentUser,
-          full_name: editFullName.trim(),
-          profile_picture: res.user?.profile_picture || currentUser.profile_picture,
-        });
-      }
-      Alert.alert('Success ✅', 'Your campus profile details and photo have been updated!');
+      onUserSwitched({
+        ...currentUser,
+        full_name: editFullName.trim() || currentUser.full_name,
+        username: res.user?.username || res.profile?.username || editUsername.trim() || currentUser.username,
+        profile_picture: savedPic,
+        avatar: savedPic,
+      });
+      showCrossPlatformAlert('Profile Updated', 'Your campus profile details and photo have been updated!');
     } catch (e: any) {
-      Alert.alert('Update Failed', e.response?.data?.error || 'Could not save profile changes.');
+      showCrossPlatformAlert('Update Failed', e.response?.data?.error || 'Could not save profile changes.');
     } finally {
       setSavingProfile(false);
     }
@@ -483,11 +537,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   // Change Password
   const handleChangePassword = async () => {
     if (!newPassword || newPassword.length < 6) {
-      Alert.alert('Error', 'New password must be at least 6 characters long.');
+      showCrossPlatformAlert('Error', 'New password must be at least 6 characters long.');
       return;
     }
     if (newPassword !== confirmPassword) {
-      Alert.alert('Error', 'New passwords do not match.');
+      showCrossPlatformAlert('Error', 'New passwords do not match.');
       return;
     }
 
@@ -497,9 +551,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      Alert.alert('Password Updated! 🔒', 'Your account password has been changed successfully.');
+      showCrossPlatformAlert('Password Updated', 'Your account password has been changed successfully.');
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Could not update password.');
+      showCrossPlatformAlert('Error', e.response?.data?.error || 'Could not update password.');
     } finally {
       setChangingPassword(false);
     }
@@ -508,7 +562,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   // Send Reset Password OTP
   const handleSendResetOtp = async () => {
     if (!resetEmail.includes('@')) {
-      Alert.alert('Error', 'Please enter a valid college email.');
+      showCrossPlatformAlert('Error', 'Please enter a valid college email.');
       return;
     }
 
@@ -516,14 +570,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     try {
       const res = await authService.forgotPassword(resetEmail.trim());
       setResetOtpSent(true);
-      Alert.alert(
-        'Code Sent! 📬',
+      showCrossPlatformAlert(
+        'Code Sent',
         `A 6-digit password reset code was sent to ${resetEmail}.\n${
           res.dev_otp ? `(Dev Code: ${res.dev_otp})` : ''
         }`
       );
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to send reset code.');
+      showCrossPlatformAlert('Error', e.response?.data?.error || 'Failed to send reset code.');
     } finally {
       setSendingResetOtp(false);
     }
@@ -532,11 +586,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   // Reset Password with OTP
   const handleResetPassword = async () => {
     if (!resetOtp || resetOtp.length < 6) {
-      Alert.alert('Error', 'Please enter the 6-digit OTP code.');
+      showCrossPlatformAlert('Error', 'Please enter the 6-digit OTP code.');
       return;
     }
     if (!resetNewPassword || resetNewPassword.length < 6) {
-      Alert.alert('Error', 'New password must be at least 6 characters.');
+      showCrossPlatformAlert('Error', 'New password must be at least 6 characters.');
       return;
     }
 
@@ -546,9 +600,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       setResetOtp('');
       setResetNewPassword('');
       setResetOtpSent(false);
-      Alert.alert('Password Reset! 🎉', 'You can now use your new password to sign in.');
+      showCrossPlatformAlert('Password Reset', 'You can now use your new password to sign in.');
     } catch (e: any) {
-      Alert.alert('Reset Failed', e.response?.data?.error || 'Invalid or expired code.');
+      showCrossPlatformAlert('Reset Failed', e.response?.data?.error || 'Invalid or expired code.');
     } finally {
       setResettingPassword(false);
     }
@@ -556,9 +610,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   if (loading && !profile) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading campus profile...</Text>
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading campus profile...</Text>
       </View>
     );
   }
@@ -592,14 +646,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       setDeletingAccount(true);
       try {
         await authService.deleteAccount();
-        if (Platform.OS === 'web') {
-          window.alert('Your account and profile have been permanently deleted.');
-        } else {
-          Alert.alert('Account Deleted', 'Your student account has been completely wiped.');
-        }
+        showCrossPlatformAlert('Account Deleted', 'Your account and profile have been permanently deleted.');
         onLogout();
       } catch (e: any) {
-        Alert.alert('Deletion Failed', e?.response?.data?.message || 'Failed to delete account. Please try again.');
+        showCrossPlatformAlert('Deletion Failed', e?.response?.data?.message || 'Failed to delete account. Please try again.');
       } finally {
         setDeletingAccount(false);
       }
@@ -681,8 +731,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               {
                 borderRadius: avatarShape === 'SQUARE' ? 0 : 36,
                 borderWidth: avatarShape === 'SQUARE' ? 2 : 3,
-                borderColor: avatarShape === 'SQUARE' ? colors.primary : 'rgba(255,255,255,0.15)',
-                overflow: 'hidden',
+                borderColor: avatarShape === 'SQUARE' ? colors.primary : colors.cardBorder,
               },
             ]}
             onPress={() => {
@@ -692,19 +741,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             activeOpacity={0.8}
             accessibilityLabel="Edit profile and photo"
           >
-            {profile?.profile_picture ? (
-              <Image
-                source={{ uri: getFullMediaUrl(profile.profile_picture) }}
-                style={[
-                  styles.avatarImage,
-                  { borderRadius: avatarShape === 'SQUARE' ? 0 : 36 },
-                ]}
-                resizeMode="cover"
-              />
-            ) : (
-              <Text style={styles.avatarInitials}>{initials}</Text>
-            )}
-            <View style={styles.onlineBadge} />
+            <UserAvatar
+              uri={profile?.profile_picture || currentUser.profile_picture || currentUser.avatar}
+              name={currentUser.full_name || profile?.username || currentUser.email}
+              size={avatarShape === 'SQUARE' ? 68 : 66}
+              borderRadius={avatarShape === 'SQUARE' ? 0 : 33}
+            />
+            <View style={[styles.onlineBadge, { borderColor: colors.surface }]} />
             <View style={[styles.shapeBadgePill, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
               <Text style={[styles.shapeBadgeText, { color: colors.primary }]}>
                 {avatarShape === 'SQUARE' ? '0' : '○'}
@@ -985,7 +1028,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <View style={[styles.divider, { backgroundColor: colors.cardBorder }]} />
             <View style={styles.infoRow}>
               <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Gender</Text>
-              <Text style={[styles.infoValue, { color: colors.textPrimary }]}>{profile.gender}</Text>
+              <Text style={[styles.infoValue, { color: colors.textPrimary }]}>{profile?.gender}</Text>
             </View>
           </>
         )}
@@ -1066,27 +1109,27 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   }
                 }}
                 onCommentPress={() => {
-                  Alert.alert('Post Comments', 'Tap into the Campus Feed tab to view and reply to comments on this post.');
+                  showCrossPlatformAlert('Post Comments', 'Tap into the Campus Feed tab to view and reply to comments on this post.');
                 }}
                 onSharePress={(p) => {
-                  Alert.alert('Share', `Post by ${p.author_name} is published on Campus Connect.`);
+                  showCrossPlatformAlert('Share', `Post by ${p.author_name} is published on Campus Connect.`);
                 }}
                 onDeletePost={async (pid) => {
                   try {
                     await postService.deletePost(pid);
                     setUserPosts((prev) => prev.filter((p) => p.id !== pid));
-                    Alert.alert('Deleted', 'Post removed.');
+                    showCrossPlatformAlert('Deleted', 'Post removed.');
                   } catch {
-                    Alert.alert('Error', 'Could not delete post.');
+                    showCrossPlatformAlert('Error', 'Could not delete post.');
                   }
                 }}
                 onArchivePost={async (pid) => {
                   try {
                     await postService.archivePost(pid);
                     setUserPosts((prev) => prev.filter((p) => p.id !== pid));
-                    Alert.alert('Archived', 'Post archived.');
+                    showCrossPlatformAlert('Archived', 'Post archived.');
                   } catch {
-                    Alert.alert('Error', 'Could not archive post.');
+                    showCrossPlatformAlert('Error', 'Could not archive post.');
                   }
                 }}
               />
@@ -1109,7 +1152,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <View style={styles.demoGrid}>
             {demoUsers.map((user) => {
               const isCurrent = user.email.toLowerCase() === currentUser.email.toLowerCase();
-              const userInitial = user.full_name[0] || 'U';
               return (
                 <TouchableOpacity
                   key={user.id}
@@ -1126,9 +1168,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   onPress={() => handleSwitchAccount(user.email)}
                   disabled={switchingUser !== null}
                 >
-                  <View style={styles.demoAvatarCircle}>
-                    <Text style={styles.demoAvatarLetter}>{userInitial}</Text>
-                    {isCurrent && <View style={styles.activeCheck} />}
+                  <View style={{ position: 'relative' }}>
+                    <UserAvatar
+                      uri={user.avatar || (user as any).profile_picture}
+                      name={user.full_name}
+                      size={44}
+                    />
+                    {isCurrent && <View style={[styles.activeCheck, { borderColor: colors.surface }]} />}
                   </View>
                   <View style={styles.demoInfoCol}>
                     <View style={styles.demoNameRow}>
@@ -1153,7 +1199,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   {!isCurrent && (
                     <View style={styles.demoCallActions}>
                       <TouchableOpacity
-                        style={styles.quickCallBtn}
+                        style={[styles.quickCallBtn, { backgroundColor: colors.surface }]}
                         onPress={(e) => {
                           e.stopPropagation();
                           setViewingStudentId(user.id);
@@ -1164,7 +1210,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       {onStartCall && (
                         <>
                           <TouchableOpacity
-                            style={styles.quickCallBtn}
+                            style={[styles.quickCallBtn, { backgroundColor: colors.surface }]}
                             onPress={(e) => {
                               e.stopPropagation();
                               onStartCall(user.id, user.full_name, 'AUDIO');
@@ -1173,7 +1219,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                             <Text style={styles.quickCallIcon}>📞</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
-                            style={styles.quickCallBtn}
+                            style={[styles.quickCallBtn, { backgroundColor: colors.surface }]}
                             onPress={(e) => {
                               e.stopPropagation();
                               onStartCall(user.id, user.full_name, 'VIDEO');
@@ -1206,21 +1252,21 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalBackdrop}
+          style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}
         >
           <View style={[styles.settingsSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
             <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>⚙️ Campus Settings</Text>
+              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>⚙️ Campus Settings</Text>
               <TouchableOpacity
-                style={styles.closeBtn}
+                style={[styles.closeBtn, { backgroundColor: colors.surfaceLight }]}
                 onPress={() => setSettingsModalVisible(false)}
               >
-                <Text style={styles.closeBtnText}>Done</Text>
+                <Text style={[styles.closeBtnText, { color: colors.textPrimary }]}>Done</Text>
               </TouchableOpacity>
             </View>
 
             {/* Navigation Tabs inside Settings */}
-            <View style={styles.settingsNavRow}>
+            <View style={[styles.settingsNavRow, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
               <TouchableOpacity
                 style={[
                   styles.settingsNavTab,
@@ -1231,6 +1277,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 <Text
                   style={[
                     styles.settingsNavText,
+                    { color: colors.textSecondary },
                     activeSettingsSection === 'PROFILE' && styles.settingsNavTextActive,
                   ]}
                 >
@@ -1248,6 +1295,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 <Text
                   style={[
                     styles.settingsNavText,
+                    { color: colors.textSecondary },
                     activeSettingsSection === 'PASSWORD' && styles.settingsNavTextActive,
                   ]}
                 >
@@ -1265,6 +1313,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 <Text
                   style={[
                     styles.settingsNavText,
+                    { color: colors.textSecondary },
                     activeSettingsSection === 'PREFERENCES' && styles.settingsNavTextActive,
                   ]}
                 >
@@ -1285,6 +1334,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 <Text
                   style={[
                     styles.settingsNavText,
+                    { color: colors.textSecondary },
                     activeSettingsSection === 'AUDIT' && styles.settingsNavTextActive,
                   ]}
                 >
@@ -1297,7 +1347,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               {/* SECTION 1: EDIT PROFILE DETAILS */}
               {activeSettingsSection === 'PROFILE' && (
                 <View style={styles.settingsSectionBody}>
-                  <Text style={styles.inputGroupTitle}>Public Student Details</Text>
+                  <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Public Student Details</Text>
 
                   {/* Profile Picture Upload Section */}
                   <View style={styles.avatarEditContainer}>
@@ -1305,25 +1355,26 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       style={[
                         styles.avatarPreviewBox,
                         {
-                          borderRadius: avatarShape === 'SQUARE' ? 0 : 36,
+                          backgroundColor: colors.surfaceLight,
+                          borderRadius: avatarShape === 'SQUARE' ? 0 : 38,
                           borderColor: colors.primary,
                         },
                       ]}
                       onPress={handlePickPhoto}
                       activeOpacity={0.8}
+                      accessibilityLabel="Choose profile photo"
                     >
-                      {editAvatarPreview || profile?.profile_picture ? (
-                        <Image
-                          source={{ uri: editAvatarPreview || getFullMediaUrl(profile?.profile_picture) }}
-                          style={[
-                            styles.avatarPreviewImage,
-                            { borderRadius: avatarShape === 'SQUARE' ? 0 : 36 },
-                          ]}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <Text style={styles.avatarInitials}>{initials}</Text>
-                      )}
+                      <UserAvatar
+                        uri={
+                          editAvatarPreview ||
+                          profile?.profile_picture ||
+                          currentUser.profile_picture ||
+                          currentUser.avatar
+                        }
+                        name={currentUser.full_name || profile?.username || currentUser.email}
+                        size={72}
+                        borderRadius={avatarShape === 'SQUARE' ? 0 : 36}
+                      />
                       <View style={styles.avatarUploadOverlay}>
                         <Camera size={14} color="#ffffff" />
                       </View>
@@ -1350,18 +1401,18 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     </View>
                   </View>
 
-                  <Text style={styles.fieldLabel}>Full Name</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Full Name</Text>
                   <TextInput
-                    style={styles.settingsInput}
+                    style={[styles.settingsInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
                     value={editFullName}
                     onChangeText={setEditFullName}
                     placeholder="Your legal name"
                     placeholderTextColor={colors.textMuted}
                   />
 
-                  <Text style={styles.fieldLabel}>Campus Handle (@username)</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Campus Handle (@username)</Text>
                   <TextInput
-                    style={styles.settingsInput}
+                    style={[styles.settingsInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
                     value={editUsername}
                     onChangeText={setEditUsername}
                     placeholder="e.g. rahul_cse"
@@ -1369,9 +1420,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     autoCapitalize="none"
                   />
 
-                  <Text style={styles.fieldLabel}>Bio</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Bio</Text>
                   <TextInput
-                    style={[styles.settingsInput, styles.bioInputArea]}
+                    style={[styles.settingsInput, styles.bioInputArea, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
                     value={editBio}
                     onChangeText={setEditBio}
                     placeholder="Tell your college batch about yourself..."
@@ -1379,13 +1430,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     multiline
                   />
 
-                  <Text style={styles.fieldLabel}>Gender</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Gender</Text>
                   <View style={styles.genderRow}>
                     {['Male', 'Female', 'Other'].map((g) => (
                       <TouchableOpacity
                         key={g}
                         style={[
                           styles.genderOption,
+                          { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
                           editGender === g && styles.genderOptionActive,
                         ]}
                         onPress={() => setEditGender(g)}
@@ -1393,7 +1445,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         <Text
                           style={[
                             styles.genderOptionText,
-                            editGender === g && styles.genderOptionTextActive,
+                            { color: colors.textSecondary },
+                            editGender === g && [styles.genderOptionTextActive, { color: colors.primary }],
                           ]}
                         >
                           {g}
@@ -1404,21 +1457,21 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
                   <View style={[styles.prefRow, { marginTop: 12, marginBottom: 8 }]}>
                     <View style={styles.prefTextCol}>
-                      <Text style={styles.prefHeading}>Hide Gender on Public Profile</Text>
-                      <Text style={styles.prefSub}>
+                      <Text style={[styles.prefHeading, { color: colors.textPrimary }]}>Hide Gender on Public Profile</Text>
+                      <Text style={[styles.prefSub, { color: colors.textMuted }]}>
                         Keep your gender private so it won't be displayed on public cards or student badges.
                       </Text>
                     </View>
                     <Switch
                       value={!editShowGender}
                       onValueChange={(val) => setEditShowGender(!val)}
-                      trackColor={{ false: '#262626', true: colors.primary }}
+                      trackColor={{ false: colors.cardBorder, true: colors.primary }}
                       thumbColor="#ffffff"
                     />
                   </View>
 
                   <TouchableOpacity
-                    style={styles.saveChangesBtn}
+                    style={[styles.saveChangesBtn, { backgroundColor: colors.primary }]}
                     onPress={handleSaveProfile}
                     disabled={savingProfile}
                   >
@@ -1435,11 +1488,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               {activeSettingsSection === 'PASSWORD' && (
                 <View style={styles.settingsSectionBody}>
                   {/* Change Password */}
-                  <Text style={styles.inputGroupTitle}>Change Password</Text>
+                  <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Change Password</Text>
 
-                  <Text style={styles.fieldLabel}>Current Password</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Current Password</Text>
                   <TextInput
-                    style={styles.settingsInput}
+                    style={[styles.settingsInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
                     value={oldPassword}
                     onChangeText={setOldPassword}
                     placeholder="Enter current password (if set)"
@@ -1447,9 +1500,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     secureTextEntry
                   />
 
-                  <Text style={styles.fieldLabel}>New Password (min 6 characters)</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>New Password (min 6 characters)</Text>
                   <TextInput
-                    style={styles.settingsInput}
+                    style={[styles.settingsInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
                     value={newPassword}
                     onChangeText={setNewPassword}
                     placeholder="Enter new strong password"
@@ -1457,9 +1510,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     secureTextEntry
                   />
 
-                  <Text style={styles.fieldLabel}>Confirm New Password</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Confirm New Password</Text>
                   <TextInput
-                    style={styles.settingsInput}
+                    style={[styles.settingsInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                     placeholder="Confirm new password"
@@ -1468,7 +1521,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   />
 
                   <TouchableOpacity
-                    style={styles.saveChangesBtn}
+                    style={[styles.saveChangesBtn, { backgroundColor: colors.primary }]}
                     onPress={handleChangePassword}
                     disabled={changingPassword}
                   >
@@ -1479,17 +1532,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     )}
                   </TouchableOpacity>
 
-                  <View style={styles.settingsDivider} />
+                  <View style={[styles.settingsDivider, { backgroundColor: colors.cardBorder }]} />
 
                   {/* Forgot / Reset Password with Email OTP */}
-                  <Text style={styles.inputGroupTitle}>Forgot Password? (OTP Reset)</Text>
-                  <Text style={styles.subtext}>
+                  <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Forgot Password? (OTP Reset)</Text>
+                  <Text style={[styles.subtext, { color: colors.textMuted }]}>
                     Receive a 6-digit reset code on your college email address.
                   </Text>
 
-                  <Text style={styles.fieldLabel}>College Email</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>College Email</Text>
                   <TextInput
-                    style={styles.settingsInput}
+                    style={[styles.settingsInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
                     value={resetEmail}
                     onChangeText={setResetEmail}
                     placeholder="e.g. rahul.sharma@geu.ac.in"
@@ -1504,16 +1557,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       disabled={sendingResetOtp}
                     >
                       {sendingResetOtp ? (
-                        <ActivityIndicator color="#818cf8" />
+                        <ActivityIndicator color={colors.primary} />
                       ) : (
-                        <Text style={styles.secondaryActionText}>Send Reset Code to Email</Text>
+                        <Text style={[styles.secondaryActionText, { color: colors.primary }]}>Send Reset Code to Email</Text>
                       )}
                     </TouchableOpacity>
                   ) : (
                     <View style={styles.resetOtpBlock}>
-                      <Text style={styles.fieldLabel}>6-Digit Reset Code</Text>
+                      <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>6-Digit Reset Code</Text>
                       <TextInput
-                        style={styles.settingsInput}
+                        style={[styles.settingsInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
                         value={resetOtp}
                         onChangeText={setResetOtp}
                         placeholder="123456"
@@ -1522,9 +1575,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         maxLength={6}
                       />
 
-                      <Text style={styles.fieldLabel}>New Password</Text>
+                      <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>New Password</Text>
                       <TextInput
-                        style={styles.settingsInput}
+                        style={[styles.settingsInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
                         value={resetNewPassword}
                         onChangeText={setResetNewPassword}
                         placeholder="Enter new password"
@@ -1533,7 +1586,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       />
 
                       <TouchableOpacity
-                        style={styles.saveChangesBtn}
+                        style={[styles.saveChangesBtn, { backgroundColor: colors.primary }]}
                         onPress={handleResetPassword}
                         disabled={resettingPassword}
                       >
@@ -1552,8 +1605,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               {activeSettingsSection === 'PREFERENCES' && (
                 <View style={styles.settingsSectionBody}>
                   {/* Theme & Appearance */}
-                  <Text style={styles.inputGroupTitle}>Appearance & Theme</Text>
-                  <Text style={styles.prefSub}>
+                  <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Appearance & Theme</Text>
+                  <Text style={[styles.prefSub, { color: colors.textMuted }]}>
                     Switch between Dark Mode, Studio Light Mode, or adapt automatically to your OS.
                   </Text>
 
@@ -1605,15 +1658,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     })}
                   </View>
 
-                  <View style={styles.settingsDivider} />
+                  <View style={[styles.settingsDivider, { backgroundColor: colors.cardBorder }]} />
 
                   {/* Account Privacy Control */}
-                  <Text style={styles.inputGroupTitle}>Account Privacy</Text>
+                  <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Account Privacy</Text>
 
                   <View style={styles.prefRow}>
                     <View style={styles.prefTextCol}>
-                      <Text style={styles.prefHeading}>Private Account</Text>
-                      <Text style={styles.prefSub}>
+                      <Text style={[styles.prefHeading, { color: colors.textPrimary }]}>Private Account</Text>
+                      <Text style={[styles.prefSub, { color: colors.textMuted }]}>
                         When your account is private, only students you approve can follow you and view your posts. Non-followers see a locked profile card.
                       </Text>
                     </View>
@@ -1625,17 +1678,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       onPress={() => handleTogglePrivateAccount(!isPrivateAccount)}
                       disabled={updatingPrivacy}
                     >
-                      <Text style={styles.privacyToggleBtnText}>
+                      <Text style={[styles.privacyToggleBtnText, { color: isPrivateAccount ? '#38bdf8' : '#10b981' }]}>
                         {isPrivateAccount ? 'PRIVATE 🔒' : 'PUBLIC 🌐'}
                       </Text>
                     </TouchableOpacity>
                   </View>
 
-                  <View style={styles.settingsDivider} />
+                  <View style={[styles.settingsDivider, { backgroundColor: colors.cardBorder }]} />
 
                   {/* Messaging Preference Control */}
-                  <Text style={styles.inputGroupTitle}>Who Can Message You</Text>
-                  <Text style={styles.prefSub}>
+                  <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Who Can Message You</Text>
+                  <Text style={[styles.prefSub, { color: colors.textMuted }]}>
                     Control who can send direct messages or message requests to your primary inbox.
                   </Text>
 
@@ -1683,14 +1736,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     ))}
                   </View>
 
-                  <View style={styles.settingsDivider} />
+                  <View style={[styles.settingsDivider, { backgroundColor: colors.cardBorder }]} />
 
-                  <Text style={styles.inputGroupTitle}>Campus Privacy Shield</Text>
+                  <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Campus Privacy Shield</Text>
 
                   <View style={styles.prefRow}>
                     <View style={styles.prefTextCol}>
-                      <Text style={styles.prefHeading}>Anonymous Mode</Text>
-                      <Text style={styles.prefSub}>
+                      <Text style={[styles.prefHeading, { color: colors.textPrimary }]}>Anonymous Mode</Text>
+                      <Text style={[styles.prefSub, { color: colors.textMuted }]}>
                         Allows posting with mascot pseudonyms without exposing your college handle.
                       </Text>
                     </View>
@@ -1699,12 +1752,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     </View>
                   </View>
 
-                  <View style={styles.settingsDivider} />
+                  <View style={[styles.settingsDivider, { backgroundColor: colors.cardBorder }]} />
 
                   <View style={styles.prefRow}>
                     <View style={styles.prefTextCol}>
-                      <Text style={styles.prefHeading}>Push Notifications</Text>
-                      <Text style={styles.prefSub}>
+                      <Text style={[styles.prefHeading, { color: colors.textPrimary }]}>Push Notifications</Text>
+                      <Text style={[styles.prefSub, { color: colors.textMuted }]}>
                         Alerts for community mentions, incoming calls, and DMs.
                       </Text>
                     </View>
@@ -1713,10 +1766,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     </View>
                   </View>
 
-                  <View style={styles.settingsDivider} />
+                  <View style={[styles.settingsDivider, { backgroundColor: colors.cardBorder }]} />
 
-                  <Text style={styles.inputGroupTitle}>⚠️ Danger Zone</Text>
-                  <Text style={styles.subtext}>
+                  <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>⚠️ Danger Zone</Text>
+                  <Text style={[styles.subtext, { color: colors.textMuted }]}>
                     Log out from this device or permanently delete your student account and wipe all profile data.
                   </Text>
 
@@ -1744,37 +1797,37 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 <View style={styles.settingsSectionBody}>
                   <View style={styles.auditHeaderRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.inputGroupTitle}>Campus 100-User Audit Shield</Text>
-                      <Text style={styles.auditHeaderSub}>
+                      <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Campus 100-User Audit Shield</Text>
+                      <Text style={[styles.auditHeaderSub, { color: colors.textSecondary }]}>
                         Track verified ID cards and eliminate fake accounts during blind testing.
                       </Text>
                     </View>
                     <TouchableOpacity
-                      style={styles.refreshAuditBtn}
+                      style={[styles.refreshAuditBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
                       onPress={loadAuditList}
                       disabled={auditLoading}
                     >
-                      <Text style={styles.refreshAuditText}>🔄 Refresh</Text>
+                      <Text style={[styles.refreshAuditText, { color: colors.textPrimary }]}>🔄 Refresh</Text>
                     </TouchableOpacity>
                   </View>
 
                   {/* Metrics Bar */}
                   <View style={styles.auditMetricsRow}>
-                    <View style={styles.auditMetricBox}>
-                      <Text style={styles.auditMetricNum}>{totalStudentsCount}</Text>
-                      <Text style={styles.auditMetricLabel}>STUDENTS</Text>
+                    <View style={[styles.auditMetricBox, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                      <Text style={[styles.auditMetricNum, { color: colors.textPrimary }]}>{totalStudentsCount}</Text>
+                      <Text style={[styles.auditMetricLabel, { color: colors.textMuted }]}>STUDENTS</Text>
                     </View>
-                    <View style={styles.auditMetricBox}>
+                    <View style={[styles.auditMetricBox, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
                       <Text style={[styles.auditMetricNum, { color: '#34d399' }]}>
                         {totalStudentsCount - flaggedCount}
                       </Text>
-                      <Text style={styles.auditMetricLabel}>VERIFIED</Text>
+                      <Text style={[styles.auditMetricLabel, { color: colors.textMuted }]}>VERIFIED</Text>
                     </View>
-                    <View style={styles.auditMetricBox}>
+                    <View style={[styles.auditMetricBox, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
                       <Text style={[styles.auditMetricNum, { color: '#ef4444' }]}>
                         {flaggedCount}
                       </Text>
-                      <Text style={styles.auditMetricLabel}>FLAGGED FAKE</Text>
+                      <Text style={[styles.auditMetricLabel, { color: colors.textMuted }]}>FLAGGED FAKE</Text>
                     </View>
                   </View>
 
@@ -1792,18 +1845,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                           key={s.user_id}
                           style={[
                             styles.auditCard,
+                            { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
                             s.is_flagged_fake && styles.auditCardFlagged,
                           ]}
                         >
                           <View style={styles.auditCardTop}>
-                            <View style={styles.auditAvatar}>
-                              <Text style={styles.auditAvatarText}>
-                                {s.username ? s.username[0].toUpperCase() : 'U'}
-                              </Text>
-                            </View>
+                            <UserAvatar
+                              uri={s.avatar || s.profile_picture}
+                              name={s.full_name || s.username}
+                              size={40}
+                            />
                             <View style={{ flex: 1 }}>
                               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                <Text style={styles.auditName}>@{s.username}</Text>
+                                <Text style={[styles.auditName, { color: colors.textPrimary }]}>@{s.username}</Text>
                                 <View
                                   style={[
                                     styles.auditMethodPill,
@@ -1817,13 +1871,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                                   </Text>
                                 </View>
                               </View>
-                              <Text style={styles.auditMetaText}>
+                              <Text style={[styles.auditMetaText, { color: colors.textSecondary }]}>
                                 📱 {s.phone_number} • ✉️ {s.email}
                               </Text>
-                              <Text style={styles.auditAcademicText}>
+                              <Text style={[styles.auditAcademicText, { color: colors.textMuted }]}>
                                 🏛️ {s.college_name} • {s.course_name} ({s.branch_name})
                               </Text>
-                              <Text style={styles.auditRollText}>
+                              <Text style={[styles.auditRollText, { color: colors.textMuted }]}>
                                 🔒 Roll Number: <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{s.admission_number || 'Pending'}</Text>
                               </Text>
                             </View>
@@ -1873,18 +1927,18 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         transparent
         onRequestClose={() => setSwitcherModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+        <View style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
             <View style={styles.modalHeaderRow}>
               <View>
-                <Text style={styles.modalTitle}>Switch Campus Account</Text>
-                <Text style={styles.modalSubtitle}>Select any student to test interactions</Text>
+                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Switch Campus Account</Text>
+                <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>Select any student to test interactions</Text>
               </View>
               <TouchableOpacity
-                style={styles.closeBtn}
+                style={[styles.closeBtn, { backgroundColor: colors.surfaceLight }]}
                 onPress={() => setSwitcherModalVisible(false)}
               >
-                <Text style={styles.closeBtnText}>✕</Text>
+                <Text style={[styles.closeBtnText, { color: colors.textPrimary }]}>✕</Text>
               </TouchableOpacity>
             </View>
 
@@ -1894,28 +1948,34 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 return (
                   <TouchableOpacity
                     key={user.id}
-                    style={[styles.modalUserRow, isCurrent && styles.modalUserRowCurrent]}
+                    style={[
+                      styles.modalUserRow,
+                      { borderBottomColor: colors.cardBorder },
+                      isCurrent && [styles.modalUserRowCurrent, { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.14)' : 'rgba(79, 70, 229, 0.08)' }],
+                    ]}
                     onPress={() => handleSwitchAccount(user.email)}
                     disabled={switchingUser !== null}
                   >
-                    <View style={styles.modalAvatarCircle}>
-                      <Text style={styles.modalAvatarInitial}>{user.full_name[0]}</Text>
-                    </View>
+                    <UserAvatar
+                      uri={user.avatar || (user as any).profile_picture}
+                      name={user.full_name}
+                      size={40}
+                    />
                     <View style={styles.modalUserCol}>
-                      <Text style={styles.modalUserName}>
+                      <Text style={[styles.modalUserName, { color: colors.textPrimary }]}>
                         {user.full_name} {isCurrent ? ' (Active)' : ''}
                       </Text>
-                      <Text style={styles.modalUserSub}>
+                      <Text style={[styles.modalUserSub, { color: colors.textMuted }]}>
                         {user.course} • {user.branch || 'General'} • @{user.username}
                       </Text>
-                      <Text style={styles.modalUserBio} numberOfLines={1}>
+                      <Text style={[styles.modalUserBio, { color: colors.textSecondary }]} numberOfLines={1}>
                         {user.bio}
                       </Text>
                     </View>
                     {isCurrent ? (
                       <Text style={styles.modalCheckmark}>✓</Text>
                     ) : (
-                      <Text style={styles.modalSwitchArrow}>➔</Text>
+                      <Text style={[styles.modalSwitchArrow, { color: colors.textMuted }]}>➔</Text>
                     )}
                   </TouchableOpacity>
                 );
@@ -1954,8 +2014,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             if (data) setProfile(data);
           }).catch(() => {});
         }}
-        onOpenChat={(conv) => {
-          Alert.alert('Chat Ready 💬', 'Head to the Messages tab to continue this conversation.');
+        onOpenChat={() => {
+          showCrossPlatformAlert('Chat Ready', 'Head to the Messages tab to continue this conversation.');
         }}
         onOpenSocialList={(type, targetUid) => {
           setSocialModalType(type);
@@ -1971,7 +2031,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         transparent
         onRequestClose={() => setSavedModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <View style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}>
           <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
             <View style={styles.modalHeaderRow}>
               <View>
@@ -1981,7 +2041,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </Text>
               </View>
               <TouchableOpacity style={styles.customCloseBtn} onPress={() => setSavedModalVisible(false)}>
-                <Text style={styles.closeBtnText}>Done</Text>
+                <Text style={[styles.closeBtnText, { color: colors.primary }]}>Done</Text>
               </TouchableOpacity>
             </View>
 
@@ -2045,7 +2105,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         transparent
         onRequestClose={() => setBlockedModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <View style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}>
           <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
             <View style={styles.modalHeaderRow}>
               <View>
@@ -2055,7 +2115,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </Text>
               </View>
               <TouchableOpacity style={styles.customCloseBtn} onPress={() => setBlockedModalVisible(false)}>
-                <Text style={styles.closeBtnText}>Done</Text>
+                <Text style={[styles.closeBtnText, { color: colors.primary }]}>Done</Text>
               </TouchableOpacity>
             </View>
 
@@ -2083,11 +2143,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         key={targetUser.id}
                         style={[styles.blockedUserRow, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
                       >
-                        <View style={styles.blockedAvatarBox}>
-                          <Text style={styles.blockedAvatarInitial}>
-                            {(targetUser.full_name || targetUser.name || 'S')[0]?.toUpperCase()}
-                          </Text>
-                        </View>
+                        <UserAvatar
+                          uri={targetUser.avatar || targetUser.profile_picture}
+                          name={targetUser.full_name || targetUser.name}
+                          size={42}
+                          borderRadius={10}
+                        />
                         <View style={{ flex: 1 }}>
                           <Text style={[styles.blockedUserName, { color: colors.textPrimary }]}>
                             {targetUser.full_name || targetUser.name}
@@ -2129,7 +2190,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         transparent
         onRequestClose={() => setAccountInfoModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <View style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}>
           <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
             <View style={styles.modalHeaderRow}>
               <View>
@@ -2139,7 +2200,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </Text>
               </View>
               <TouchableOpacity style={styles.customCloseBtn} onPress={() => setAccountInfoModalVisible(false)}>
-                <Text style={styles.closeBtnText}>Done</Text>
+                <Text style={[styles.closeBtnText, { color: colors.primary }]}>Done</Text>
               </TouchableOpacity>
             </View>
 
@@ -2238,7 +2299,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         transparent
         onRequestClose={() => setPreferencesModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <View style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}>
           <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
             <View style={styles.modalHeaderRow}>
               <View>
@@ -2248,7 +2309,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </Text>
               </View>
               <TouchableOpacity style={styles.customCloseBtn} onPress={() => setPreferencesModalVisible(false)}>
-                <Text style={styles.closeBtnText}>Done</Text>
+                <Text style={[styles.closeBtnText, { color: colors.primary }]}>Done</Text>
               </TouchableOpacity>
             </View>
 
@@ -2269,10 +2330,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       ]}
                       onPress={() => handleToggleAvatarShape('SQUARE')}
                     >
-                      <View style={[styles.shapePreviewBox, { borderRadius: 0, backgroundColor: colors.primary }]}>
-                        <Text style={styles.shapePreviewLetter}>{initials}</Text>
-                      </View>
-                      <Text style={[styles.shapePrefLabel, avatarShape === 'SQUARE' && { color: colors.primary }]}>
+                      <UserAvatar
+                        uri={profile?.profile_picture || currentUser.profile_picture || currentUser.avatar}
+                        name={currentUser.full_name || profile?.username || currentUser.email}
+                        size={48}
+                        borderRadius={0}
+                        style={{ marginBottom: 8 }}
+                      />
+                      <Text style={[styles.shapePrefLabel, { color: avatarShape === 'SQUARE' ? colors.primary : colors.textPrimary }]}>
                         ⬛ 0 Shape (Square)
                       </Text>
                       <Text style={[styles.shapePrefDesc, { color: colors.textMuted }]}>Brutalist modern</Text>
@@ -2286,10 +2351,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       ]}
                       onPress={() => handleToggleAvatarShape('CIRCLE')}
                     >
-                      <View style={[styles.shapePreviewBox, { borderRadius: 24, backgroundColor: colors.primary }]}>
-                        <Text style={styles.shapePreviewLetter}>{initials}</Text>
-                      </View>
-                      <Text style={[styles.shapePrefLabel, avatarShape === 'CIRCLE' && { color: colors.primary }]}>
+                      <UserAvatar
+                        uri={profile?.profile_picture || currentUser.profile_picture || currentUser.avatar}
+                        name={currentUser.full_name || profile?.username || currentUser.email}
+                        size={48}
+                        borderRadius={24}
+                        style={{ marginBottom: 8 }}
+                      />
+                      <Text style={[styles.shapePrefLabel, { color: avatarShape === 'CIRCLE' ? colors.primary : colors.textPrimary }]}>
                         ⚪ Round Circle
                       </Text>
                       <Text style={[styles.shapePrefDesc, { color: colors.textMuted }]}>Classic circle</Text>
@@ -2388,7 +2457,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         transparent
         onRequestClose={() => setNotifModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <View style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}>
           <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
             <View style={styles.modalHeaderRow}>
               <View>
@@ -2398,7 +2467,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </Text>
               </View>
               <TouchableOpacity style={styles.customCloseBtn} onPress={() => setNotifModalVisible(false)}>
-                <Text style={styles.closeBtnText}>Done</Text>
+                <Text style={[styles.closeBtnText, { color: colors.primary }]}>Done</Text>
               </TouchableOpacity>
             </View>
 
@@ -2646,8 +2715,11 @@ const styles = StyleSheet.create({
   },
   heroTopActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'flex-end',
-    marginBottom: 8,
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
   },
   settingsIconBtn: {
     flexDirection: 'row',
@@ -2672,7 +2744,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    marginRight: 6,
   },
   editProfileBtnText: {
     color: '#ffffff',
@@ -3428,7 +3499,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    marginRight: 8,
   },
   auditIconText: {
     color: colors.primaryHover,
@@ -3445,7 +3515,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    marginLeft: 8,
   },
   heroLogoutText: {
     color: '#ef4444',
@@ -3462,7 +3531,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    marginLeft: 8,
   },
   heroDeleteText: {
     color: '#ef4444',

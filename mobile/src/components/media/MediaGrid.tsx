@@ -1,15 +1,11 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  Image,
-  TouchableOpacity,
-  StyleSheet,
-  Dimensions,
-} from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ImageOff } from 'lucide-react-native';
 import { AttachmentItem } from '../../services/chatService';
 import { ImageViewerModal } from './ImageViewerModal';
 import { getFullMediaUrl } from '../../config/api';
+import { useTheme } from '../../theme/ThemeContext';
+import { clampAspectRatio, measureImageSize } from '../../utils/mediaUtils';
 
 interface MediaGridProps {
   images: AttachmentItem[];
@@ -17,11 +13,118 @@ interface MediaGridProps {
   containerWidth?: number;
 }
 
+const GridThumb: React.FC<{ uri: string; onPress: () => void; style?: any; overlay?: React.ReactNode }> = ({
+  uri,
+  onPress,
+  style,
+  overlay,
+}) => {
+  const { colors } = useTheme();
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [uri]);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={onPress}
+      style={[style, { backgroundColor: colors.surfaceLight }]}
+    >
+      {failed || !uri ? (
+        <View style={styles.errorFallback}>
+          <ImageOff size={20} color={colors.textMuted} />
+        </View>
+      ) : (
+        <Image
+          source={{ uri }}
+          style={styles.gridImage}
+          resizeMode="cover"
+          onError={() => setFailed(true)}
+        />
+      )}
+      {overlay}
+    </TouchableOpacity>
+  );
+};
+
+const AdaptiveSingleImage: React.FC<{
+  item: AttachmentItem;
+  onPress: () => void;
+  maxWidth?: number;
+}> = ({ item, onPress, maxWidth }) => {
+  const { colors } = useTheme();
+  const [ratio, setRatio] = useState<number>(() =>
+    clampAspectRatio(item.image_width, item.image_height, 4 / 3)
+  );
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+    if (item.image_width && item.image_height) {
+      setRatio(clampAspectRatio(item.image_width, item.image_height, 4 / 3));
+      return;
+    }
+    let cancelled = false;
+    measureImageSize(item.file_url).then((dims) => {
+      if (!cancelled && dims) {
+        setRatio(clampAspectRatio(dims.width, dims.height, 4 / 3));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [item.file_url, item.image_width, item.image_height]);
+
+  const handleLoad = (e: any) => {
+    const src = e?.nativeEvent?.source;
+    const w = src?.width || e?.target?.naturalWidth;
+    const h = src?.height || e?.target?.naturalHeight;
+    if (w && h) {
+      setRatio(clampAspectRatio(w, h, ratio));
+    }
+  };
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.92}
+      onPress={onPress}
+      style={[
+        styles.singleImageWrapper,
+        {
+          aspectRatio: ratio,
+          maxHeight: 520,
+          maxWidth: maxWidth || '100%',
+          backgroundColor: colors.surfaceLight,
+          borderColor: colors.hairline,
+        },
+      ]}
+    >
+      {failed || !item.file_url ? (
+        <View style={styles.errorFallback}>
+          <ImageOff size={24} color={colors.textMuted} />
+          <Text style={[styles.errorText, { color: colors.textMuted }]}>Image unavailable</Text>
+        </View>
+      ) : (
+        <Image
+          source={{ uri: item.file_url }}
+          style={styles.singleImage}
+          resizeMode="contain"
+          onLoad={handleLoad}
+          onError={() => setFailed(true)}
+        />
+      )}
+    </TouchableOpacity>
+  );
+};
+
 export const MediaGrid: React.FC<MediaGridProps> = ({
   images: rawImages,
   maxDisplay = 4,
   containerWidth,
 }) => {
+  const { colors } = useTheme();
   const [viewerVisible, setViewerVisible] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -42,24 +145,18 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
     setViewerVisible(true);
   };
 
-  // 1 Image: Large Preview
+  // 1 Image: True proportional preview clamped between 9:16 and 16:9
   if (total === 1) {
     const item = images[0];
     return (
       <View style={styles.container}>
-        <TouchableOpacity
-          activeOpacity={0.9}
+        <AdaptiveSingleImage
+          item={item}
           onPress={() => handleOpenViewer(0)}
-          style={styles.singleImageWrapper}
-        >
-          <Image
-            source={{ uri: item.file_url }}
-            style={styles.singleImage}
-            resizeMode="cover"
-          />
-        </TouchableOpacity>
+          maxWidth={containerWidth}
+        />
         {item.caption ? (
-          <Text style={styles.captionText}>{item.caption}</Text>
+          <Text style={[styles.captionText, { color: colors.textSecondary }]}>{item.caption}</Text>
         ) : null}
 
         <ImageViewerModal
@@ -78,18 +175,12 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
       <View style={styles.container}>
         <View style={styles.twoGrid}>
           {images.map((item, idx) => (
-            <TouchableOpacity
+            <GridThumb
               key={item.id || idx}
-              activeOpacity={0.9}
+              uri={item.file_url}
               onPress={() => handleOpenViewer(idx)}
               style={styles.halfImageWrapper}
-            >
-              <Image
-                source={{ uri: item.file_url }}
-                style={styles.gridImage}
-                resizeMode="cover"
-              />
-            </TouchableOpacity>
+            />
           ))}
         </View>
 
@@ -108,31 +199,19 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
     return (
       <View style={styles.container}>
         <View style={styles.threeGrid}>
-          <TouchableOpacity
-            activeOpacity={0.9}
+          <GridThumb
+            uri={images[0].file_url}
             onPress={() => handleOpenViewer(0)}
             style={styles.threeLargeWrapper}
-          >
-            <Image
-              source={{ uri: images[0].file_url }}
-              style={styles.gridImage}
-              resizeMode="cover"
-            />
-          </TouchableOpacity>
+          />
           <View style={styles.threeColumn}>
             {images.slice(1, 3).map((item, idx) => (
-              <TouchableOpacity
+              <GridThumb
                 key={item.id || idx + 1}
-                activeOpacity={0.9}
+                uri={item.file_url}
                 onPress={() => handleOpenViewer(idx + 1)}
                 style={styles.threeSmallWrapper}
-              >
-                <Image
-                  source={{ uri: item.file_url }}
-                  style={styles.gridImage}
-                  resizeMode="cover"
-                />
-              </TouchableOpacity>
+              />
             ))}
           </View>
         </View>
@@ -156,23 +235,19 @@ export const MediaGrid: React.FC<MediaGridProps> = ({
           const showOverlay = isLast && remainingCount > 0;
 
           return (
-            <TouchableOpacity
+            <GridThumb
               key={item.id || idx}
-              activeOpacity={0.9}
+              uri={item.file_url}
               onPress={() => handleOpenViewer(idx)}
               style={styles.quarterImageWrapper}
-            >
-              <Image
-                source={{ uri: item.file_url }}
-                style={styles.gridImage}
-                resizeMode="cover"
-              />
-              {showOverlay && (
-                <View style={styles.overlay}>
-                  <Text style={styles.overlayText}>+{remainingCount}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+              overlay={
+                showOverlay ? (
+                  <View style={styles.overlay}>
+                    <Text style={styles.overlayText}>+{remainingCount}</Text>
+                  </View>
+                ) : null
+              }
+            />
           );
         })}
       </View>
@@ -195,11 +270,10 @@ const styles = StyleSheet.create({
   },
   singleImageWrapper: {
     width: '100%',
-    minWidth: 240,
-    height: 200,
+    minWidth: 180,
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#0f172a',
+    borderWidth: StyleSheet.hairlineWidth,
   },
   singleImage: {
     width: '100%',
@@ -208,8 +282,8 @@ const styles = StyleSheet.create({
   twoGrid: {
     flexDirection: 'row',
     width: '100%',
-    minWidth: 240,
-    height: 180,
+    minWidth: 220,
+    height: 200,
     gap: 4,
   },
   halfImageWrapper: {
@@ -217,13 +291,12 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: '#0f172a',
   },
   threeGrid: {
     flexDirection: 'row',
     width: '100%',
-    minWidth: 240,
-    height: 200,
+    minWidth: 220,
+    height: 220,
     gap: 4,
   },
   threeLargeWrapper: {
@@ -231,7 +304,6 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: '#0f172a',
   },
   threeColumn: {
     flex: 1,
@@ -242,14 +314,13 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: '#0f172a',
   },
   fourGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     width: '100%',
-    minWidth: 240,
-    height: 220,
+    minWidth: 220,
+    height: 240,
     gap: 4,
   },
   quarterImageWrapper: {
@@ -257,12 +328,21 @@ const styles = StyleSheet.create({
     height: '49%',
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: '#0f172a',
     position: 'relative',
   },
   gridImage: {
     width: '100%',
     height: '100%',
+  },
+  errorFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    gap: 6,
+  },
+  errorText: {
+    fontSize: 12,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
@@ -276,7 +356,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   captionText: {
-    color: '#cbd5e1',
     fontSize: 12,
     marginTop: 6,
     paddingHorizontal: 4,

@@ -8,13 +8,15 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
-  Image,
+  Platform,
   TextInput,
 } from 'react-native';
-import { X, Check, ShieldAlert, UserCheck, MessageSquare, Search, ShieldCheck } from 'lucide-react-native';
+import { X, Check, ShieldAlert, MessageSquare, Search, ShieldCheck } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 import { chatService, MessageRequestItem, Conversation } from '../../services/chatService';
-import { getFullMediaUrl } from '../../config/api';
+import { UserAvatar } from '../common/UserAvatar';
+import { showCrossPlatformAlert } from '../../utils/mediaUtils';
 
 interface MessageRequestsModalProps {
   visible: boolean;
@@ -29,6 +31,7 @@ export const MessageRequestsModal: React.FC<MessageRequestsModalProps> = ({
   onOpenConversation,
   onRequestCountChanged,
 }) => {
+  const { colors: themeColors } = useTheme();
   const [requests, setRequests] = useState<MessageRequestItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -68,67 +71,83 @@ export const MessageRequestsModal: React.FC<MessageRequestsModalProps> = ({
         onOpenConversation(res.conversation);
       }
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Could not accept message request.');
+      showCrossPlatformAlert('Error', e.response?.data?.error || 'Could not accept message request.');
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const executeDecline = async (req: MessageRequestItem) => {
+    try {
+      setProcessingId(req.id);
+      await chatService.declineMessageRequest(req.id);
+      setRequests((prev) => prev.filter((r) => r.id !== req.id));
+      if (onRequestCountChanged) {
+        onRequestCountChanged(Math.max(0, requests.length - 1));
+      }
+    } catch (e: any) {
+      showCrossPlatformAlert('Error', e.response?.data?.error || 'Could not decline request.');
     } finally {
       setProcessingId(null);
     }
   };
 
   const handleDecline = async (req: MessageRequestItem) => {
-    Alert.alert(
-      'Decline Message Request',
-      `Decline request from ${req.sender.full_name}? The sender won't know you declined.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Decline',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setProcessingId(req.id);
-              await chatService.declineMessageRequest(req.id);
-              setRequests((prev) => prev.filter((r) => r.id !== req.id));
-              if (onRequestCountChanged) {
-                onRequestCountChanged(Math.max(0, requests.length - 1));
-              }
-            } catch (e: any) {
-              Alert.alert('Error', e.response?.data?.error || 'Could not decline request.');
-            } finally {
-              setProcessingId(null);
-            }
-          },
+    const promptMsg = `Decline request from ${req.sender.full_name}? The sender won't know you declined.`;
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      if (window.confirm(`Decline Message Request\n\n${promptMsg}`)) {
+        await executeDecline(req);
+      }
+      return;
+    }
+
+    Alert.alert('Decline Message Request', promptMsg, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Decline',
+        style: 'destructive',
+        onPress: () => {
+          executeDecline(req);
         },
-      ]
-    );
+      },
+    ]);
+  };
+
+  const executeBlock = async (req: MessageRequestItem) => {
+    try {
+      setProcessingId(req.id);
+      await chatService.blockMessageRequest(req.id);
+      setRequests((prev) => prev.filter((r) => r.id !== req.id));
+      if (onRequestCountChanged) {
+        onRequestCountChanged(Math.max(0, requests.length - 1));
+      }
+      showCrossPlatformAlert('User Blocked', `${req.sender.full_name} has been blocked.`);
+    } catch (e: any) {
+      showCrossPlatformAlert('Error', e.response?.data?.error || 'Could not block user.');
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   const handleBlock = async (req: MessageRequestItem) => {
-    Alert.alert(
-      'Block Student',
-      `Are you sure you want to block ${req.sender.full_name}? They will not be able to message you or see your posts.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Block',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setProcessingId(req.id);
-              await chatService.blockMessageRequest(req.id);
-              setRequests((prev) => prev.filter((r) => r.id !== req.id));
-              if (onRequestCountChanged) {
-                onRequestCountChanged(Math.max(0, requests.length - 1));
-              }
-              Alert.alert('User Blocked', `${req.sender.full_name} has been blocked.`);
-            } catch (e: any) {
-              Alert.alert('Error', e.response?.data?.error || 'Could not block user.');
-            } finally {
-              setProcessingId(null);
-            }
-          },
+    const promptMsg = `Are you sure you want to block ${req.sender.full_name}? They will not be able to message you or see your posts.`;
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      if (window.confirm(`Block Student\n\n${promptMsg}`)) {
+        await executeBlock(req);
+      }
+      return;
+    }
+
+    Alert.alert('Block Student', promptMsg, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Block',
+        style: 'destructive',
+        onPress: () => {
+          executeBlock(req);
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const filteredRequests = requests.filter((r) => {
@@ -143,22 +162,25 @@ export const MessageRequestsModal: React.FC<MessageRequestsModalProps> = ({
 
   const renderItem = ({ item }: { item: MessageRequestItem }) => {
     const isBusy = processingId === item.id;
-    const initial = (item.sender.full_name || 'S').charAt(0).toUpperCase();
 
     return (
-      <View style={styles.card}>
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.hairline },
+        ]}
+      >
         <View style={styles.cardTop}>
-          {item.sender.avatar ? (
-            <Image source={{ uri: getFullMediaUrl(item.sender.avatar) }} style={styles.avatar} />
-          ) : (
-            <View style={styles.avatarFallback}>
-              <Text style={styles.avatarInitial}>{initial}</Text>
-            </View>
-          )}
+          <UserAvatar
+            uri={item.sender.avatar}
+            name={item.sender.full_name}
+            size={44}
+            style={{ marginRight: 12 }}
+          />
 
           <View style={styles.infoCol}>
             <View style={styles.nameRow}>
-              <Text style={styles.senderName} numberOfLines={1}>
+              <Text style={[styles.senderName, { color: themeColors.textPrimary }]} numberOfLines={1}>
                 {item.sender.full_name}
               </Text>
               {item.sender.is_verified && (
@@ -166,16 +188,23 @@ export const MessageRequestsModal: React.FC<MessageRequestsModalProps> = ({
               )}
             </View>
 
-            <Text style={styles.subMeta} numberOfLines={1}>
+            <Text style={[styles.subMeta, { color: themeColors.textSecondary }]} numberOfLines={1}>
               @{item.sender.username || 'student'} • {item.sender.college_name || 'Campus'}
             </Text>
           </View>
         </View>
 
         {/* Message Request Note - safe teaser without leaking prematurely */}
-        <View style={styles.messageBox}>
-          <Text style={styles.messageRequestBadge}>✉️ Sent you a message request</Text>
-          <Text style={styles.messageRequestHint}>
+        <View
+          style={[
+            styles.messageBox,
+            { backgroundColor: themeColors.surface, borderLeftColor: themeColors.primary },
+          ]}
+        >
+          <Text style={[styles.messageRequestBadge, { color: themeColors.textPrimary }]}>
+            ✉️ Sent you a message request
+          </Text>
+          <Text style={[styles.messageRequestHint, { color: themeColors.textSecondary }]}>
             Accept to unlock conversation, reveal initial message and reply.
           </Text>
         </View>
@@ -183,7 +212,7 @@ export const MessageRequestsModal: React.FC<MessageRequestsModalProps> = ({
         {/* Action Buttons */}
         <View style={styles.actionsRow}>
           <TouchableOpacity
-            style={[styles.btn, styles.acceptBtn]}
+            style={[styles.btn, styles.acceptBtn, { backgroundColor: themeColors.primary }]}
             onPress={() => handleAccept(item)}
             disabled={isBusy}
             activeOpacity={0.8}
@@ -199,16 +228,24 @@ export const MessageRequestsModal: React.FC<MessageRequestsModalProps> = ({
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.btn, styles.declineBtn]}
+            style={[
+              styles.btn,
+              styles.declineBtn,
+              { backgroundColor: themeColors.surface, borderColor: themeColors.hairline },
+            ]}
             onPress={() => handleDecline(item)}
             disabled={isBusy}
             activeOpacity={0.8}
           >
-            <Text style={styles.declineBtnText}>Decline</Text>
+            <Text style={[styles.declineBtnText, { color: themeColors.textSecondary }]}>Decline</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.btn, styles.blockBtn]}
+            style={[
+              styles.btn,
+              styles.blockBtn,
+              { backgroundColor: themeColors.surface, borderColor: themeColors.hairline },
+            ]}
             onPress={() => handleBlock(item)}
             disabled={isBusy}
             activeOpacity={0.8}
@@ -222,29 +259,40 @@ export const MessageRequestsModal: React.FC<MessageRequestsModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={styles.modalContent}>
+      <View style={[styles.overlay, { backgroundColor: themeColors.modalOverlay }]}>
+        <View style={[styles.modalContent, { backgroundColor: themeColors.surface }]}>
           {/* Header */}
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.title}>Message Requests</Text>
-              <Text style={styles.subtitle}>
+          <View style={[styles.header, { borderBottomColor: themeColors.cardBorder }]}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Text style={[styles.title, { color: themeColors.textPrimary }]}>Message Requests</Text>
+              <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>
                 Messages from students who aren't mutual connections
               </Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X size={20} color={colors.textSecondary} />
+            <TouchableOpacity
+              onPress={onClose}
+              style={[
+                styles.closeBtn,
+                { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.hairline },
+              ]}
+            >
+              <X size={20} color={themeColors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           {/* Search Bar */}
           {requests.length > 3 && (
-            <View style={styles.searchBar}>
-              <Search size={15} color="#64748b" style={{ marginRight: 8 }} />
+            <View
+              style={[
+                styles.searchBar,
+                { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.hairline },
+              ]}
+            >
+              <Search size={15} color={themeColors.textMuted} style={{ marginRight: 8 }} />
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, { color: themeColors.textPrimary }]}
                 placeholder="Search requests..."
-                placeholderTextColor="#64748b"
+                placeholderTextColor={themeColors.textMuted}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
               />
@@ -253,14 +301,18 @@ export const MessageRequestsModal: React.FC<MessageRequestsModalProps> = ({
 
           {loading ? (
             <View style={styles.centerBox}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>Loading requests...</Text>
+              <ActivityIndicator size="large" color={themeColors.primary} />
+              <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>
+                Loading requests...
+              </Text>
             </View>
           ) : filteredRequests.length === 0 ? (
             <View style={styles.centerBox}>
-              <MessageSquare size={44} color="#334155" />
-              <Text style={styles.emptyTitle}>No Pending Requests</Text>
-              <Text style={styles.emptySub}>
+              <MessageSquare size={44} color={themeColors.textMuted} />
+              <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>
+                No Pending Requests
+              </Text>
+              <Text style={[styles.emptySub, { color: themeColors.textMuted }]}>
                 When someone who isn't connected messages you, their request appears here.
               </Text>
             </View>

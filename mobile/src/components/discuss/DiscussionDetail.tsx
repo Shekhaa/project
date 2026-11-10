@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -34,6 +34,14 @@ import {
   RecordedVoiceNote,
 } from '../media/VoiceNoteRecorder';
 import { AttachmentPickerModal, StagedAttachment } from '../media/AttachmentPickerModal';
+import { UserAvatar } from '../common/UserAvatar';
+import {
+  MentionCandidate,
+  MentionSuggestionsBar,
+  applyMentionSelection,
+  extractActiveMention,
+} from '../common/MentionSuggestionsBar';
+import { showCrossPlatformAlert } from '../../utils/mediaUtils';
 import {
   X,
   ArrowBigUp,
@@ -47,6 +55,7 @@ import {
   Flag,
   AlertTriangle,
   Mic,
+  AtSign,
 } from 'lucide-react-native';
 
 interface DiscussionDetailProps {
@@ -74,6 +83,8 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   const [detail, setDetail] = useState<Discussion | null>(discussion);
   const [loading, setLoading] = useState(false);
   const [replyText, setReplyText] = useState('');
+  const [replyCursorPos, setReplyCursorPos] = useState(0);
+  const [mentionDismissed, setMentionDismissed] = useState(false);
   const [replyingTo, setReplyingTo] = useState<DiscussionReply | null>(null);
   const [submittingReply, setSubmittingReply] = useState(false);
   const [members, setMembers] = useState<CommunityMemberItem[]>([]);
@@ -101,6 +112,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
       setPickerVisible(false);
       setReplyError(null);
       setReplyNotice(null);
+      setMentionDismissed(false);
       pauseAllActiveVoiceNotes();
     }
   }, [visible, discussion?.id]);
@@ -139,24 +151,63 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
     setPickerVisible(false);
     setReplyError(null);
     setReplyNotice(null);
+    setMentionDismissed(false);
     pauseAllActiveVoiceNotes();
     onClose();
   };
 
-  const lastAtMatch = replyText.match(/@([a-zA-Z0-9_\.]*)$/);
-  const mentionQuery = lastAtMatch !== null ? lastAtMatch[1].toLowerCase() : null;
-  const matchingMembers =
-    mentionQuery !== null
-      ? members
-          .filter((m) => m.user?.full_name?.toLowerCase().includes(mentionQuery))
-          .slice(0, 5)
-      : [];
+  const prioritizedMembers = useMemo<MentionCandidate[]>(() => {
+    return members
+      .filter((m) => Boolean(m.user?.id) && m.user.id !== currentUser?.id)
+      .map((m) => ({
+        id: m.user.id,
+        full_name: m.user.full_name,
+        email: m.user.email,
+        username:
+          m.user.username || (m.user.email ? m.user.email.split('@')[0] : ''),
+        avatar: m.user.avatar || m.user.profile_picture,
+        profile_picture: m.user.profile_picture || m.user.avatar,
+        course_branch: m.user.course_branch,
+        branch_name: m.user.branch_name,
+        college_name: m.user.college_name,
+        verified: m.user.verified,
+        verification_tier: m.user.verification_tier,
+      }));
+  }, [members, currentUser?.id]);
 
-  const handleSelectMention = (member: CommunityMemberItem) => {
-    const name = member.user?.full_name || '';
-    if (!name) return;
-    const updated = replyText.replace(/@([a-zA-Z0-9_\.]*)$/, `@${name} `);
-    setReplyText(updated);
+  const activeMention = mentionDismissed
+    ? null
+    : extractActiveMention(replyText, replyCursorPos);
+
+  const handleReplyTextChange = (txt: string) => {
+    const delta = txt.length - replyText.length;
+    setReplyText(txt);
+    setReplyCursorPos((prev) => Math.max(0, Math.min(txt.length, prev + delta)));
+    setMentionDismissed(false);
+    if (replyError) setReplyError(null);
+  };
+
+  const handleSelectMention = (candidate: MentionCandidate & { username: string }) => {
+    if (!activeMention) return;
+    const { nextText, nextCursor } = applyMentionSelection(
+      replyText,
+      activeMention,
+      candidate.username
+    );
+    setReplyText(nextText);
+    setReplyCursorPos(nextCursor);
+    setMentionDismissed(false);
+  };
+
+  const handleInsertTag = () => {
+    setMentionDismissed(false);
+    const pos = Math.min(replyCursorPos, replyText.length);
+    const before = replyText.slice(0, pos);
+    const after = replyText.slice(pos);
+    const prefix = before.length === 0 || /\s$/.test(before) ? '@' : ' @';
+    const next = `${before}${prefix}${after}`;
+    setReplyText(next);
+    setReplyCursorPos(before.length + prefix.length);
   };
 
   if (!detail) return null;
@@ -177,7 +228,6 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   );
   const canDeletePost = Boolean(isQuestionAuthor || currentUser?.is_staff || currentUser?.is_superuser);
   const isQuestion = detail.discussion_type === 'QUESTION';
-  const authorInitial = (detail.author_name || 'S').trim()[0]?.toUpperCase() || 'S';
 
   const handleDeleteDiscussion = () => {
     setMenuVisible(false);
@@ -189,9 +239,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
       } catch (err: any) {
         const errorMsg = err.response?.data?.error || 'Could not delete discussion.';
         setReplyError(errorMsg);
-        if (Platform.OS !== 'web') {
-          Alert.alert('Error', errorMsg);
-        }
+        showCrossPlatformAlert('Error', errorMsg);
       }
     };
 
@@ -220,9 +268,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
       } catch (err: any) {
         const errorMsg = err.response?.data?.error || 'Could not delete reply.';
         setReplyError(errorMsg);
-        if (Platform.OS !== 'web') {
-          Alert.alert('Error', errorMsg);
-        }
+        showCrossPlatformAlert('Error', errorMsg);
       }
     };
 
@@ -468,17 +514,11 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
               activeOpacity={0.7}
               style={styles.authorRow}
             >
-              <View
-                style={[
-                  styles.avatar,
-                  {
-                    backgroundColor: colors.surfaceLight,
-                    borderColor: colors.cardBorder,
-                  },
-                ]}
-              >
-                <Text style={[styles.avatarText, { color: colors.primary }]}>{authorInitial}</Text>
-              </View>
+              <UserAvatar
+                uri={detail.author_avatar}
+                name={detail.author_name}
+                size={28}
+              />
               <View>
                 <Text style={[styles.authorName, { color: colors.textPrimary }]}>{detail.author_name}</Text>
                 <Text style={[styles.dateText, { color: colors.textMuted }]}>
@@ -586,7 +626,16 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                 onAcceptReply={handleAcceptReply}
                 onReplyToReply={(r) => {
                   setReplyingTo(r);
-                  setReplyText((prev) => (prev ? prev : `@${r.author_name} `));
+                  const rawHandle =
+                    r.author_username || (r.author_name || '').replace(/\s+/g, '');
+                  if (!rawHandle) return;
+                  setReplyText((prev) => {
+                    if (prev && prev.includes(`@${rawHandle}`)) return prev;
+                    const next = prev ? `@${rawHandle} ${prev.trimStart()}` : `@${rawHandle} `;
+                    setReplyCursorPos(next.length);
+                    setMentionDismissed(false);
+                    return next;
+                  });
                 }}
                 onDeleteReply={handleDeleteReply}
                 onReportReply={(r) => handleOpenReport('REPLY', r.id)}
@@ -670,40 +719,15 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
             </View>
           )}
 
-          {matchingMembers.length > 0 && !voiceRecorder.isRecording && (
-            <View
-              style={[
-                styles.mentionSuggestionsContainer,
-                { backgroundColor: colors.surface, borderTopColor: colors.cardBorder },
-              ]}
-            >
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={styles.mentionSuggestionsList}
-              >
-                {matchingMembers.map((m) => (
-                  <TouchableOpacity
-                    key={m.id}
-                    style={[
-                      styles.mentionPill,
-                      {
-                        backgroundColor: colors.surfaceLight,
-                        borderColor: colors.cardBorder,
-                      },
-                    ]}
-                    onPress={() => handleSelectMention(m)}
-                  >
-                    <View style={[styles.mentionAvatar, { backgroundColor: colors.primary }]}>
-                      <Text style={styles.mentionAvatarText}>
-                        {(m.user?.full_name || 'U')[0].toUpperCase()}
-                      </Text>
-                    </View>
-                    <Text style={[styles.mentionName, { color: colors.primary }]}>@{m.user?.full_name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+          {activeMention && !voiceRecorder.isRecording && (
+            <View style={{ marginBottom: 8 }}>
+              <MentionSuggestionsBar
+                query={activeMention.query}
+                onSelect={handleSelectMention}
+                onClose={() => setMentionDismissed(true)}
+                prioritizedUsers={prioritizedMembers}
+                maxHeight={190}
+              />
             </View>
           )}
 
@@ -741,6 +765,25 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                 <Mic size={17} color={colors.primary} />
               </TouchableOpacity>
 
+              <TouchableOpacity
+                style={[
+                  styles.micBtn,
+                  {
+                    backgroundColor: activeMention
+                      ? colors.primary + '22'
+                      : isDark
+                      ? '#1C1D20'
+                      : '#f1f5f9',
+                    borderColor: activeMention ? colors.primary : colors.cardBorder,
+                  },
+                ]}
+                onPress={handleInsertTag}
+                activeOpacity={0.8}
+                accessibilityLabel="Tag student with @"
+              >
+                <AtSign size={16} color={activeMention ? colors.primary : colors.textSecondary} />
+              </TouchableOpacity>
+
               <TextInput
                 style={[
                   styles.inputField,
@@ -754,17 +797,15 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                   draftVoiceNote
                     ? 'Add text alongside your voice note (optional)...'
                     : replyingTo
-                    ? `Reply to ${replyingTo.author_name}...`
+                    ? `Reply to ${replyingTo.author_name} (@ to tag)...`
                     : isQuestion
-                    ? 'Write your answer or record a voice note...'
-                    : 'Add to the discussion...'
+                    ? 'Write your answer (type @ to tag) or record a voice note...'
+                    : 'Add to the discussion (type @ to tag)...'
                 }
                 placeholderTextColor={colors.textMuted}
                 value={replyText}
-                onChangeText={(txt) => {
-                  setReplyText(txt);
-                  if (replyError) setReplyError(null);
-                }}
+                onChangeText={handleReplyTextChange}
+                onSelectionChange={(e) => setReplyCursorPos(e.nativeEvent.selection.end)}
                 multiline
               />
 

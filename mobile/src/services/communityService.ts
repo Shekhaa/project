@@ -1,5 +1,6 @@
 import { api } from '../config/api';
 import { AttachmentItem } from './chatService';
+import { dataUrlToWebFile } from '../utils/mediaUtils';
 
 export interface Community {
   id: number;
@@ -32,6 +33,7 @@ export interface DiscussionReply {
   discussion: string;
   author: number;
   author_name: string;
+  author_username?: string;
   author_avatar?: string | null;
   parent_reply?: string | null;
   content: string;
@@ -51,6 +53,7 @@ export interface Discussion {
   community_slug: string;
   author: number;
   author_name: string;
+  author_username?: string;
   author_avatar?: string | null;
   title: string;
   content: string;
@@ -79,9 +82,15 @@ export interface CommunityMemberItem {
   user: {
     id: number;
     full_name: string;
+    username?: string;
     email: string;
     avatar?: string | null;
+    profile_picture?: string | null;
     course_branch?: string;
+    college_name?: string;
+    branch_name?: string;
+    verified?: boolean;
+    verification_tier?: string;
   };
   role: 'OWNER' | 'ADMIN' | 'MODERATOR' | 'MEMBER';
   joined_at: string;
@@ -217,8 +226,12 @@ export const communityService = {
         formData.append('parent_reply_id', parentReplyId);
       }
       attachments.forEach((item, index) => {
-        if (item.file) {
-          formData.append('attachments', item.file);
+        let fileToAppend = item.file;
+        if (!fileToAppend && item.uri && typeof window !== 'undefined' && item.uri.startsWith('data:')) {
+          fileToAppend = dataUrlToWebFile(item.uri, item.name || `reply_attachment_${index}.jpg`);
+        }
+        if (fileToAppend) {
+          formData.append('attachments', fileToAppend);
         } else if (item.uri) {
           const fallbackType =
             item.mimeType ||

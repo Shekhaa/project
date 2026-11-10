@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from config.media_utils import resolve_media_url
 from .models import StudentProfile
 from colleges.models import College, Course, Branch, AcademicYear, Section
 
@@ -150,6 +151,17 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         from posts.models import Post
         return Post.objects.filter(author=obj.user, is_deleted=False).count()
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if instance.profile_picture:
+            data["profile_picture"] = resolve_media_url(request, instance.profile_picture)
+        else:
+            data["profile_picture"] = None
+        if instance.id_card_image:
+            data["id_card_image"] = resolve_media_url(request, instance.id_card_image)
+        return data
+
     def update(self, instance, validated_data):
         # Lock academic identity fields once completed
         if instance.profile_completed:
@@ -184,6 +196,7 @@ class ConnectionSerializer(serializers.ModelSerializer):
         current_user = request.user
         other = obj.user2 if obj.user1_id == current_user.id else obj.user1
         prof = getattr(other, "profile", None)
+        avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
         return {
             "id": other.id,
             "full_name": other.full_name or (prof.username if prof else other.email.split("@")[0]),
@@ -191,7 +204,8 @@ class ConnectionSerializer(serializers.ModelSerializer):
             "email": other.email,
             "college_name": prof.college.name if (prof and prof.college) else "",
             "branch_name": prof.branch.name if (prof and prof.branch) else "",
-            "avatar": prof.profile_picture.url if (prof and prof.profile_picture) else None,
+            "avatar": avatar_url,
+            "profile_picture": avatar_url,
             "is_verified": getattr(other, "is_verified_student", False),
         }
 
@@ -210,12 +224,14 @@ class FollowSerializer(serializers.ModelSerializer):
         current_user = request.user if request else None
         target = obj.follower if (current_user and obj.following_id == current_user.id) else obj.following
         prof = getattr(target, "profile", None)
+        avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
         return {
             "id": target.id,
             "full_name": target.full_name or (prof.username if prof else target.email.split("@")[0]),
             "username": prof.username if prof else "",
             "email": target.email,
-            "avatar": prof.profile_picture.url if (prof and prof.profile_picture) else None,
+            "avatar": avatar_url,
+            "profile_picture": avatar_url,
             "college_name": prof.college.name if (prof and prof.college) else "",
             "is_verified": getattr(target, "is_verified_student", False),
         }

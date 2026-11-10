@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Count, Q, F
 from django.utils import timezone
 import re
-from notifications.views import create_notification
+from notifications.views import create_notification, resolve_mentioned_users
 from .models import Community, CommunityMember, Discussion, DiscussionReply, DiscussionVote, CommunityReport
 from .serializers import (
     CommunitySerializer,
@@ -251,33 +251,23 @@ class CommunityDiscussionsView(APIView):
                     uploaded_by=request.user
                 ).update(discussion=discussion)
 
-        # Parse @mentions and notify mentioned community members
-        mention_tags = set(re.findall(r'@([a-zA-Z0-9_\.]+)', f"{discussion.title} {discussion.content}"))
-        if mention_tags:
-            from accounts.models import User
-            member_user_ids = CommunityMember.objects.filter(community=community).values_list("user_id", flat=True)
-            filter_q = Q()
-            for tag in mention_tags:
-                filter_q |= Q(email__istartswith=tag) | Q(full_name__icontains=tag)
-            matched_users = User.objects.filter(
-                id__in=member_user_ids
-            ).filter(filter_q).exclude(id=request.user.id).distinct()[:10]
-
-            if matched_users.exists():
-                discussion.mentioned_users.set(matched_users)
-                sender_name = request.user.full_name or request.user.email.split("@")[0]
-                for m_user in matched_users:
-                    create_notification(
-                        recipient=m_user,
-                        sender=request.user,
-                        notification_type='TAG',
-                        title=f"Mentioned in {community.name} 🏷️",
-                        message=f"{sender_name} mentioned you in a discussion: '{discussion.title[:70]}'",
-                        data={
-                            'community_slug': community.slug,
-                            'discussion_id': str(discussion.id)
-                        }
-                    )
+        # Parse @mentions (prioritizing exact username, excluding blocked users)
+        matched_users = resolve_mentioned_users(f"{discussion.title} {discussion.content}", actor_user=request.user)
+        if matched_users:
+            discussion.mentioned_users.set(matched_users)
+            sender_name = request.user.full_name or request.user.email.split("@")[0]
+            for m_user in matched_users:
+                create_notification(
+                    recipient=m_user,
+                    sender=request.user,
+                    notification_type='TAG',
+                    title=f"Mentioned in {community.name} 🏷️",
+                    message=f"{sender_name} mentioned you in a discussion: '{discussion.title[:70]}'",
+                    data={
+                        'community_slug': community.slug,
+                        'discussion_id': str(discussion.id)
+                    }
+                )
 
         return Response(
             DiscussionSerializer(discussion, context={"request": request}).data,
@@ -381,6 +371,7 @@ class DiscussionRepliesView(APIView):
 
     def post(self, request, slug, pk):
         import uuid
+        from django.core.exceptions import ValidationError as DjangoValidationError
         from attachments.services import AttachmentService
 
         community = get_object_or_404(Community, slug=slug)
@@ -400,6 +391,14 @@ class DiscussionRepliesView(APIView):
             or request.FILES.getlist("files")
             or ([request.FILES.get("file")] if request.FILES.get("file") else [])
         )
+
+        # Validate uploaded files upfront before creating DiscussionReply
+        for att_file in uploaded_files:
+            try:
+                AttachmentService.validate_and_process_file(att_file)
+            except DjangoValidationError as err:
+                msg = err.message if hasattr(err, "message") else str(err)
+                return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
 
         raw_attachment_ids = []
         if hasattr(request.data, "getlist"):
@@ -453,10 +452,12 @@ class DiscussionRepliesView(APIView):
                         discussion_reply=reply,
                         order=idx
                     )
-                except Exception:
-                    pass
+                except DjangoValidationError as err:
+                    reply.delete()
+                    msg = err.message if hasattr(err, "message") else str(err)
+                    return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Ensure at least text or a persisted attachment exists if uploads all failed validation
+        # Ensure at least text or a persisted attachment exists
         if not content and not reply.attachments.exists():
             reply.delete()
             return Response(
@@ -464,37 +465,27 @@ class DiscussionRepliesView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Parse mentions and notify community members
+        # Parse mentions and notify mentioned users
         sender_name = request.user.full_name or request.user.email.split("@")[0]
         notified_user_ids = {request.user.id}
 
-        mention_tags = set(re.findall(r'@([a-zA-Z0-9_\.]+)', content)) if content else set()
-        if mention_tags:
-            from accounts.models import User
-            member_user_ids = CommunityMember.objects.filter(community=community).values_list("user_id", flat=True)
-            filter_q = Q()
-            for tag in mention_tags:
-                filter_q |= Q(email__istartswith=tag) | Q(full_name__icontains=tag)
-            matched_users = User.objects.filter(
-                id__in=member_user_ids
-            ).filter(filter_q).exclude(id=request.user.id).distinct()[:10]
-
-            if matched_users.exists():
-                reply.mentioned_users.set(matched_users)
-                for m_user in matched_users:
-                    notified_user_ids.add(m_user.id)
-                    create_notification(
-                        recipient=m_user,
-                        sender=request.user,
-                        notification_type='TAG',
-                        title=f"Mentioned in {community.name} 🏷️",
-                        message=f"{sender_name} mentioned you in a reply: '{content[:70]}'",
-                        data={
-                            'community_slug': community.slug,
-                            'discussion_id': str(discussion.id),
-                            'reply_id': str(reply.id)
-                        }
-                    )
+        matched_users = resolve_mentioned_users(content, actor_user=request.user, exclude_ids=notified_user_ids)
+        if matched_users:
+            reply.mentioned_users.set(matched_users)
+            for m_user in matched_users:
+                notified_user_ids.add(m_user.id)
+                create_notification(
+                    recipient=m_user,
+                    sender=request.user,
+                    notification_type='TAG',
+                    title=f"Mentioned in {community.name} 🏷️",
+                    message=f"{sender_name} mentioned you in a reply: '{content[:70]}'",
+                    data={
+                        'community_slug': community.slug,
+                        'discussion_id': str(discussion.id),
+                        'reply_id': str(reply.id)
+                    }
+                )
 
         has_voice_note = reply.attachments.filter(file_type="AUDIO").exists()
         reply_action_desc = "sent a voice note reply" if has_voice_note and not content else "replied"
@@ -651,20 +642,27 @@ class CommunityMembersView(APIView):
 
     def get(self, request, slug):
         community = get_object_or_404(Community, slug=slug)
-        qs = CommunityMember.objects.filter(community=community).select_related("user", "user__profile")
+        qs = CommunityMember.objects.filter(community=community).select_related(
+            "user",
+            "user__profile",
+            "user__profile__college",
+            "user__profile__course",
+            "user__profile__branch",
+        )
 
         q = request.query_params.get("q")
         if q:
             qs = qs.filter(
                 Q(user__full_name__icontains=q) |
-                Q(user__email__icontains=q)
+                Q(user__email__icontains=q) |
+                Q(user__profile__username__icontains=q)
             )
 
         role = request.query_params.get("role")
         if role:
             qs = qs.filter(role=role.upper())
 
-        serializer = CommunityMemberListSerializer(qs, many=True)
+        serializer = CommunityMemberListSerializer(qs, many=True, context={"request": request})
         return Response(serializer.data)
 
     def post(self, request, slug):
@@ -717,7 +715,7 @@ class CommunityMembersView(APIView):
 
         return Response({
             "added_count": len(added_members),
-            "members": CommunityMemberListSerializer(added_members, many=True).data
+            "members": CommunityMemberListSerializer(added_members, many=True, context={"request": request}).data
         }, status=status.HTTP_201_CREATED)
 
 
@@ -745,7 +743,7 @@ class CommunityMemberDetailView(APIView):
 
         member.role = new_role
         member.save(update_fields=["role"])
-        return Response(CommunityMemberListSerializer(member).data)
+        return Response(CommunityMemberListSerializer(member, context={"request": request}).data)
 
     def delete(self, request, slug, member_id):
         community = get_object_or_404(Community, slug=slug)

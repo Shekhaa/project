@@ -17,6 +17,8 @@ import {
 } from 'lucide-react-native';
 import { AttachmentItem } from '../../services/chatService';
 
+import { useTheme } from '../../theme/ThemeContext';
+
 interface DocumentCardProps {
   attachment: AttachmentItem;
   compact?: boolean;
@@ -28,6 +30,7 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
   compact = false,
   onPress,
 }) => {
+  const { colors } = useTheme();
   const ext = (attachment.file_extension || '').toLowerCase();
 
   // Determine doc type styling & icons
@@ -98,9 +101,8 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
 
     if (Platform.OS === 'web') {
       if (typeof window !== 'undefined') {
-        const urlWithParam = action === 'open' && ext === 'pdf'
-          ? `${targetUrl}?preview=true`
-          : targetUrl;
+        const urlWithParam =
+          action === 'open' && ext === 'pdf' ? `${targetUrl}?preview=true` : targetUrl;
         window.open(urlWithParam, '_blank');
       }
     } else {
@@ -116,7 +118,13 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
   };
 
   return (
-    <View style={[styles.container, compact && styles.containerCompact]}>
+    <View
+      style={[
+        styles.container,
+        compact && styles.containerCompact,
+        { backgroundColor: colors.card, borderColor: colors.cardBorder },
+      ]}
+    >
       {/* File Icon with colored background badge */}
       <View style={[styles.iconBox, { backgroundColor: config.bg }]}>
         <IconComponent size={compact ? 22 : 28} color={config.badgeColor} />
@@ -127,15 +135,19 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
 
       {/* File Meta Information */}
       <View style={styles.infoBox}>
-        <Text style={styles.fileName} numberOfLines={1} ellipsizeMode="middle">
+        <Text
+          style={[styles.fileName, { color: colors.textPrimary }]}
+          numberOfLines={1}
+          ellipsizeMode="middle"
+        >
           {attachment.file_name}
         </Text>
         <View style={styles.metaRow}>
-          <Text style={styles.fileSize}>
+          <Text style={[styles.fileSize, { color: colors.textMuted }]}>
             {attachment.file_size_formatted || 'Document'}
           </Text>
-          <Text style={styles.dotSeparator}>•</Text>
-          <Text style={styles.extensionText}>
+          <Text style={[styles.dotSeparator, { color: colors.textTertiary }]}>•</Text>
+          <Text style={[styles.extensionText, { color: colors.textMuted }]}>
             {ext ? `.${ext}` : 'Academic Doc'}
           </Text>
         </View>
@@ -145,16 +157,19 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
       <View style={styles.actionsBox}>
         {ext === 'pdf' && (
           <TouchableOpacity
-            style={styles.actionBtn}
+            style={[
+              styles.actionBtn,
+              { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+            ]}
             onPress={() => handleOpenOrDownload('open')}
             activeOpacity={0.7}
             accessibilityLabel="Preview PDF"
           >
-            <ExternalLink size={16} color="#38bdf8" />
+            <ExternalLink size={16} color={colors.primary} />
           </TouchableOpacity>
         )}
         <TouchableOpacity
-          style={[styles.actionBtn, styles.downloadBtn]}
+          style={[styles.actionBtn, { backgroundColor: colors.primary, borderColor: colors.primary }]}
           onPress={() => handleOpenOrDownload('download')}
           activeOpacity={0.7}
           accessibilityLabel="Download Document"
@@ -170,10 +185,8 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#334155',
     padding: 10,
     marginVertical: 4,
     maxWidth: '100%',
@@ -210,7 +223,6 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   fileName: {
-    color: '#f8fafc',
     fontSize: 13,
     fontWeight: '600',
     marginBottom: 2,
@@ -220,17 +232,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   fileSize: {
-    color: '#94a3b8',
     fontSize: 11,
     fontWeight: '500',
   },
   dotSeparator: {
-    color: '#64748b',
     fontSize: 11,
     marginHorizontal: 4,
   },
   extensionText: {
-    color: '#64748b',
     fontSize: 11,
     fontWeight: '500',
   },
@@ -243,14 +252,8 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#1e293b',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#334155',
-  },
-  downloadBtn: {
-    backgroundColor: '#0284c7',
-    borderColor: '#38bdf8',
   },
 });

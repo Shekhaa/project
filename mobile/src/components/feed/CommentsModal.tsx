@@ -1,19 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  Modal,
+  ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
+  View,
 } from 'react-native';
-import { colors } from '../../theme/colors';
-import { postService, Comment, Post } from '../../services/postService';
-import { X, Send, CornerDownRight, AtSign } from 'lucide-react-native';
+import { AtSign, CornerDownRight, Send, X } from 'lucide-react-native';
+import { useTheme } from '../../theme/ThemeContext';
+import { Comment, Post, postService } from '../../services/postService';
+import { UserAvatar } from '../common/UserAvatar';
+import {
+  MentionCandidate,
+  MentionSuggestionsBar,
+  applyMentionSelection,
+  extractActiveMention,
+} from '../common/MentionSuggestionsBar';
 
 interface CommentsModalProps {
   visible: boolean;
@@ -28,9 +35,12 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
   onClose,
   onOpenProfile,
 }) => {
+  const { colors } = useTheme();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
+  const [cursorPos, setCursorPos] = useState<number>(0);
+  const [mentionDismissed, setMentionDismissed] = useState(false);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
@@ -41,6 +51,8 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
     } else {
       setComments([]);
       setNewComment('');
+      setCursorPos(0);
+      setMentionDismissed(false);
       setReplyingTo(null);
     }
   }, [visible, post]);
@@ -58,23 +70,52 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
     }
   };
 
+  const activeMention = mentionDismissed
+    ? null
+    : extractActiveMention(newComment, cursorPos);
+
+  const handleCommentTextChange = (text: string) => {
+    const delta = text.length - newComment.length;
+    setNewComment(text);
+    setCursorPos((prev) => Math.max(0, Math.min(text.length, prev + delta)));
+    setMentionDismissed(false);
+  };
+
+  const handleSelectMention = (candidate: MentionCandidate & { username: string }) => {
+    if (!activeMention) return;
+    const { nextText, nextCursor } = applyMentionSelection(
+      newComment,
+      activeMention,
+      candidate.username
+    );
+    setNewComment(nextText);
+    setCursorPos(nextCursor);
+    setMentionDismissed(false);
+  };
+
   const handleReplyPress = (targetComment: Comment) => {
     setReplyingTo(targetComment);
-    const tagHandle = targetComment.is_anonymous
-      ? ''
-      : `@${targetComment.author_name.replace(/\s+/g, '')} `;
-
-    if (tagHandle && !newComment.includes(tagHandle)) {
-      setNewComment((prev) => `${tagHandle}${prev.trimStart()}`);
+    if (targetComment.is_anonymous) return;
+    const rawHandle =
+      targetComment.author_username || targetComment.author_name.replace(/\s+/g, '');
+    const tagHandle = `@${rawHandle} `;
+    if (!newComment.includes(`@${rawHandle}`)) {
+      const next = `${tagHandle}${newComment.trimStart()}`;
+      setNewComment(next);
+      setCursorPos(next.length);
+      setMentionDismissed(false);
     }
   };
 
   const handleInsertTag = () => {
-    if (!newComment.includes('@')) {
-      setNewComment((prev) => (prev ? `${prev} @` : '@'));
-    } else {
-      setNewComment((prev) => `${prev}@`);
-    }
+    setMentionDismissed(false);
+    const pos = Math.min(cursorPos, newComment.length);
+    const before = newComment.slice(0, pos);
+    const after = newComment.slice(pos);
+    const prefix = before.length === 0 || /\s$/.test(before) ? '@' : ' @';
+    const next = `${before}${prefix}${after}`;
+    setNewComment(next);
+    setCursorPos(before.length + prefix.length);
   };
 
   const handleSendComment = async () => {
@@ -82,7 +123,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
 
     try {
       setSubmitting(true);
-      const parentId = replyingTo ? (replyingTo.parent || replyingTo.id) : undefined;
+      const parentId = replyingTo ? replyingTo.parent || replyingTo.id : undefined;
       const created = await postService.addComment(
         post.id,
         newComment.trim(),
@@ -91,7 +132,6 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
       );
 
       if (parentId) {
-        // Nested under root parent comment
         setComments((prev) =>
           prev.map((c) => {
             if (c.id === parentId) {
@@ -110,7 +150,9 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
       }
 
       setNewComment('');
+      setCursorPos(0);
       setReplyingTo(null);
+      setMentionDismissed(false);
     } catch (e) {
       console.log('Failed to post comment', e);
     } finally {
@@ -120,18 +162,18 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
 
   const renderFormattedText = (text: string) => {
     if (!text) return null;
-    const parts = text.split(/(@[a-zA-Z0-9_\.]+)/g);
+    const tokens = text.split(/(\s+)/);
     return (
-      <Text style={styles.commentText}>
-        {parts.map((part, i) => {
-          if (part.startsWith('@')) {
+      <Text style={[styles.commentText, { color: colors.textPrimary }]}>
+        {tokens.map((tok, i) => {
+          if (/^@[a-zA-Z0-9_.-]{1,32}[.,!?:;)]*$/.test(tok)) {
             return (
-              <Text key={i} style={styles.mentionTag}>
-                {part}
+              <Text key={i} style={[styles.mentionTag, { color: colors.primaryHover }]}>
+                {tok}
               </Text>
             );
           }
-          return <Text key={i}>{part}</Text>;
+          return tok;
         })}
       </Text>
     );
@@ -144,14 +186,14 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
           disabled={reply.is_anonymous || !reply.author}
           onPress={() => reply.author && onOpenProfile?.(reply.author)}
           activeOpacity={0.7}
-          style={[
-            styles.avatarSmall,
-            reply.is_anonymous && styles.anonAvatarSmall,
-          ]}
+          style={{ marginRight: 8 }}
         >
-          <Text style={styles.avatarSmallText}>
-            {reply.is_anonymous ? '🎭' : (reply.author_name || 'S').charAt(0).toUpperCase()}
-          </Text>
+          <UserAvatar
+            uri={reply.author_avatar}
+            name={reply.author_name}
+            size={28}
+            isAnonymous={reply.is_anonymous}
+          />
         </TouchableOpacity>
 
         <View style={styles.commentBody}>
@@ -161,10 +203,17 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
             activeOpacity={0.7}
             style={styles.commentHeader}
           >
-            <Text style={styles.commentAuthor}>{reply.author_name}</Text>
+            <Text style={[styles.commentAuthor, { color: colors.textPrimary }]}>
+              {reply.author_name}
+            </Text>
             {reply.is_anonymous && (
-              <View style={styles.anonBadge}>
-                <Text style={styles.anonBadgeText}>Anon</Text>
+              <View
+                style={[
+                  styles.anonBadge,
+                  { backgroundColor: colors.anonBadge, borderColor: colors.cardBorder },
+                ]}
+              >
+                <Text style={[styles.anonBadgeText, { color: colors.textMuted }]}>Anon</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -174,8 +223,8 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
             onPress={() => handleReplyPress(reply)}
             activeOpacity={0.7}
           >
-            <CornerDownRight size={12} color="#38bdf8" />
-            <Text style={[styles.replyBtnText, { color: '#38bdf8' }]}>Reply</Text>
+            <CornerDownRight size={12} color={colors.primaryHover} />
+            <Text style={[styles.replyBtnText, { color: colors.primaryHover }]}>Reply</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -190,14 +239,14 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
             disabled={item.is_anonymous || !item.author}
             onPress={() => item.author && onOpenProfile?.(item.author)}
             activeOpacity={0.7}
-            style={[
-              styles.avatar,
-              item.is_anonymous && styles.anonAvatar,
-            ]}
+            style={{ marginRight: 10 }}
           >
-            <Text style={styles.avatarText}>
-              {item.is_anonymous ? '🎭' : (item.author_name || 'S').charAt(0).toUpperCase()}
-            </Text>
+            <UserAvatar
+              uri={item.author_avatar}
+              name={item.author_name}
+              size={36}
+              isAnonymous={item.is_anonymous}
+            />
           </TouchableOpacity>
 
           <View style={styles.commentBody}>
@@ -207,10 +256,17 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
               activeOpacity={0.7}
               style={styles.commentHeader}
             >
-              <Text style={styles.commentAuthor}>{item.author_name}</Text>
+              <Text style={[styles.commentAuthor, { color: colors.textPrimary }]}>
+                {item.author_name}
+              </Text>
               {item.is_anonymous && (
-                <View style={styles.anonBadge}>
-                  <Text style={styles.anonBadgeText}>Anon</Text>
+                <View
+                  style={[
+                    styles.anonBadge,
+                    { backgroundColor: colors.anonBadge, borderColor: colors.cardBorder },
+                  ]}
+                >
+                  <Text style={[styles.anonBadgeText, { color: colors.textMuted }]}>Anon</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -221,14 +277,14 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
               activeOpacity={0.7}
             >
               <CornerDownRight size={12} color={colors.textSecondary} />
-              <Text style={styles.replyBtnText}>Reply</Text>
+              <Text style={[styles.replyBtnText, { color: colors.textSecondary }]}>Reply</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Nested Replies */}
         {item.replies && item.replies.length > 0 && (
-          <View style={styles.nestedRepliesContainer}>
+          <View style={[styles.nestedRepliesContainer, { borderLeftColor: colors.cardBorder }]}>
             {item.replies.map((reply) => renderReplyItem(reply))}
           </View>
         )}
@@ -240,17 +296,22 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.backdrop}
+        style={[styles.backdrop, { backgroundColor: colors.modalOverlay }]}
       >
         <TouchableOpacity style={styles.dismissOverlay} onPress={onClose} activeOpacity={1} />
 
-        <View style={styles.sheetContainer}>
+        <View
+          style={[
+            styles.sheetContainer,
+            { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+          ]}
+        >
           {/* Drag handle pill */}
-          <View style={styles.dragHandle} />
+          <View style={[styles.dragHandle, { backgroundColor: colors.hairlineStrong }]} />
 
           {/* Header */}
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Comments</Text>
+          <View style={[styles.sheetHeader, { borderBottomColor: colors.cardBorder }]}>
+            <Text style={[styles.sheetTitle, { color: colors.textPrimary }]}>Comments</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <X size={20} color={colors.textPrimary} />
             </TouchableOpacity>
@@ -263,7 +324,9 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
             </View>
           ) : comments.length === 0 ? (
             <View style={styles.centerBox}>
-              <Text style={styles.emptyText}>No comments yet. Start the conversation!</Text>
+              <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+                No comments yet. Start the conversation!
+              </Text>
             </View>
           ) : (
             <FlatList
@@ -271,16 +334,25 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
               keyExtractor={(item) => String(item.id)}
               renderItem={renderCommentItem}
               contentContainerStyle={styles.listContent}
+              keyboardShouldPersistTaps="handled"
             />
           )}
 
           {/* Replying Banner */}
           {replyingTo && (
-            <View style={styles.replyBanner}>
+            <View
+              style={[
+                styles.replyBanner,
+                { backgroundColor: colors.primary + '16', borderLeftColor: colors.primary },
+              ]}
+            >
               <View style={styles.replyBannerContent}>
-                <CornerDownRight size={14} color="#38bdf8" />
-                <Text style={styles.replyBannerText}>
-                  Replying to <Text style={styles.replyBannerHighlight}>{replyingTo.author_name}</Text>
+                <CornerDownRight size={14} color={colors.primary} />
+                <Text style={[styles.replyBannerText, { color: colors.textSecondary }]}>
+                  Replying to{' '}
+                  <Text style={[styles.replyBannerHighlight, { color: colors.primaryHover }]}>
+                    {replyingTo.author_name}
+                  </Text>
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setReplyingTo(null)} style={styles.replyCancelBtn}>
@@ -289,38 +361,71 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
             </View>
           )}
 
+          {/* @ Student Recommendation Picker */}
+          {activeMention && (
+            <View style={styles.mentionBarWrapper}>
+              <MentionSuggestionsBar
+                query={activeMention.query}
+                onSelect={handleSelectMention}
+                onClose={() => setMentionDismissed(true)}
+                maxHeight={200}
+              />
+            </View>
+          )}
+
           {/* Bottom Input Bar */}
-          <View style={styles.inputBar}>
+          <View
+            style={[
+              styles.inputBar,
+              { borderTopColor: colors.cardBorder, backgroundColor: colors.surface },
+            ]}
+          >
             {/* Anonymous Toggle */}
             <TouchableOpacity
-              style={[styles.anonToggle, isAnonymous && styles.anonToggleActive]}
+              style={[
+                styles.anonToggle,
+                {
+                  backgroundColor: isAnonymous ? colors.anonBadge : colors.surfaceLight,
+                  borderColor: isAnonymous ? colors.anonPurple : 'transparent',
+                  borderWidth: 1,
+                },
+              ]}
               onPress={() => setIsAnonymous(!isAnonymous)}
               activeOpacity={0.7}
             >
               <Text style={styles.anonToggleText}>🎭</Text>
             </TouchableOpacity>
 
-            {/* Quick @ Tag Button */}
+            {/* @ Tag Directory Trigger */}
             <TouchableOpacity
               style={[
                 styles.tagToggle,
-                newComment.includes('@') && styles.tagToggleActive,
+                {
+                  backgroundColor: activeMention ? colors.primary + '1E' : colors.surfaceLight,
+                },
               ]}
               onPress={handleInsertTag}
               activeOpacity={0.7}
+              accessibilityLabel="Tag student with @"
             >
               <AtSign
                 size={16}
-                color={newComment.includes('@') ? '#38bdf8' : colors.textSecondary}
+                color={activeMention ? colors.primary : colors.textSecondary}
               />
             </TouchableOpacity>
 
             <TextInput
-              style={styles.textInput}
-              placeholder={isAnonymous ? 'Comment anonymously...' : 'Add comment (use @ to tag)...'}
-              placeholderTextColor={colors.textSecondary}
+              style={[
+                styles.textInput,
+                { backgroundColor: colors.surfaceLight, color: colors.textPrimary },
+              ]}
+              placeholder={
+                isAnonymous ? 'Comment anonymously...' : 'Add comment (type @ to tag student)...'
+              }
+              placeholderTextColor={colors.textMuted}
               value={newComment}
-              onChangeText={setNewComment}
+              onChangeText={handleCommentTextChange}
+              onSelectionChange={(e) => setCursorPos(e.nativeEvent.selection.end)}
               multiline
               maxLength={500}
             />
@@ -328,6 +433,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
             <TouchableOpacity
               style={[
                 styles.sendBtn,
+                { backgroundColor: colors.primary },
                 (!newComment.trim() || submitting) && styles.sendBtnDisabled,
               ]}
               onPress={handleSendComment}
@@ -350,19 +456,16 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
     justifyContent: 'flex-end',
   },
   dismissOverlay: {
     flex: 1,
   },
   sheetContainer: {
-    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderTopWidth: 1,
-    borderColor: colors.cardBorder,
-    height: '75%',
+    height: '78%',
     display: 'flex',
     flexDirection: 'column',
   },
@@ -370,7 +473,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#334155',
     alignSelf: 'center',
     marginTop: 10,
     marginBottom: 6,
@@ -382,12 +484,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.cardBorder,
   },
   sheetTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.textPrimary,
   },
   closeBtn: {
     padding: 4,
@@ -399,7 +499,6 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   emptyText: {
-    color: colors.textSecondary,
     fontSize: 14,
     textAlign: 'center',
   },
@@ -414,26 +513,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
   },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  anonAvatar: {
-    backgroundColor: colors.surfaceLight,
-    borderColor: colors.cardBorder,
-  },
-  avatarText: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    fontSize: 14,
-  },
   commentBody: {
     flex: 1,
   },
@@ -443,31 +522,25 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
   commentAuthor: {
-    color: colors.textPrimary,
     fontWeight: '700',
     fontSize: 13.5,
   },
   anonBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
     paddingHorizontal: 5,
     paddingVertical: 2,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     marginLeft: 6,
   },
   anonBadgeText: {
-    color: colors.textMuted,
     fontSize: 10,
     fontWeight: '600',
   },
   commentText: {
-    color: colors.textPrimary,
     fontSize: 13.5,
     lineHeight: 19,
   },
   mentionTag: {
-    color: colors.primaryHover,
     fontWeight: '700',
   },
   replyBtn: {
@@ -477,7 +550,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   replyBtnText: {
-    color: colors.textSecondary,
     fontSize: 11.5,
     fontWeight: '600',
   },
@@ -486,40 +558,17 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingLeft: 12,
     borderLeftWidth: 2,
-    borderLeftColor: colors.cardBorder,
   },
   replyRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: 10,
   },
-  avatarSmall: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  anonAvatarSmall: {
-    backgroundColor: colors.surfaceLight,
-    borderColor: colors.cardBorder,
-  },
-  avatarSmallText: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    fontSize: 11,
-  },
   replyBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(94, 106, 210, 0.1)',
     borderLeftWidth: 3,
-    borderLeftColor: colors.primary,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
@@ -529,15 +578,16 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   replyBannerText: {
-    color: colors.textSecondary,
     fontSize: 12.5,
   },
   replyBannerHighlight: {
-    color: colors.primaryHover,
     fontWeight: '700',
   },
   replyCancelBtn: {
     padding: 4,
+  },
+  mentionBarWrapper: {
+    paddingHorizontal: 12,
   },
   inputBar: {
     flexDirection: 'row',
@@ -545,17 +595,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: colors.cardBorder,
-    backgroundColor: colors.surface,
     gap: 6,
   },
   anonToggle: {
     padding: 7,
     borderRadius: 18,
-    backgroundColor: colors.surfaceLight,
-  },
-  anonToggleActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   anonToggleText: {
     fontSize: 15,
@@ -563,17 +607,11 @@ const styles = StyleSheet.create({
   tagToggle: {
     padding: 8,
     borderRadius: 18,
-    backgroundColor: colors.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tagToggleActive: {
-    backgroundColor: 'rgba(94, 106, 210, 0.15)',
-  },
   textInput: {
     flex: 1,
-    backgroundColor: colors.surfaceLight,
-    color: colors.textPrimary,
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -581,7 +619,6 @@ const styles = StyleSheet.create({
     maxHeight: 80,
   },
   sendBtn: {
-    backgroundColor: colors.primary,
     width: 36,
     height: 36,
     borderRadius: 18,

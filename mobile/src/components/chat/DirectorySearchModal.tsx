@@ -8,11 +8,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { useTheme } from '../../theme/ThemeContext';
 import { api } from '../../config/api';
 import { X, Search, UserCheck } from 'lucide-react-native';
+import { UserAvatar } from '../common/UserAvatar';
 
 interface DirectorySearchModalProps {
   visible: boolean;
@@ -25,7 +27,7 @@ export const DirectorySearchModal: React.FC<DirectorySearchModalProps> = ({
   onClose,
   onSelectUser,
 }) => {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -61,19 +63,33 @@ export const DirectorySearchModal: React.FC<DirectorySearchModalProps> = ({
   };
 
   const renderUserItem = ({ item }: { item: any }) => {
-    const name = item.full_name || item.email?.split('@')[0] || 'Student';
+    const name = item.full_name || item.username || item.email?.split('@')[0] || 'Student';
+    const meta = [
+      item.username ? `@${item.username}` : null,
+      item.course_branch || item.email,
+    ]
+      .filter(Boolean)
+      .join(' • ');
+
     return (
       <TouchableOpacity
         style={[styles.userRow, { borderBottomColor: colors.cardBorder }]}
         onPress={() => onSelectUser(item)}
         activeOpacity={0.7}
       >
-        <View style={[styles.avatar, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
-          <Text style={[styles.avatarText, { color: colors.textPrimary }]}>{name.charAt(0).toUpperCase()}</Text>
-        </View>
+        <UserAvatar
+          uri={item.avatar || item.profile_picture}
+          name={name}
+          size={42}
+          style={{ marginRight: 12 }}
+        />
         <View style={styles.userInfo}>
-          <Text style={[styles.userName, { color: colors.textPrimary }]}>{name}</Text>
-          <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{item.email}</Text>
+          <Text style={[styles.userName, { color: colors.textPrimary }]} numberOfLines={1}>
+            {name}
+          </Text>
+          <Text style={[styles.userEmail, { color: colors.textSecondary }]} numberOfLines={1}>
+            {meta}
+          </Text>
         </View>
         <View style={[styles.chatAction, { backgroundColor: colors.primary }]}>
           <Text style={styles.chatActionText}>Chat</Text>
@@ -98,7 +114,11 @@ export const DirectorySearchModal: React.FC<DirectorySearchModalProps> = ({
         <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
           <Search size={18} color={colors.textSecondary} style={{ marginRight: 8 }} />
           <TextInput
-            style={[styles.searchInput, { color: colors.textPrimary }]}
+            style={[
+              styles.searchInput,
+              { color: colors.textPrimary },
+              Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : null,
+            ]}
             placeholder="Search verified students by name or email..."
             placeholderTextColor={colors.textMuted}
             value={query}

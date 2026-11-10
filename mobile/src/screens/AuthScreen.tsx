@@ -45,7 +45,7 @@ interface AuthScreenProps {
 }
 
 // Microsoft Entra ID (Azure AD) Client ID for CampusConnect
-const AZURE_CLIENT_ID = process.env.EXPO_PUBLIC_AZURE_CLIENT_ID || '3b64e29f-bcab-4aee-9fa2-11bb605f161a';
+const AZURE_CLIENT_ID = (process.env as any)?.EXPO_PUBLIC_AZURE_CLIENT_ID || '3b64e29f-bcab-4aee-9fa2-11bb605f161a';
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
   const { colors, isDark, toggleTheme } = useTheme();

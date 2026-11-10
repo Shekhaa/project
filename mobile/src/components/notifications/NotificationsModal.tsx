@@ -8,10 +8,11 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
-  Image,
   Platform,
 } from 'react-native';
 import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import { UserAvatar } from '../common/UserAvatar';
 import {
   notificationService,
   NotificationItem,
@@ -42,6 +43,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   onSelectNotification,
   onUnreadCountChange,
 }) => {
+  const { colors: themeColors } = useTheme();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
@@ -133,52 +135,53 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   };
 
   const getNotificationIcon = (type: string) => {
+    const borderCol = { borderColor: themeColors.surface };
     switch (type) {
       case 'LIKE':
         return (
-          <View style={[styles.iconBadge, { backgroundColor: '#be185d' }]}>
+          <View style={[styles.iconBadge, borderCol, { backgroundColor: '#be185d' }]}>
             <Heart size={14} color="#fff" fill="#fff" />
           </View>
         );
       case 'COMMENT':
         return (
-          <View style={[styles.iconBadge, { backgroundColor: '#0284c7' }]}>
+          <View style={[styles.iconBadge, borderCol, { backgroundColor: '#0284c7' }]}>
             <MessageCircle size={14} color="#fff" />
           </View>
         );
       case 'REPLY':
         return (
-          <View style={[styles.iconBadge, { backgroundColor: '#7c3aed' }]}>
+          <View style={[styles.iconBadge, borderCol, { backgroundColor: '#7c3aed' }]}>
             <CornerDownRight size={14} color="#fff" />
           </View>
         );
       case 'TAG':
         return (
-          <View style={[styles.iconBadge, { backgroundColor: '#059669' }]}>
+          <View style={[styles.iconBadge, borderCol, { backgroundColor: '#059669' }]}>
             <Tag size={14} color="#fff" />
           </View>
         );
       case 'SHARE':
         return (
-          <View style={[styles.iconBadge, { backgroundColor: '#ea580c' }]}>
+          <View style={[styles.iconBadge, borderCol, { backgroundColor: '#ea580c' }]}>
             <Share2 size={14} color="#fff" />
           </View>
         );
       case 'MESSAGE':
         return (
-          <View style={[styles.iconBadge, { backgroundColor: '#4f46e5' }]}>
+          <View style={[styles.iconBadge, borderCol, { backgroundColor: '#4f46e5' }]}>
             <MessageSquare size={14} color="#fff" />
           </View>
         );
       case 'ACCEPTED_ANSWER':
         return (
-          <View style={[styles.iconBadge, { backgroundColor: '#10b981' }]}>
+          <View style={[styles.iconBadge, borderCol, { backgroundColor: '#10b981' }]}>
             <CheckCheck size={14} color="#fff" />
           </View>
         );
       default:
         return (
-          <View style={[styles.iconBadge, { backgroundColor: colors.primary }]}>
+          <View style={[styles.iconBadge, borderCol, { backgroundColor: themeColors.primary }]}>
             <Megaphone size={14} color="#fff" />
           </View>
         );
@@ -191,26 +194,26 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   });
 
   const renderItem = ({ item }: { item: NotificationItem }) => {
-    const initial = (item.sender_name || 'C').charAt(0).toUpperCase();
-
     return (
       <TouchableOpacity
         style={[
           styles.notifCard,
-          !item.is_read && styles.notifCardUnread,
+          !item.is_read && {
+            backgroundColor: themeColors.primary + '14',
+            borderLeftWidth: 3,
+            borderLeftColor: themeColors.primary,
+          },
         ]}
         onPress={() => handleNotificationPress(item)}
         activeOpacity={0.7}
       >
         {/* Avatar + Type badge */}
         <View style={styles.avatarWrapper}>
-          {item.sender_avatar ? (
-            <Image source={{ uri: item.sender_avatar }} style={styles.avatarImg} />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarText}>{initial}</Text>
-            </View>
-          )}
+          <UserAvatar
+            uri={item.sender_avatar}
+            name={item.sender_name || item.title || 'Campus'}
+            size={44}
+          />
           <View style={styles.badgePosition}>
             {getNotificationIcon(item.notification_type)}
           </View>
@@ -219,17 +222,18 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
         {/* Content */}
         <View style={styles.contentWrapper}>
           <View style={styles.titleRow}>
-            <Text style={styles.notifTitle} numberOfLines={1}>
+            <Text style={[styles.notifTitle, { color: themeColors.textPrimary }]} numberOfLines={1}>
               {item.title}
             </Text>
-            <Text style={styles.timeText}>
+            <Text style={[styles.timeText, { color: themeColors.textMuted }]}>
               {formatRelativeTime(item.created_at)}
             </Text>
           </View>
           <Text
             style={[
               styles.notifMessage,
-              !item.is_read && styles.notifMessageUnread,
+              { color: !item.is_read ? themeColors.textPrimary : themeColors.textSecondary },
+              !item.is_read && { fontWeight: '500' },
             ]}
             numberOfLines={2}
           >
@@ -238,25 +242,34 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
         </View>
 
         {/* Unread indicator dot */}
-        {!item.is_read && <View style={styles.unreadDot} />}
+        {!item.is_read && (
+          <View style={[styles.unreadDot, { backgroundColor: themeColors.primary }]} />
+        )}
       </TouchableOpacity>
     );
   };
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      <View style={[styles.backdrop, { backgroundColor: themeColors.modalOverlay }]}>
         <TouchableOpacity style={styles.dismissOverlay} onPress={onClose} activeOpacity={1} />
 
-        <View style={styles.sheetContainer}>
+        <View
+          style={[
+            styles.sheetContainer,
+            { backgroundColor: themeColors.surface, borderColor: themeColors.cardBorder },
+          ]}
+        >
           {/* Drag Handle */}
-          <View style={styles.dragHandle} />
+          <View style={[styles.dragHandle, { backgroundColor: themeColors.hairline }]} />
 
           {/* Header */}
-          <View style={styles.header}>
+          <View style={[styles.header, { borderBottomColor: themeColors.cardBorder }]}>
             <View style={styles.headerTitleRow}>
-              <Bell size={20} color={colors.primary} />
-              <Text style={styles.headerTitle}>Notifications</Text>
+              <Bell size={20} color={themeColors.primary} />
+              <Text style={[styles.headerTitle, { color: themeColors.textPrimary }]}>
+                Notifications
+              </Text>
               {unreadCount > 0 && (
                 <View style={styles.headerBadge}>
                   <Text style={styles.headerBadgeText}>{unreadCount}</Text>
@@ -267,30 +280,38 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
             <View style={styles.headerActions}>
               {unreadCount > 0 && (
                 <TouchableOpacity
-                  style={styles.markAllBtn}
+                  style={[styles.markAllBtn, { backgroundColor: themeColors.primary + '1F' }]}
                   onPress={handleMarkAllRead}
                   activeOpacity={0.8}
                 >
-                  <CheckCheck size={14} color="#38bdf8" />
-                  <Text style={styles.markAllText}>Read All</Text>
+                  <CheckCheck size={14} color={themeColors.primary} />
+                  <Text style={[styles.markAllText, { color: themeColors.primary }]}>Read All</Text>
                 </TouchableOpacity>
               )}
 
               <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                <X size={20} color={colors.textPrimary} />
+                <X size={20} color={themeColors.textPrimary} />
               </TouchableOpacity>
             </View>
           </View>
 
           {/* Tab Filter */}
-          <View style={styles.tabFilterRow}>
+          <View style={[styles.tabFilterRow, { borderBottomColor: themeColors.hairline }]}>
             <TouchableOpacity
-              style={[styles.filterTab, filter === 'ALL' && styles.filterTabActive]}
+              style={[
+                styles.filterTab,
+                { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.hairline },
+                filter === 'ALL' && {
+                  backgroundColor: themeColors.primary,
+                  borderColor: themeColors.primary,
+                },
+              ]}
               onPress={() => setFilter('ALL')}
             >
               <Text
                 style={[
                   styles.filterTabText,
+                  { color: themeColors.textSecondary },
                   filter === 'ALL' && styles.filterTabTextActive,
                 ]}
               >
@@ -299,12 +320,20 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.filterTab, filter === 'UNREAD' && styles.filterTabActive]}
+              style={[
+                styles.filterTab,
+                { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.hairline },
+                filter === 'UNREAD' && {
+                  backgroundColor: themeColors.primary,
+                  borderColor: themeColors.primary,
+                },
+              ]}
               onPress={() => setFilter('UNREAD')}
             >
               <Text
                 style={[
                   styles.filterTabText,
+                  { color: themeColors.textSecondary },
                   filter === 'UNREAD' && styles.filterTabTextActive,
                 ]}
               >
@@ -316,16 +345,18 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
           {/* Notifications List */}
           {loading ? (
             <View style={styles.centerContainer}>
-              <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={styles.loadingText}>Loading notifications...</Text>
+              <ActivityIndicator size="small" color={themeColors.primary} />
+              <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>
+                Loading notifications...
+              </Text>
             </View>
           ) : filteredNotifications.length === 0 ? (
             <View style={styles.centerContainer}>
-              <Bell size={42} color={colors.textSecondary} />
-              <Text style={styles.emptyTitle}>
+              <Bell size={42} color={themeColors.textSecondary} />
+              <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>
                 {filter === 'UNREAD' ? 'No unread notifications' : 'No notifications yet'}
               </Text>
-              <Text style={styles.emptySubtitle}>
+              <Text style={[styles.emptySubtitle, { color: themeColors.textSecondary }]}>
                 {filter === 'UNREAD'
                   ? "You're all caught up with campus updates!"
                   : 'Likes, comments, tags, and replies will show up here.'}
@@ -341,8 +372,8 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                 <RefreshControl
                   refreshing={refreshing}
                   onRefresh={handleRefresh}
-                  tintColor={colors.primary}
-                  colors={[colors.primary]}
+                  tintColor={themeColors.primary}
+                  colors={[themeColors.primary]}
                 />
               }
             />
@@ -358,11 +389,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'flex-end',
+    alignItems: 'center',
   },
   dismissOverlay: {
     flex: 1,
+    width: '100%',
   },
   sheetContainer: {
+    width: '100%',
+    maxWidth: 600,
     backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,

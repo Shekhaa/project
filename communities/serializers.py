@@ -1,21 +1,35 @@
 from rest_framework import serializers
+from config.media_utils import resolve_media_url
 from .models import Community, CommunityMember, Discussion, DiscussionReply, DiscussionVote, CommunityReport
 from attachments.serializers import MediaAttachmentSerializer
 
 class CommunityMemberUserSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
     full_name = serializers.SerializerMethodField()
+    username = serializers.SerializerMethodField()
     email = serializers.EmailField(read_only=True)
     avatar = serializers.SerializerMethodField()
+    profile_picture = serializers.SerializerMethodField()
     course_branch = serializers.SerializerMethodField()
+    college_name = serializers.SerializerMethodField()
+    branch_name = serializers.SerializerMethodField()
+    verified = serializers.SerializerMethodField()
+    verification_tier = serializers.SerializerMethodField()
 
     def get_full_name(self, obj):
         return getattr(obj, "full_name", "") or obj.email.split("@")[0]
 
+    def get_username(self, obj):
+        prof = getattr(obj, "profile", None)
+        return (prof.username if prof and prof.username else "") or (obj.email.split("@")[0] if obj.email else "")
+
     def get_avatar(self, obj):
         if hasattr(obj, "profile") and obj.profile.profile_picture:
-            return obj.profile.profile_picture.url
+            return resolve_media_url(self.context.get("request"), obj.profile.profile_picture)
         return None
+
+    def get_profile_picture(self, obj):
+        return self.get_avatar(obj)
 
     def get_course_branch(self, obj):
         if not hasattr(obj, "profile"):
@@ -26,6 +40,24 @@ class CommunityMemberUserSerializer(serializers.Serializer):
         if getattr(obj.profile, "branch", None):
             parts.append(obj.profile.branch.name)
         return " • ".join(parts)
+
+    def get_college_name(self, obj):
+        prof = getattr(obj, "profile", None)
+        if prof and getattr(prof, "college", None):
+            return prof.college.name
+        return ""
+
+    def get_branch_name(self, obj):
+        prof = getattr(obj, "profile", None)
+        if prof and getattr(prof, "branch", None):
+            return prof.branch.name
+        return ""
+
+    def get_verified(self, obj):
+        return bool(getattr(obj, "is_verified_student", False))
+
+    def get_verification_tier(self, obj):
+        return getattr(obj, "verification_tier", "SEMI_VERIFIED")
 
 
 class CommunityMemberListSerializer(serializers.ModelSerializer):
@@ -40,7 +72,23 @@ class CommunityMemberListSerializer(serializers.ModelSerializer):
 class DiscussionMentionedUserSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
     full_name = serializers.CharField(read_only=True)
+    username = serializers.SerializerMethodField()
     email = serializers.EmailField(read_only=True)
+    avatar = serializers.SerializerMethodField()
+    profile_picture = serializers.SerializerMethodField()
+
+    def get_username(self, obj):
+        prof = getattr(obj, "profile", None)
+        return (prof.username if prof and prof.username else "") or (obj.email.split("@")[0] if obj.email else "")
+
+    def get_avatar(self, obj):
+        prof = getattr(obj, "profile", None)
+        if prof and prof.profile_picture:
+            return resolve_media_url(self.context.get("request"), prof.profile_picture)
+        return None
+
+    def get_profile_picture(self, obj):
+        return self.get_avatar(obj)
 
 
 class DiscussionReplySerializer(serializers.ModelSerializer):
@@ -79,7 +127,7 @@ class DiscussionReplySerializer(serializers.ModelSerializer):
 
     def get_author_avatar(self, obj):
         if hasattr(obj.author, "profile") and obj.author.profile.profile_picture:
-            return obj.author.profile.profile_picture.url
+            return resolve_media_url(self.context.get("request"), obj.author.profile.profile_picture)
         return None
 
     def get_user_has_voted(self, obj):
@@ -155,7 +203,7 @@ class DiscussionSerializer(serializers.ModelSerializer):
 
     def get_author_avatar(self, obj):
         if hasattr(obj.author, "profile") and obj.author.profile.profile_picture:
-            return obj.author.profile.profile_picture.url
+            return resolve_media_url(self.context.get("request"), obj.author.profile.profile_picture)
         return None
 
     def get_user_has_voted(self, obj):

@@ -8,9 +8,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   ScrollView,
-  Alert,
   Platform,
   Modal,
+  useWindowDimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../theme/ThemeContext';
@@ -24,7 +24,8 @@ import { ShareModal } from '../components/feed/ShareModal';
 import { NotificationsModal } from '../components/notifications/NotificationsModal';
 import { notificationService, NotificationItem } from '../services/notificationService';
 import { api } from '../config/api';
-import { Plus, Bell, RefreshCw, Sparkles, SlidersHorizontal, Check, X, Sun, Moon } from 'lucide-react-native';
+import { showCrossPlatformAlert } from '../utils/mediaUtils';
+import { Plus, Bell, Sparkles, SlidersHorizontal, Check, X, Sun, Moon } from 'lucide-react-native';
 
 const SCOPE_TABS: Array<{
   key: 'ALL' | 'COLLEGE' | 'FOLLOWING' | 'SAVED' | 'MEDIA' | 'RESOURCES';
@@ -52,6 +53,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   onNavigateToChat,
   onOpenProfile,
 }) => {
+  const { width } = useWindowDimensions();
+  const isCompactViewport = width < 410;
   const { colors, isDark, toggleTheme } = useTheme();
   const [posts, setPosts] = useState<Post[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -110,7 +113,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
               setActiveCommentsPost(res.data);
             }
           } catch {
-            Alert.alert('Post', 'This post might have been removed or is unavailable.');
+            showCrossPlatformAlert('Post', 'This post might have been removed or is unavailable.');
           }
         }
       } else if (notif.data?.conversation_id) {
@@ -118,7 +121,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           onNavigateToChat(notif.data.conversation_id);
         }
       } else if (notif.data?.discussion_id) {
-        Alert.alert('Hub Discussion', notif.message);
+        showCrossPlatformAlert('Hub Discussion', notif.message);
       }
     },
     [posts, onNavigateToChat]
@@ -288,9 +291,9 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     try {
       await postService.deletePost(postId);
       setPosts((prev) => prev.filter((p) => p.id !== postId));
-      Alert.alert('Deleted', 'Post removed from campus feed.');
-    } catch (e) {
-      Alert.alert('Error', 'Could not delete post.');
+      showCrossPlatformAlert('Deleted', 'Post removed from campus feed.');
+    } catch {
+      showCrossPlatformAlert('Error', 'Could not delete post.');
     }
   }, []);
 
@@ -298,9 +301,9 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     try {
       await postService.archivePost(postId);
       setPosts((prev) => prev.filter((p) => p.id !== postId));
-      Alert.alert('Archived', 'Post moved to archive.');
-    } catch (e) {
-      Alert.alert('Error', 'Could not archive post.');
+      showCrossPlatformAlert('Archived', 'Post moved to archive.');
+    } catch {
+      showCrossPlatformAlert('Error', 'Could not archive post.');
     }
   }, []);
 
@@ -338,38 +341,57 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const renderHeader = () => (
     <View style={[styles.headerArea, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
       {/* Top Navbar */}
-      <View style={styles.navBar}>
+      <View style={[styles.navBar, isCompactViewport && { paddingHorizontal: 12 }]}>
         <View style={styles.brandRow}>
-          <Text style={[styles.brandTitle, { color: colors.textPrimary }]}>Campus</Text>
-          <Text style={[styles.brandAccent, { color: colors.primary }]}>Connect</Text>
+          <Text style={[styles.brandTitle, { color: colors.textPrimary }, isCompactViewport && { fontSize: 17 }]}>Campus</Text>
+          <Text style={[styles.brandAccent, { color: colors.primary }, isCompactViewport && { fontSize: 17 }]}>Connect</Text>
         </View>
 
-        <View style={styles.navActions}>
+        <View style={[styles.navActions, isCompactViewport && { gap: 6 }]}>
           {/* Quick 1-Tap Theme Toggle */}
           <TouchableOpacity
-            style={[styles.iconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+            style={[
+              styles.iconBtn,
+              { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+              isCompactViewport && { width: 32, height: 32, borderRadius: 16 },
+            ]}
             onPress={toggleTheme}
             activeOpacity={0.7}
             accessibilityLabel={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
           >
-            {isDark ? <Sun size={17} color="#fbbf24" /> : <Moon size={17} color="#4f46e5" />}
+            {isDark ? (
+              <Sun size={isCompactViewport ? 15 : 17} color="#fbbf24" />
+            ) : (
+              <Moon size={isCompactViewport ? 15 : 17} color="#4f46e5" />
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.iconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }, isFiltered && styles.iconBtnActive]}
+            style={[
+              styles.iconBtn,
+              { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+              isCompactViewport && { width: 32, height: 32, borderRadius: 16 },
+              isFiltered && styles.iconBtnActive,
+            ]}
             onPress={() => setFilterModalVisible(true)}
             activeOpacity={0.7}
+            accessibilityLabel="Filter feed"
           >
-            <SlidersHorizontal size={18} color={isFiltered ? colors.primary : colors.textPrimary} />
+            <SlidersHorizontal size={isCompactViewport ? 16 : 18} color={isFiltered ? colors.primary : colors.textPrimary} />
             {isFiltered && <View style={styles.filterDot} />}
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.iconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+            style={[
+              styles.iconBtn,
+              { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+              isCompactViewport && { width: 32, height: 32, borderRadius: 16 },
+            ]}
             onPress={() => setNotificationsVisible(true)}
             activeOpacity={0.7}
+            accessibilityLabel="Open notifications"
           >
-            <Bell size={20} color={colors.textPrimary} />
+            <Bell size={isCompactViewport ? 17 : 20} color={colors.textPrimary} />
             {unreadNotifCount > 0 && (
               <View style={styles.bellBadge}>
                 <Text style={styles.bellBadgeText}>
@@ -380,12 +402,15 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.createPostBtn}
+            style={[
+              styles.createPostBtn,
+              isCompactViewport && { paddingHorizontal: 11, paddingVertical: 7, gap: 4 },
+            ]}
             onPress={() => setComposerVisible(true)}
             activeOpacity={0.8}
           >
-            <Plus size={18} color="#fff" />
-            <Text style={styles.createPostBtnText}>Post</Text>
+            <Plus size={isCompactViewport ? 16 : 18} color="#fff" />
+            <Text style={[styles.createPostBtnText, isCompactViewport && { fontSize: 12.5 }]}>Post</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -511,7 +536,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           <Text style={styles.emptySub}>{error}</Text>
           <TouchableOpacity
             style={styles.emptyCta}
-            onPress={loadData}
+            onPress={() => loadData(false)}
           >
             <Text style={styles.emptyCtaText}>🔄 Retry Sync</Text>
           </TouchableOpacity>
@@ -561,23 +586,29 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         onRequestClose={() => setFilterModalVisible(false)}
       >
         <TouchableOpacity
-          style={styles.filterModalOverlay}
+          style={[styles.filterModalOverlay, { backgroundColor: colors.modalOverlay }]}
           activeOpacity={1}
           onPress={() => setFilterModalVisible(false)}
         >
-          <View style={styles.filterModalCard} onStartShouldSetResponder={() => true}>
-            <View style={styles.filterModalHeader}>
+          <View
+            style={[
+              styles.filterModalCard,
+              { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+            ]}
+            onStartShouldSetResponder={() => true}
+          >
+            <View style={[styles.filterModalHeader, { borderBottomColor: colors.cardBorder }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <SlidersHorizontal size={18} color={colors.primary} />
-                <Text style={styles.filterModalTitle}>Campus Feed Scope</Text>
+                <Text style={[styles.filterModalTitle, { color: colors.textPrimary }]}>Campus Feed Scope</Text>
               </View>
               <TouchableOpacity onPress={() => setFilterModalVisible(false)} style={styles.closeBtn}>
-                <X size={20} color="#94a3b8" />
+                <X size={20} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
-              <Text style={styles.filterGroupTitle}>FEED VIEW</Text>
+              <Text style={[styles.filterGroupTitle, { color: colors.textSecondary }]}>FEED VIEW</Text>
 
               {[
                 { key: 'ALL', label: 'Global Campus Feed (Default)', desc: 'Cross-college feed with privacy safeguards', icon: '🌐' },
@@ -591,7 +622,15 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
                 return (
                   <TouchableOpacity
                     key={opt.key}
-                    style={[styles.filterOptionRow, isActive && styles.filterOptionRowActive]}
+                    style={[
+                      styles.filterOptionRow,
+                      { backgroundColor: colors.surfaceLight },
+                      isActive && {
+                        backgroundColor: isDark ? 'rgba(94, 106, 210, 0.2)' : 'rgba(79, 70, 229, 0.1)',
+                        borderWidth: 1,
+                        borderColor: colors.primary,
+                      },
+                    ]}
                     onPress={() => {
                       handleSelectScope(opt.key as any);
                       setFilterModalVisible(false);
@@ -599,10 +638,16 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
                   >
                     <Text style={{ fontSize: 20 }}>{opt.icon}</Text>
                     <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={[styles.filterOptionLabel, isActive && styles.filterOptionLabelActive]}>
+                      <Text
+                        style={[
+                          styles.filterOptionLabel,
+                          { color: isActive ? colors.primary : colors.textPrimary },
+                          isActive && { fontWeight: '700' },
+                        ]}
+                      >
                         {opt.label}
                       </Text>
-                      <Text style={styles.filterOptionDesc}>{opt.desc}</Text>
+                      <Text style={[styles.filterOptionDesc, { color: colors.textSecondary }]}>{opt.desc}</Text>
                     </View>
                     {isActive && <Check size={18} color={colors.primary} />}
                   </TouchableOpacity>
@@ -611,13 +656,21 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
 
               {communities.length > 0 && (
                 <>
-                  <Text style={[styles.filterGroupTitle, { marginTop: 16 }]}>FILTER BY HUB COMMUNITY</Text>
+                  <Text style={[styles.filterGroupTitle, { marginTop: 16, color: colors.textSecondary }]}>FILTER BY HUB COMMUNITY</Text>
                   {communities.map((comm) => {
                     const isActive = selectedCommunityId === comm.id;
                     return (
                       <TouchableOpacity
                         key={comm.id}
-                        style={[styles.filterOptionRow, isActive && styles.filterOptionRowActive]}
+                        style={[
+                          styles.filterOptionRow,
+                          { backgroundColor: colors.surfaceLight },
+                          isActive && {
+                            backgroundColor: isDark ? 'rgba(94, 106, 210, 0.2)' : 'rgba(79, 70, 229, 0.1)',
+                            borderWidth: 1,
+                            borderColor: colors.primary,
+                          },
+                        ]}
                         onPress={() => {
                           setSelectedCommunityId(comm.id);
                           setSelectedScope(undefined);
@@ -628,10 +681,17 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
                           {comm.community_type === 'COLLEGE' ? '🎓' : comm.community_type === 'COURSE' ? '📚' : '👥'}
                         </Text>
                         <View style={{ flex: 1, marginLeft: 12 }}>
-                          <Text style={[styles.filterOptionLabel, isActive && styles.filterOptionLabelActive]} numberOfLines={1}>
+                          <Text
+                            style={[
+                              styles.filterOptionLabel,
+                              { color: isActive ? colors.primary : colors.textPrimary },
+                              isActive && { fontWeight: '700' },
+                            ]}
+                            numberOfLines={1}
+                          >
                             {comm.name}
                           </Text>
-                          <Text style={styles.filterOptionDesc}>
+                          <Text style={[styles.filterOptionDesc, { color: colors.textSecondary }]}>
                             {comm.community_type === 'COLLEGE' ? 'College Hub' : comm.community_type === 'COURSE' ? 'Course Hub' : 'Custom Community'}
                           </Text>
                         </View>
@@ -644,13 +704,13 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             </ScrollView>
 
             <TouchableOpacity
-              style={styles.resetFilterBtn}
+              style={[styles.resetFilterBtn, { backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.cardBorder }]}
               onPress={() => {
                 handleSelectScope('ALL');
                 setFilterModalVisible(false);
               }}
             >
-              <Text style={styles.resetFilterBtnText}>Reset to Global Campus Feed</Text>
+              <Text style={[styles.resetFilterBtnText, { color: colors.textSecondary }]}>Reset to Global Campus Feed</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>

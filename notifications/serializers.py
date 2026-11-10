@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from config.media_utils import resolve_media_url
 from .models import Notification
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -27,5 +28,5 @@ class NotificationSerializer(serializers.ModelSerializer):
 
     def get_sender_avatar(self, obj):
         if obj.sender and hasattr(obj.sender, 'profile') and obj.sender.profile.profile_picture:
-            return obj.sender.profile.profile_picture.url
+            return resolve_media_url(self.context.get("request"), obj.sender.profile.profile_picture)
         return None

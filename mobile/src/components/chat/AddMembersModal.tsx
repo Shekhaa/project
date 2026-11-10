@@ -9,11 +9,13 @@ import {
   ActivityIndicator,
   StyleSheet,
   Platform,
-  Alert,
 } from 'react-native';
 import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 import { api } from '../../config/api';
-import { Search, X, Check, UserPlus } from 'lucide-react-native';
+import { UserAvatar } from '../common/UserAvatar';
+import { showCrossPlatformAlert } from '../../utils/mediaUtils';
+import { Search, X, Check } from 'lucide-react-native';
 
 interface AddMembersModalProps {
   visible: boolean;
@@ -30,6 +32,7 @@ export const AddMembersModal: React.FC<AddMembersModalProps> = ({
   onClose,
   onAddMembers,
 }) => {
+  const { colors: themeColors } = useTheme();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -83,7 +86,7 @@ export const AddMembersModal: React.FC<AddMembersModalProps> = ({
       await onAddMembers(selectedIds);
       onClose();
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Could not add selected members.');
+      showCrossPlatformAlert('Error', e.response?.data?.error || 'Could not add selected members.');
     } finally {
       setSubmitting(false);
     }
@@ -91,14 +94,19 @@ export const AddMembersModal: React.FC<AddMembersModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: themeColors.background }]}>
         {/* Header (Instagram Style) */}
-        <View style={styles.header}>
+        <View
+          style={[
+            styles.header,
+            { backgroundColor: themeColors.surface, borderBottomColor: themeColors.cardBorder },
+          ]}
+        >
           <TouchableOpacity onPress={onClose} style={styles.headerLeftBtn}>
-            <Text style={styles.cancelText}>Cancel</Text>
+            <Text style={[styles.cancelText, { color: themeColors.textSecondary }]}>Cancel</Text>
           </TouchableOpacity>
 
-          <Text style={styles.headerTitle} numberOfLines={1}>
+          <Text style={[styles.headerTitle, { color: themeColors.textPrimary }]} numberOfLines={1}>
             {title}
           </Text>
 
@@ -106,6 +114,7 @@ export const AddMembersModal: React.FC<AddMembersModalProps> = ({
             onPress={handleConfirm}
             style={[
               styles.addBtn,
+              { backgroundColor: themeColors.primary },
               (selectedIds.length === 0 || submitting) && styles.addBtnDisabled,
             ]}
             disabled={selectedIds.length === 0 || submitting}
@@ -121,27 +130,32 @@ export const AddMembersModal: React.FC<AddMembersModalProps> = ({
         </View>
 
         {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Search size={16} color="#64748b" style={styles.searchIcon} />
+        <View
+          style={[
+            styles.searchContainer,
+            { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.cardBorder },
+          ]}
+        >
+          <Search size={16} color={themeColors.textMuted} style={styles.searchIcon} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: themeColors.textPrimary }]}
             placeholder="Search students by name, email, or ID..."
-            placeholderTextColor="#64748b"
+            placeholderTextColor={themeColors.textMuted}
             value={query}
             onChangeText={setQuery}
             autoCorrect={false}
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => setQuery('')}>
-              <X size={16} color="#64748b" />
+              <X size={16} color={themeColors.textMuted} />
             </TouchableOpacity>
           )}
         </View>
 
         {/* Selected Pill Bar */}
         {selectedIds.length > 0 && (
-          <View style={styles.selectedBar}>
-            <Text style={styles.selectedCountText}>
+          <View style={[styles.selectedBar, { backgroundColor: themeColors.primary + '1A' }]}>
+            <Text style={[styles.selectedCountText, { color: themeColors.primary }]}>
               {selectedIds.length} {selectedIds.length === 1 ? 'person' : 'people'} selected
             </Text>
           </View>
@@ -150,7 +164,7 @@ export const AddMembersModal: React.FC<AddMembersModalProps> = ({
         {/* Results List */}
         {loading && results.length === 0 ? (
           <View style={styles.centerBox}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <ActivityIndicator size="large" color={themeColors.primary} />
           </View>
         ) : (
           <FlatList
@@ -161,29 +175,38 @@ export const AddMembersModal: React.FC<AddMembersModalProps> = ({
             ListEmptyComponent={
               !loading ? (
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No students found</Text>
+                  <Text style={[styles.emptyText, { color: themeColors.textMuted }]}>
+                    No students found
+                  </Text>
                 </View>
               ) : null
             }
             renderItem={({ item }) => {
               const isSelected = selectedIds.includes(item.id);
-              const initial = (item.full_name || item.email || 'S')[0].toUpperCase();
+              const name = item.full_name || item.username || item.email?.split('@')[0] || 'Student';
 
               return (
                 <TouchableOpacity
-                  style={[styles.userRow, isSelected && styles.userRowSelected]}
+                  style={[
+                    styles.userRow,
+                    isSelected && { backgroundColor: themeColors.primary + '14' },
+                  ]}
                   onPress={() => toggleSelect(item.id)}
                   activeOpacity={0.7}
                 >
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{initial}</Text>
-                  </View>
+                  <UserAvatar
+                    uri={item.avatar || item.profile_picture}
+                    name={name}
+                    size={44}
+                    style={{ marginRight: 12 }}
+                  />
 
                   <View style={styles.userInfo}>
-                    <Text style={styles.userName} numberOfLines={1}>
-                      {item.full_name || item.email.split('@')[0]}
+                    <Text style={[styles.userName, { color: themeColors.textPrimary }]} numberOfLines={1}>
+                      {name}
                     </Text>
-                    <Text style={styles.userSub} numberOfLines={1}>
+                    <Text style={[styles.userSub, { color: themeColors.textSecondary }]} numberOfLines={1}>
+                      {item.username ? `@${item.username} • ` : ''}
                       {item.course_branch || item.email}
                     </Text>
                   </View>
@@ -192,10 +215,14 @@ export const AddMembersModal: React.FC<AddMembersModalProps> = ({
                   <View
                     style={[
                       styles.checkCircle,
-                      isSelected && styles.checkCircleSelected,
+                      { borderColor: themeColors.cardBorder },
+                      isSelected && {
+                        backgroundColor: themeColors.primary,
+                        borderColor: themeColors.primary,
+                      },
                     ]}
                   >
-                    {isSelected && <Check size={14} color="#0f172a" strokeWidth={3} />}
+                    {isSelected && <Check size={14} color="#ffffff" strokeWidth={3} />}
                   </View>
                 </TouchableOpacity>
               );

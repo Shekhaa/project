@@ -1,39 +1,59 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
+  ActivityIndicator,
+  Image,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
-  Image,
-  Modal,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  Platform,
-  Switch,
+  View,
 } from 'react-native';
-import { colors } from '../../theme/colors';
-import { postService } from '../../services/postService';
-import { StagedAttachment, dataURLtoFile } from '../media/AttachmentPickerModal';
-import { ImageCropperModal, smartAutoCropImage } from '../media/ImageCropperModal';
 import {
-  X,
-  Image as ImageIcon,
-  FileText,
-  Crop,
-  Sparkles,
-  Check,
-  Trash2,
-  Plus,
-  Zap,
-  Globe,
+  AlertCircle,
+  AtSign,
   Building2,
-  Users,
-  Search,
-  UserCheck,
+  Crop,
+  FileText,
+  Globe,
+  Image as ImageIcon,
   Lock,
+  Search,
+  Sparkles,
+  UserCheck,
+  Users,
+  Video,
+  X,
 } from 'lucide-react-native';
+import { useTheme } from '../../theme/ThemeContext';
+import { postService } from '../../services/postService';
+import { StagedAttachment } from '../media/AttachmentPickerModal';
+import { ImageCropperModal } from '../media/ImageCropperModal';
+import {
+  MentionCandidate,
+  MentionSuggestionsBar,
+  applyMentionSelection,
+  extractActiveMention,
+} from '../common/MentionSuggestionsBar';
+import {
+  IMAGE_QUALITY_OPTIONS,
+  IMAGE_QUALITY_PRESETS,
+  ImageQualityPreset,
+  MAX_DOCUMENT_BYTES,
+  MAX_DOCUMENT_MB,
+  MAX_VIDEO_BYTES,
+  MAX_VIDEO_MB,
+  alertOversizedDocuments,
+  clampAspectRatio,
+  dataUrlToWebFile,
+  formatFileSize,
+  processWebImageForUpload,
+  showCrossPlatformAlert,
+  splitDocumentsBySizeLimit,
+} from '../../utils/mediaUtils';
 
 interface CommunityOption {
   id: number;
@@ -50,8 +70,6 @@ interface PostComposerModalProps {
   defaultCommunityId?: number;
 }
 
-type AspectRatioMode = 'ORIGINAL' | '1:1' | '4:5' | '16:9';
-
 export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   visible,
   onClose,
@@ -59,70 +77,141 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   communities,
   defaultCommunityId,
 }) => {
+  const { colors } = useTheme();
   const [content, setContent] = useState('');
-  const [postScope, setPostScope] = useState<PostScope>(defaultCommunityId ? 'COMMUNITY' : 'COLLEGE');
-  const [selectedCommunity, setSelectedCommunity] = useState<number>(
-    defaultCommunityId || (communities[0]?.id || 1)
+  const [cursorPos, setCursorPos] = useState<number>(0);
+  const [mentionDismissed, setMentionDismissed] = useState(false);
+
+  const [postScope, setPostScope] = useState<PostScope>(
+    defaultCommunityId ? 'COMMUNITY' : 'COLLEGE'
+  );
+  const [selectedCommunity, setSelectedCommunity] = useState<number | null>(
+    defaultCommunityId ?? communities[0]?.id ?? null
   );
   const [communitySearchQuery, setCommunitySearchQuery] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(false);
-  
+
   // Multi-attachment staging state
   const [stagedFiles, setStagedFiles] = useState<StagedAttachment[]>([]);
-  const [aspectRatio, setAspectRatio] = useState<AspectRatioMode>('ORIGINAL');
+  const [imageQuality, setImageQuality] = useState<ImageQualityPreset>('HIGH');
+  const [processingImages, setProcessingImages] = useState(false);
+  const [docSizeError, setDocSizeError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [croppingImage, setCroppingImage] = useState<StagedAttachment | null>(null);
-  const [autoCropping, setAutoCropping] = useState(false);
 
-  const handleCropComplete = (croppedUri: string) => {
+  // Hidden file input refs for Web
+  const imageInputRef = useRef<any>(null);
+  const videoInputRef = useRef<any>(null);
+  const documentInputRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (defaultCommunityId) {
+      setSelectedCommunity(defaultCommunityId);
+    } else if (selectedCommunity === null && communities.length > 0) {
+      setSelectedCommunity(communities[0].id);
+    }
+  }, [defaultCommunityId, communities]);
+
+  const activeMention = mentionDismissed ? null : extractActiveMention(content, cursorPos);
+
+  const handleContentChange = (text: string) => {
+    const delta = text.length - content.length;
+    setContent(text);
+    setCursorPos((prev) => Math.max(0, Math.min(text.length, prev + delta)));
+    setMentionDismissed(false);
+  };
+
+  const handleSelectMention = (candidate: MentionCandidate & { username: string }) => {
+    if (!activeMention) return;
+    const { nextText, nextCursor } = applyMentionSelection(
+      content,
+      activeMention,
+      candidate.username
+    );
+    setContent(nextText);
+    setCursorPos(nextCursor);
+    setMentionDismissed(false);
+  };
+
+  const handleInsertTagTrigger = () => {
+    setMentionDismissed(false);
+    const pos = Math.min(cursorPos, content.length);
+    const before = content.slice(0, pos);
+    const after = content.slice(pos);
+    const prefix = before.length === 0 || /\s$/.test(before) ? '@' : ' @';
+    const next = `${before}${prefix}${after}`;
+    setContent(next);
+    setCursorPos(before.length + prefix.length);
+  };
+
+  const handleCropComplete = (croppedUri: string, cropW?: number, cropH?: number) => {
     if (!croppingImage) return;
     const newFile = croppedUri.startsWith('data:')
-      ? (dataURLtoFile(croppedUri, croppingImage.name || 'cropped.jpg') || croppingImage.file)
+      ? dataUrlToWebFile(croppedUri, croppingImage.name || 'cropped.jpg') || croppingImage.file
       : croppingImage.file;
+    const newSize = newFile?.size || croppingImage.size;
 
     setStagedFiles((prev) =>
       prev.map((item) =>
         item.id === croppingImage.id
-          ? { ...item, uri: croppedUri, file: newFile }
+          ? {
+              ...item,
+              uri: croppedUri,
+              file: newFile,
+              sourceUri: croppedUri,
+              sourceFile: newFile,
+              size: newSize,
+              sizeFormatted: formatFileSize(newSize),
+              imageWidth: cropW || item.imageWidth,
+              imageHeight: cropH || item.imageHeight,
+            }
           : item
       )
     );
     setCroppingImage(null);
   };
 
-  const handleDirectAutoCrop = async (targetFile: StagedAttachment) => {
+  const handleQualityPresetChange = async (preset: ImageQualityPreset) => {
+    setImageQuality(preset);
+    if (Platform.OS !== 'web') return;
+
+    const currentImages = stagedFiles.filter((f) => f.type === 'IMAGE');
+    if (currentImages.length === 0) return;
+
+    setProcessingImages(true);
     try {
-      setAutoCropping(true);
-      const cropped = await smartAutoCropImage(targetFile.uri);
-      const newFile = cropped.startsWith('data:')
-        ? (dataURLtoFile(cropped, targetFile.name || 'cropped.jpg') || targetFile.file)
-        : targetFile.file;
-
+      const updatedMap = new Map<string, Partial<StagedAttachment>>();
+      for (const item of currentImages) {
+        const src = item.sourceFile || item.sourceUri || item.uri;
+        if (!src) continue;
+        const processed = await processWebImageForUpload(src, item.name, preset);
+        updatedMap.set(item.id, {
+          uri: processed.uri || item.uri,
+          file: processed.file || item.file,
+          size: processed.size || item.size,
+          sizeFormatted: formatFileSize(processed.size || item.size),
+          imageWidth: processed.width || item.imageWidth,
+          imageHeight: processed.height || item.imageHeight,
+          mimeType: processed.mimeType || item.mimeType,
+        });
+      }
       setStagedFiles((prev) =>
-        prev.map((item) => (item.id === targetFile.id ? { ...item, uri: cropped, file: newFile } : item))
+        prev.map((item) =>
+          updatedMap.has(item.id) ? { ...item, ...updatedMap.get(item.id)! } : item
+        )
       );
-    } catch (e) {
-      console.warn('Direct auto crop error', e);
     } finally {
-      setAutoCropping(false);
+      setProcessingImages(false);
     }
-  };
-
-  // Hidden file input refs for Web
-  const imageInputRef = useRef<any>(null);
-  const documentInputRef = useRef<any>(null);
-
-  const formatBytes = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    const kb = bytes / 1024;
-    if (kb < 1024) return `${kb.toFixed(1)} KB`;
-    return `${(kb / 1024).toFixed(1)} MB`;
   };
 
   const resetForm = () => {
     setContent('');
+    setCursorPos(0);
+    setMentionDismissed(false);
     setStagedFiles([]);
-    setAspectRatio('ORIGINAL');
+    setImageQuality('HIGH');
+    setDocSizeError(null);
     setIsAnonymous(false);
     setSubmitting(false);
   };
@@ -132,157 +221,259 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     onClose();
   };
 
-  // High-Resolution Image Processing (Sharp Canvas Resize, Quality 0.92)
-  const processHighQualityImage = (file: File): Promise<StagedAttachment> => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new (window as any).Image();
-        img.onload = () => {
-          const MAX_DIM = 1920; // 1080p-1440p high quality
-          let width = img.width;
-          let height = img.height;
-
-          if (width > MAX_DIM || height > MAX_DIM) {
-            if (width > height) {
-              height = Math.round((height * MAX_DIM) / width);
-              width = MAX_DIM;
-            } else {
-              width = Math.round((width * MAX_DIM) / height);
-              height = MAX_DIM;
-            }
-          }
-
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          let finalUri = e.target?.result as string;
-
-          if (ctx) {
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(img, 0, 0, width, height);
-            finalUri = canvas.toDataURL('image/jpeg', 0.92);
-          }
-
-          const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-          resolve({
-            id: Math.random().toString(36).substring(7),
-            uri: finalUri,
-            name: file.name,
-            size: file.size,
-            sizeFormatted: formatBytes(file.size),
-            type: 'IMAGE',
-            extension: ext,
-            file,
-          });
-        };
-        img.src = e.target?.result as string;
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
   const handlePickImage = async () => {
     if (Platform.OS === 'web') {
       if (imageInputRef.current) {
+        imageInputRef.current.value = '';
         imageInputRef.current.click();
       }
-    } else {
-      try {
-        const ImagePicker = require('expo-image-picker');
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert('Permission Needed', 'Please allow camera roll access to upload photos.');
-          return;
-        }
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsMultipleSelection: true,
-          quality: 0.9,
-        });
-        if (!result.canceled && result.assets) {
-          const newItems: StagedAttachment[] = result.assets.map((asset: any) => {
-            const fileName = asset.fileName || asset.uri.split('/').pop() || 'photo.jpg';
-            const ext = fileName.split('.').pop()?.toLowerCase() || 'jpg';
-            return {
-              id: Math.random().toString(36).substring(7),
-              uri: asset.uri,
-              name: fileName,
-              size: asset.fileSize || 0,
-              sizeFormatted: formatBytes(asset.fileSize || 0),
-              type: 'IMAGE',
-              extension: ext,
-            };
-          });
-          setStagedFiles((prev) => [...prev, ...newItems]);
-        }
-      } catch (err: any) {
-        Alert.alert('Upload Error', err.message || 'Could not pick images.');
+      return;
+    }
+
+    try {
+      const ImagePicker = require('expo-image-picker');
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        showCrossPlatformAlert(
+          'Permission Needed',
+          'Please allow camera roll access to upload photos.'
+        );
+        return;
       }
+      const preset = IMAGE_QUALITY_PRESETS[imageQuality];
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: preset.jpegQuality,
+      });
+      if (!result.canceled && result.assets) {
+        const newItems: StagedAttachment[] = result.assets.map((asset: any) => {
+          const fileName = asset.fileName || asset.uri.split('/').pop() || 'photo.jpg';
+          const ext = fileName.split('.').pop()?.toLowerCase() || 'jpg';
+          return {
+            id: Math.random().toString(36).substring(7),
+            uri: asset.uri,
+            sourceUri: asset.uri,
+            name: fileName,
+            size: asset.fileSize || 0,
+            sizeFormatted: formatFileSize(asset.fileSize || 0),
+            type: 'IMAGE',
+            extension: ext,
+            imageWidth: asset.width,
+            imageHeight: asset.height,
+          };
+        });
+        setStagedFiles((prev) => [...prev, ...newItems]);
+      }
+    } catch (err: any) {
+      showCrossPlatformAlert('Upload Error', err.message || 'Could not pick images.');
     }
   };
 
   const handleImageFileChange = async (e: any) => {
     const files: File[] = Array.from(e.target.files || []);
-    if (files.length > 0) {
-      const processed = await Promise.all(files.map((f) => processHighQualityImage(f)));
-      setStagedFiles((prev) => [...prev, ...processed]);
+    if (files.length === 0) return;
+
+    setProcessingImages(true);
+    try {
+      const processedList = await Promise.all(
+        files.map(async (file) => {
+          const processed = await processWebImageForUpload(file, file.name, imageQuality);
+          const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+          return {
+            id: Math.random().toString(36).substring(7),
+            uri: processed.uri || URL.createObjectURL(file),
+            name: file.name,
+            size: processed.size || file.size,
+            sizeFormatted: formatFileSize(processed.size || file.size),
+            type: 'IMAGE' as const,
+            extension: ext,
+            file: processed.file || file,
+            sourceFile: file,
+            mimeType: processed.mimeType || file.type || 'image/jpeg',
+            imageWidth: processed.width || undefined,
+            imageHeight: processed.height || undefined,
+          };
+        })
+      );
+      setStagedFiles((prev) => [...prev, ...processedList]);
+    } finally {
+      setProcessingImages(false);
+    }
+  };
+
+  const handlePickVideo = async () => {
+    if (Platform.OS === 'web') {
+      if (videoInputRef.current) {
+        videoInputRef.current.value = '';
+        videoInputRef.current.click();
+      }
+      return;
+    }
+
+    try {
+      const ImagePicker = require('expo-image-picker');
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        showCrossPlatformAlert(
+          'Permission Needed',
+          'Please allow camera roll access to upload videos.'
+        );
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        allowsMultipleSelection: true,
+        quality: 1,
+      });
+      if (!result.canceled && result.assets) {
+        const newItems: StagedAttachment[] = [];
+        for (const asset of result.assets) {
+          const size = asset.fileSize || 0;
+          const fileName = asset.fileName || `video_${Date.now()}.mp4`;
+          if (size > MAX_VIDEO_BYTES) {
+            showCrossPlatformAlert(
+              `Video Exceeds ${MAX_VIDEO_MB} MB`,
+              `"${fileName}" (${formatFileSize(size)}) exceeds the ${MAX_VIDEO_MB} MB limit.`
+            );
+            continue;
+          }
+          const ext = fileName.split('.').pop()?.toLowerCase() || 'mp4';
+          newItems.push({
+            id: Math.random().toString(36).substring(7),
+            uri: asset.uri,
+            name: fileName,
+            size,
+            sizeFormatted: formatFileSize(size),
+            type: 'VIDEO',
+            extension: ext,
+            mimeType: 'video/mp4',
+          });
+        }
+        if (newItems.length > 0) {
+          setStagedFiles((prev) => [...prev, ...newItems]);
+        }
+      }
+    } catch (err: any) {
+      showCrossPlatformAlert('Upload Error', err.message || 'Could not pick video.');
+    }
+  };
+
+  const handleVideoFileChange = (e: any) => {
+    const files: File[] = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const accepted: StagedAttachment[] = [];
+    for (const file of files) {
+      if (file.size > MAX_VIDEO_BYTES) {
+        showCrossPlatformAlert(
+          `Video Exceeds ${MAX_VIDEO_MB} MB`,
+          `"${file.name}" (${formatFileSize(file.size)}) exceeds the ${MAX_VIDEO_MB} MB limit.`
+        );
+        continue;
+      }
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4';
+      accepted.push({
+        id: Math.random().toString(36).substring(7),
+        uri: URL.createObjectURL(file),
+        name: file.name,
+        size: file.size,
+        sizeFormatted: formatFileSize(file.size),
+        type: 'VIDEO',
+        extension: ext,
+        file,
+        mimeType: file.type || 'video/mp4',
+      });
+    }
+    if (accepted.length > 0) {
+      setStagedFiles((prev) => [...prev, ...accepted]);
     }
   };
 
   const handlePickDocument = async () => {
     if (Platform.OS === 'web') {
       if (documentInputRef.current) {
+        documentInputRef.current.value = '';
         documentInputRef.current.click();
       }
-    } else {
-      try {
-        const DocumentPicker = require('expo-document-picker');
-        const result = await DocumentPicker.getDocumentAsync({
-          type: '*/*',
-          multiple: true,
-          copyToCacheDirectory: true,
+      return;
+    }
+
+    try {
+      const DocumentPicker = require('expo-document-picker');
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+      if (!result.canceled && result.assets) {
+        const mapped: Array<{ asset: any; name: string; size: number }> = result.assets.map((asset: any) => ({
+          asset,
+          name: asset.name || 'document',
+          size: asset.size || 0,
+        }));
+        const { valid, oversized } = splitDocumentsBySizeLimit(mapped, MAX_DOCUMENT_BYTES);
+        if (oversized.length > 0) {
+          const msg = alertOversizedDocuments(oversized);
+          setDocSizeError(msg);
+        } else {
+          setDocSizeError(null);
+        }
+
+        const newItems: StagedAttachment[] = valid.map(({ asset, name, size }) => {
+          const ext = name.split('.').pop()?.toLowerCase() || '';
+          return {
+            id: Math.random().toString(36).substring(7),
+            uri: asset.uri,
+            name,
+            size,
+            sizeFormatted: formatFileSize(size),
+            type: 'DOCUMENT',
+            extension: ext,
+            mimeType: asset.mimeType,
+          };
         });
-        if (!result.canceled && result.assets) {
-          const newItems: StagedAttachment[] = result.assets.map((asset: any) => {
-            const fileName = asset.name || 'document';
-            const ext = fileName.split('.').pop()?.toLowerCase() || '';
-            return {
-              id: Math.random().toString(36).substring(7),
-              uri: asset.uri,
-              name: fileName,
-              size: asset.size || 0,
-              sizeFormatted: formatBytes(asset.size || 0),
-              type: 'DOCUMENT',
-              extension: ext,
-            };
-          });
+        if (newItems.length > 0) {
           setStagedFiles((prev) => [...prev, ...newItems]);
         }
-      } catch (err: any) {
-        Alert.alert('Upload Error', err.message || 'Could not pick documents.');
       }
+    } catch (err: any) {
+      showCrossPlatformAlert('Upload Error', err.message || 'Could not pick documents.');
     }
   };
 
   const handleDocumentFileChange = (e: any) => {
     const files: File[] = Array.from(e.target.files || []);
-    if (files.length > 0) {
-      const newItems: StagedAttachment[] = files.map((file) => {
-        const ext = file.name.split('.').pop()?.toLowerCase() || '';
-        return {
-          id: Math.random().toString(36).substring(7),
-          uri: URL.createObjectURL(file),
-          name: file.name,
-          size: file.size,
-          sizeFormatted: formatBytes(file.size),
-          type: 'DOCUMENT',
-          extension: ext,
-          file,
-        };
-      });
+    if (files.length === 0) return;
+
+    const candidates = files.map((file) => ({
+      file,
+      name: file.name,
+      size: file.size,
+    }));
+    const { valid, oversized } = splitDocumentsBySizeLimit(candidates, MAX_DOCUMENT_BYTES);
+    if (oversized.length > 0) {
+      const msg = alertOversizedDocuments(oversized);
+      setDocSizeError(msg);
+    } else {
+      setDocSizeError(null);
+    }
+
+    const newItems: StagedAttachment[] = valid.map(({ file }) => {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      return {
+        id: Math.random().toString(36).substring(7),
+        uri: URL.createObjectURL(file),
+        name: file.name,
+        size: file.size,
+        sizeFormatted: formatFileSize(file.size),
+        type: 'DOCUMENT',
+        extension: ext,
+        file,
+        mimeType: file.type || 'application/octet-stream',
+      };
+    });
+    if (newItems.length > 0) {
       setStagedFiles((prev) => [...prev, ...newItems]);
     }
   };
@@ -291,34 +482,33 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     setStagedFiles((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const getAspectRatioNumber = (): number | undefined => {
-    switch (aspectRatio) {
-      case '1:1':
-        return 1;
-      case '4:5':
-        return 4 / 5;
-      case '16:9':
-        return 16 / 9;
-      case 'ORIGINAL':
-      default:
-        return 4 / 3;
-    }
-  };
-
   const handleSubmit = async () => {
     if (!content.trim() && stagedFiles.length === 0) {
-      Alert.alert('Empty Post', 'Please write something or attach photos/documents.');
+      showCrossPlatformAlert(
+        'Empty Post',
+        'Please write something or attach photos, videos, or documents.'
+      );
+      return;
+    }
+
+    // Strict 20 MB per-document validation before publishing
+    const docItems = stagedFiles.filter((f) => f.type === 'DOCUMENT');
+    const { oversized } = splitDocumentsBySizeLimit(docItems, MAX_DOCUMENT_BYTES);
+    if (oversized.length > 0) {
+      const msg = alertOversizedDocuments(oversized);
+      setDocSizeError(msg);
       return;
     }
 
     try {
       setSubmitting(true);
-      const targetCommunity = selectedCommunity || communities[0]?.id || 1;
 
       const hasImages = stagedFiles.some((f) => f.type === 'IMAGE');
+      const hasVideos = stagedFiles.some((f) => f.type === 'VIDEO');
       const hasDocs = stagedFiles.some((f) => f.type === 'DOCUMENT');
-      let determinedMediaType: 'TEXT' | 'IMAGE' | 'DOCUMENT' = 'TEXT';
-      if (hasImages && hasDocs) determinedMediaType = 'IMAGE'; // backend sets attachments
+
+      let determinedMediaType: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' = 'TEXT';
+      if (hasVideos && !hasImages) determinedMediaType = 'VIDEO';
       else if (hasImages) determinedMediaType = 'IMAGE';
       else if (hasDocs) determinedMediaType = 'DOCUMENT';
 
@@ -334,53 +524,69 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
       formData.append('is_anonymous', String(isAnonymous));
       formData.append('media_type', determinedMediaType);
 
-      // Append all attachments
+      let appendedFirstDoc = false;
       stagedFiles.forEach((item, index) => {
         let fileToAppend = item.file;
-        if (!fileToAppend && item.uri && typeof window !== 'undefined' && item.uri.startsWith('data:')) {
-          fileToAppend = dataURLtoFile(item.uri, item.name || `photo_${index}.jpg`);
+        if (
+          !fileToAppend &&
+          item.uri &&
+          typeof window !== 'undefined' &&
+          item.uri.startsWith('data:')
+        ) {
+          fileToAppend = dataUrlToWebFile(item.uri, item.name || `photo_${index}.jpg`);
         }
 
         if (fileToAppend) {
           formData.append('attachments', fileToAppend);
-          // Legacy backwards compatibility for first doc or image
-          if (item.type === 'DOCUMENT' && index === 0) {
+          if (item.type === 'DOCUMENT' && !appendedFirstDoc) {
+            appendedFirstDoc = true;
             formData.append('document', fileToAppend);
             formData.append('document_name', item.name);
             formData.append('document_size', item.sizeFormatted);
           }
         } else if (item.uri) {
+          const fallbackMime =
+            item.mimeType ||
+            (item.type === 'IMAGE'
+              ? 'image/jpeg'
+              : item.type === 'VIDEO'
+              ? 'video/mp4'
+              : 'application/octet-stream');
           formData.append('attachments', {
             uri: item.uri,
             name: item.name || `file_${index}`,
-            type: item.type === 'IMAGE' ? 'image/jpeg' : 'application/octet-stream',
+            type: fallbackMime,
           } as any);
         }
       });
-
-      // Legacy fallback for media_url if single web image
-      const firstImg = stagedFiles.find((f) => f.type === 'IMAGE');
-      if (firstImg && firstImg.uri.startsWith('data:')) {
-        formData.append('media_url', firstImg.uri);
-      }
 
       await postService.createPost(formData);
       handleClose();
       onPostCreated();
     } catch (err: any) {
-      Alert.alert('Post Failed', err.response?.data?.error || err.message || 'Could not publish post. Please try again.');
+      const serverMsg =
+        err?.response?.data?.error ||
+        err?.response?.data?.detail ||
+        err?.message ||
+        'Could not publish post. Please try again.';
+      showCrossPlatformAlert('Post Failed', String(serverMsg));
     } finally {
       setSubmitting(false);
     }
   };
 
   const imageFiles = stagedFiles.filter((f) => f.type === 'IMAGE');
-  const documentFiles = stagedFiles.filter((f) => f.type === 'DOCUMENT');
+  const videoFiles = stagedFiles.filter((f) => f.type === 'VIDEO');
+  const firstImage = imageFiles[0];
+  const heroRatio = firstImage
+    ? clampAspectRatio(firstImage.imageWidth, firstImage.imageHeight, 4 / 3)
+    : 4 / 3;
+  const cropPresetConfig = IMAGE_QUALITY_PRESETS[imageQuality];
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={handleClose}>
-      <View style={styles.modalContainer}>
-        {/* Hidden inputs for web */}
+      <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+        {/* Hidden inputs for Web */}
         {Platform.OS === 'web' && (
           <>
             <input
@@ -390,6 +596,14 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
               accept="image/*"
               multiple
               onChange={handleImageFileChange}
+            />
+            <input
+              type="file"
+              ref={videoInputRef}
+              style={{ display: 'none' }}
+              accept="video/*"
+              multiple
+              onChange={handleVideoFileChange}
             />
             <input
               type="file"
@@ -403,16 +617,25 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
         )}
 
         {/* Top Navigation Bar */}
-        <View style={styles.header}>
+        <View style={[styles.header, { borderBottomColor: colors.cardBorder }]}>
           <TouchableOpacity onPress={handleClose} style={styles.closeBtn} disabled={submitting}>
             <X size={22} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Create Post</Text>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Create Post</Text>
           {(() => {
-            const canPublish = (content.trim().length > 0 || stagedFiles.length > 0) && !submitting;
+            const canPublish =
+              (content.trim().length > 0 || stagedFiles.length > 0) &&
+              !submitting &&
+              !processingImages;
             return (
               <TouchableOpacity
-                style={[styles.postBtn, !canPublish && styles.postBtnDisabled]}
+                style={[
+                  styles.postBtn,
+                  {
+                    backgroundColor: canPublish ? colors.primary : colors.surfaceLight,
+                    borderColor: canPublish ? colors.primary : colors.cardBorder,
+                  },
+                ]}
                 onPress={handleSubmit}
                 disabled={!canPublish}
                 activeOpacity={0.8}
@@ -423,7 +646,12 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                     <Text style={styles.postBtnText}>Publishing...</Text>
                   </View>
                 ) : (
-                  <Text style={[styles.postBtnText, !canPublish && styles.postBtnTextDisabled]}>
+                  <Text
+                    style={[
+                      styles.postBtnText,
+                      { color: canPublish ? '#ffffff' : colors.textMuted },
+                    ]}
+                  >
                     Publish Post
                   </Text>
                 )}
@@ -433,103 +661,212 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
         </View>
 
         <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
-          {/* Post Audience & Scope Selector (Global vs College vs Community) */}
-          <View style={styles.scopeContainer}>
-            <Text style={styles.scopeHeaderLabel}>Who can see this post?</Text>
+          {/* Post Audience & Scope Selector */}
+          <View
+            style={[
+              styles.scopeContainer,
+              { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+            ]}
+          >
+            <Text style={[styles.scopeHeaderLabel, { color: colors.textMuted }]}>
+              Who can see this post?
+            </Text>
             <View style={styles.scopePillRow}>
               <TouchableOpacity
-                style={[styles.scopePill, postScope === 'GLOBAL' && styles.scopePillActive]}
+                style={[
+                  styles.scopePill,
+                  {
+                    backgroundColor:
+                      postScope === 'GLOBAL' ? colors.primary + '1F' : colors.surfaceLight,
+                    borderColor: postScope === 'GLOBAL' ? colors.primary : colors.cardBorder,
+                  },
+                ]}
                 onPress={() => setPostScope('GLOBAL')}
                 activeOpacity={0.8}
               >
-                <Globe size={14} color={postScope === 'GLOBAL' ? '#38bdf8' : '#94a3b8'} />
-                <Text style={[styles.scopePillText, postScope === 'GLOBAL' && styles.scopePillTextActive]}>
+                <Globe
+                  size={14}
+                  color={postScope === 'GLOBAL' ? colors.primary : colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.scopePillText,
+                    { color: postScope === 'GLOBAL' ? colors.primary : colors.textSecondary },
+                  ]}
+                >
                   Global (All Campuses)
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.scopePill, postScope === 'COLLEGE' && styles.scopePillActive]}
+                style={[
+                  styles.scopePill,
+                  {
+                    backgroundColor:
+                      postScope === 'COLLEGE' ? colors.primary + '1F' : colors.surfaceLight,
+                    borderColor: postScope === 'COLLEGE' ? colors.primary : colors.cardBorder,
+                  },
+                ]}
                 onPress={() => setPostScope('COLLEGE')}
                 activeOpacity={0.8}
               >
-                <Building2 size={14} color={postScope === 'COLLEGE' ? '#38bdf8' : '#94a3b8'} />
-                <Text style={[styles.scopePillText, postScope === 'COLLEGE' && styles.scopePillTextActive]}>
+                <Building2
+                  size={14}
+                  color={postScope === 'COLLEGE' ? colors.primary : colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.scopePillText,
+                    { color: postScope === 'COLLEGE' ? colors.primary : colors.textSecondary },
+                  ]}
+                >
                   My College Only
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.scopePill, postScope === 'FOLLOWERS' && styles.scopePillActive]}
+                style={[
+                  styles.scopePill,
+                  {
+                    backgroundColor:
+                      postScope === 'FOLLOWERS' ? colors.primary + '1F' : colors.surfaceLight,
+                    borderColor: postScope === 'FOLLOWERS' ? colors.primary : colors.cardBorder,
+                  },
+                ]}
                 onPress={() => setPostScope('FOLLOWERS')}
                 activeOpacity={0.8}
               >
-                <UserCheck size={14} color={postScope === 'FOLLOWERS' ? '#38bdf8' : '#94a3b8'} />
-                <Text style={[styles.scopePillText, postScope === 'FOLLOWERS' && styles.scopePillTextActive]}>
+                <UserCheck
+                  size={14}
+                  color={postScope === 'FOLLOWERS' ? colors.primary : colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.scopePillText,
+                    { color: postScope === 'FOLLOWERS' ? colors.primary : colors.textSecondary },
+                  ]}
+                >
                   Followers Only
                 </Text>
               </TouchableOpacity>
 
               {!isAnonymous && (
                 <TouchableOpacity
-                  style={[styles.scopePill, postScope === 'COMMUNITY' && styles.scopePillActive]}
+                  style={[
+                    styles.scopePill,
+                    {
+                      backgroundColor:
+                        postScope === 'COMMUNITY' ? colors.primary + '1F' : colors.surfaceLight,
+                      borderColor:
+                        postScope === 'COMMUNITY' ? colors.primary : colors.cardBorder,
+                    },
+                  ]}
                   onPress={() => setPostScope('COMMUNITY')}
                   activeOpacity={0.8}
                 >
-                  <Users size={14} color={postScope === 'COMMUNITY' ? '#38bdf8' : '#94a3b8'} />
-                  <Text style={[styles.scopePillText, postScope === 'COMMUNITY' && styles.scopePillTextActive]}>
+                  <Users
+                    size={14}
+                    color={postScope === 'COMMUNITY' ? colors.primary : colors.textMuted}
+                  />
+                  <Text
+                    style={[
+                      styles.scopePillText,
+                      {
+                        color:
+                          postScope === 'COMMUNITY' ? colors.primary : colors.textSecondary,
+                      },
+                    ]}
+                  >
                     Specific Community / Hub
                   </Text>
                 </TouchableOpacity>
               )}
 
               <TouchableOpacity
-                style={[styles.scopePill, postScope === 'ONLY_ME' && styles.scopePillActive]}
+                style={[
+                  styles.scopePill,
+                  {
+                    backgroundColor:
+                      postScope === 'ONLY_ME' ? colors.primary + '1F' : colors.surfaceLight,
+                    borderColor: postScope === 'ONLY_ME' ? colors.primary : colors.cardBorder,
+                  },
+                ]}
                 onPress={() => setPostScope('ONLY_ME')}
                 activeOpacity={0.8}
               >
-                <Lock size={14} color={postScope === 'ONLY_ME' ? '#38bdf8' : '#94a3b8'} />
-                <Text style={[styles.scopePillText, postScope === 'ONLY_ME' && styles.scopePillTextActive]}>
+                <Lock
+                  size={14}
+                  color={postScope === 'ONLY_ME' ? colors.primary : colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.scopePillText,
+                    { color: postScope === 'ONLY_ME' ? colors.primary : colors.textSecondary },
+                  ]}
+                >
                   Only Me
                 </Text>
               </TouchableOpacity>
             </View>
 
-            {/* When Specific Community is chosen: search and select community */}
+            {/* Community Picker */}
             {!isAnonymous && postScope === 'COMMUNITY' && (
-              <View style={styles.commSearchContainer}>
-                <View style={styles.commSearchBar}>
-                  <Search size={14} color="#64748b" style={{ marginRight: 6 }} />
+              <View style={[styles.commSearchContainer, { borderTopColor: colors.hairline }]}>
+                <View
+                  style={[
+                    styles.commSearchBar,
+                    { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                  ]}
+                >
+                  <Search size={14} color={colors.textMuted} style={{ marginRight: 6 }} />
                   <TextInput
-                    style={styles.commSearchInput}
+                    style={[styles.commSearchInput, { color: colors.textPrimary }]}
                     placeholder="Search community or club to post in..."
-                    placeholderTextColor="#64748b"
+                    placeholderTextColor={colors.textMuted}
                     value={communitySearchQuery}
                     onChangeText={setCommunitySearchQuery}
                   />
                   {communitySearchQuery ? (
                     <TouchableOpacity onPress={() => setCommunitySearchQuery('')}>
-                      <X size={14} color="#64748b" />
+                      <X size={14} color={colors.textMuted} />
                     </TouchableOpacity>
                   ) : null}
                 </View>
 
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.communityScroll}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.communityScroll}
+                >
                   {communities
-                    .filter((c) =>
-                      !communitySearchQuery.trim() ||
-                      c.name.toLowerCase().includes(communitySearchQuery.toLowerCase())
+                    .filter(
+                      (c) =>
+                        !communitySearchQuery.trim() ||
+                        c.name.toLowerCase().includes(communitySearchQuery.toLowerCase())
                     )
                     .map((c) => {
                       const isSelected = selectedCommunity === c.id;
                       return (
                         <TouchableOpacity
                           key={c.id}
-                          style={[styles.commPill, isSelected && styles.commPillSelected]}
+                          style={[
+                            styles.commPill,
+                            {
+                              backgroundColor: isSelected
+                                ? colors.primary + '1F'
+                                : colors.surface,
+                              borderColor: isSelected ? colors.primary : colors.cardBorder,
+                            },
+                          ]}
                           onPress={() => setSelectedCommunity(c.id)}
                           activeOpacity={0.8}
                         >
-                          <Text style={[styles.commPillText, isSelected && styles.commPillTextSelected]}>
+                          <Text
+                            style={[
+                              styles.commPillText,
+                              { color: isSelected ? colors.primary : colors.textSecondary },
+                            ]}
+                          >
                             {isSelected ? '✓ ' : '🎓 '}
                             {c.name}
                           </Text>
@@ -541,99 +878,222 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
             )}
           </View>
 
-          {/* Main Content Input */}
-          <TextInput
-            style={styles.contentInput}
-            multiline
-            placeholder="Share an update, notes, questions, or ask for help..."
-            placeholderTextColor={colors.textSecondary}
-            value={content}
-            onChangeText={setContent}
-            maxLength={3000}
-          />
-
-          {/* Image Aspect Ratio / Auto-Crop Studio (When images attached) */}
-          {imageFiles.length > 0 && (
-            <View style={styles.mediaStudio}>
-              <View style={styles.studioHeader}>
-                <View style={styles.hdBadge}>
-                  <Sparkles size={14} color="#38bdf8" />
-                  <Text style={styles.hdBadgeText}>HD • {imageFiles.length} Photo{imageFiles.length > 1 ? 's' : ''}</Text>
-                </View>
-                <View style={styles.studioActions}>
-                  <TouchableOpacity
-                    style={styles.autoCropBtn}
-                    onPress={() => handleDirectAutoCrop(imageFiles[0])}
-                    disabled={autoCropping}
-                    activeOpacity={0.8}
-                  >
-                    <Zap size={13} color="#fbbf24" />
-                    <Text style={styles.autoCropBtnText}>
-                      {autoCropping ? 'Cropping...' : '⚡ Auto Crop'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.openCropperBtn}
-                    onPress={() => setCroppingImage(imageFiles[0])}
-                    activeOpacity={0.8}
-                  >
-                    <Crop size={13} color="#38bdf8" />
-                    <Text style={styles.openCropperBtnText}>✂️ Crop & Adjust</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Crop Aspect Ratio Presets Bar */}
-              <View style={styles.aspectRatioBar}>
-                <Crop size={16} color={colors.textSecondary} style={{ marginRight: 6 }} />
-                {(['ORIGINAL', '1:1', '4:5', '16:9'] as AspectRatioMode[]).map((mode) => (
-                  <TouchableOpacity
-                    key={mode}
-                    style={[styles.aspectRatioBtn, aspectRatio === mode && styles.aspectRatioBtnActive]}
-                    onPress={() => setAspectRatio(mode)}
-                  >
-                    <Text
-                      style={[
-                        styles.aspectRatioBtnText,
-                        aspectRatio === mode && styles.aspectRatioBtnTextActive,
-                      ]}
-                    >
-                      {mode}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {/* Hero Image Preview with Crop Aspect Ratio */}
+          {/* Main Content Input with @ Mention Support */}
+          <View style={styles.contentWrapper}>
+            <TextInput
+              style={[styles.contentInput, { color: colors.textPrimary }]}
+              multiline
+              placeholder="Share an update, notes, questions, or type @ to tag someone..."
+              placeholderTextColor={colors.textMuted}
+              value={content}
+              onChangeText={handleContentChange}
+              onSelectionChange={(e) => setCursorPos(e.nativeEvent.selection.end)}
+              maxLength={3000}
+            />
+            <View style={styles.mentionHelperRow}>
               <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={() => setCroppingImage(imageFiles[0])}
-                style={[styles.imagePreviewContainer, { aspectRatio: getAspectRatioNumber() }]}
+                style={[
+                  styles.tagStudentBtn,
+                  { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+                ]}
+                onPress={handleInsertTagTrigger}
+                activeOpacity={0.75}
+              >
+                <AtSign size={14} color={colors.primary} />
+                <Text style={[styles.tagStudentBtnText, { color: colors.textSecondary }]}>
+                  Tag Student
+                </Text>
+              </TouchableOpacity>
+              <Text style={[styles.charCounter, { color: colors.textTertiary }]}>
+                {content.length}/3000
+              </Text>
+            </View>
+
+            <MentionSuggestionsBar
+              query={activeMention ? activeMention.query : null}
+              onSelect={handleSelectMention}
+              onClose={() => setMentionDismissed(true)}
+            />
+          </View>
+
+          {/* 20 MB Document Alert Banner */}
+          {docSizeError && (
+            <View
+              style={[
+                styles.errorBanner,
+                { backgroundColor: colors.danger + '18', borderColor: colors.danger },
+              ]}
+            >
+              <AlertCircle size={16} color={colors.danger} style={{ marginTop: 1 }} />
+              <Text style={[styles.errorBannerText, { color: colors.danger }]}>
+                {docSizeError}
+              </Text>
+              <TouchableOpacity onPress={() => setDocSizeError(null)}>
+                <X size={15} color={colors.danger} />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Photo Preview + Crop & Image Quality (ONLY when images attached) */}
+          {firstImage && (
+            <View
+              style={[
+                styles.mediaStudio,
+                { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+              ]}
+            >
+              <View style={styles.studioHeader}>
+                <View
+                  style={[
+                    styles.hdBadge,
+                    { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                  ]}
+                >
+                  <Sparkles size={13} color={colors.primary} />
+                  <Text style={[styles.hdBadgeText, { color: colors.textSecondary }]}>
+                    {imageFiles.length} Photo{imageFiles.length > 1 ? 's' : ''}
+                    {firstImage.imageWidth && firstImage.imageHeight
+                      ? ` • ${firstImage.imageWidth}×${firstImage.imageHeight}`
+                      : ''}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.openCropperBtn,
+                    { backgroundColor: colors.surfaceLight, borderColor: colors.primary },
+                  ]}
+                  onPress={() => setCroppingImage(firstImage)}
+                  activeOpacity={0.8}
+                >
+                  <Crop size={13} color={colors.primary} />
+                  <Text style={[styles.openCropperBtnText, { color: colors.primary }]}>
+                    Crop & Adjust
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Image Quality Presets (Strictly for images — never shown for documents) */}
+              <View
+                style={[
+                  styles.qualityBar,
+                  { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                ]}
+              >
+                <View style={styles.qualityTopRow}>
+                  <Text style={[styles.qualityTitle, { color: colors.textSecondary }]}>
+                    Image Quality
+                  </Text>
+                  <Text style={[styles.qualitySub, { color: colors.textMuted }]}>
+                    {IMAGE_QUALITY_PRESETS[imageQuality].description}
+                  </Text>
+                </View>
+                <View style={styles.qualityRow}>
+                  {IMAGE_QUALITY_OPTIONS.map((opt) => {
+                    const active = imageQuality === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[
+                          styles.qualityPill,
+                          {
+                            backgroundColor: active ? colors.primary : colors.card,
+                            borderColor: active ? colors.primary : colors.cardBorder,
+                          },
+                        ]}
+                        onPress={() => handleQualityPresetChange(opt.key)}
+                        disabled={processingImages}
+                      >
+                        <Text
+                          style={[
+                            styles.qualityPillText,
+                            { color: active ? '#ffffff' : colors.textSecondary },
+                          ]}
+                        >
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {processingImages && <ActivityIndicator size="small" color={colors.primary} />}
+                </View>
+              </View>
+
+              {/* Proportional Image Preview (up to 9:16 vertical or 16:9 horizontal) */}
+              <TouchableOpacity
+                activeOpacity={0.92}
+                onPress={() => setCroppingImage(firstImage)}
+                style={[
+                  styles.imagePreviewContainer,
+                  {
+                    aspectRatio: heroRatio,
+                    maxHeight: 420,
+                    backgroundColor: colors.surfaceLight,
+                    borderColor: colors.hairline,
+                  },
+                ]}
               >
                 <Image
-                  source={{ uri: imageFiles[0].uri }}
+                  source={{ uri: firstImage.uri }}
                   style={styles.imagePreview}
-                  resizeMode="cover"
+                  resizeMode="contain"
                 />
               </TouchableOpacity>
             </View>
           )}
 
-          {/* Staged Attachments Strip (Images & Documents) */}
+          {/* Video Preview (if video staged on Web) */}
+          {videoFiles.length > 0 && Platform.OS === 'web' && (
+            <View
+              style={[
+                styles.videoPreviewBox,
+                { backgroundColor: '#000000', borderColor: colors.cardBorder },
+              ]}
+            >
+              <video
+                src={videoFiles[0].uri}
+                controls
+                playsInline
+                style={{
+                  width: '100%',
+                  maxHeight: 340,
+                  objectFit: 'contain',
+                  display: 'block',
+                  borderRadius: 10,
+                }}
+              />
+            </View>
+          )}
+
+          {/* Staged Attachments Strip */}
           {stagedFiles.length > 0 && (
             <View style={styles.stagedSection}>
-              <Text style={styles.stagedTitle}>
+              <Text style={[styles.stagedTitle, { color: colors.textSecondary }]}>
                 Attached Files ({stagedFiles.length}):
               </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.stagedScroll}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.stagedScroll}
+              >
                 {stagedFiles.map((file) => (
-                  <View key={file.id} style={styles.stagedCard}>
+                  <View
+                    key={file.id}
+                    style={[
+                      styles.stagedCard,
+                      { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+                    ]}
+                  >
                     {file.type === 'IMAGE' ? (
                       <View style={{ position: 'relative' }}>
-                        <Image source={{ uri: file.uri }} style={styles.stagedThumb} />
+                        <TouchableOpacity onPress={() => setCroppingImage(file)}>
+                          <Image source={{ uri: file.uri }} style={styles.stagedThumb} />
+                        </TouchableOpacity>
                         <TouchableOpacity
-                          style={styles.stagedCropBadge}
+                          style={[
+                            styles.stagedCropBadge,
+                            { backgroundColor: colors.primary, borderColor: '#ffffff' },
+                          ]}
                           onPress={() => setCroppingImage(file)}
                           activeOpacity={0.8}
                           accessibilityLabel="Crop photo"
@@ -641,51 +1101,110 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                           <Crop size={11} color="#ffffff" />
                         </TouchableOpacity>
                       </View>
+                    ) : file.type === 'VIDEO' ? (
+                      <View
+                        style={[
+                          styles.stagedDocThumb,
+                          { backgroundColor: 'rgba(239, 68, 68, 0.12)' },
+                        ]}
+                      >
+                        <Video size={22} color={colors.danger} />
+                        <Text style={[styles.stagedDocExt, { color: colors.danger }]}>VIDEO</Text>
+                      </View>
                     ) : (
-                      <View style={styles.stagedDocThumb}>
-                        <FileText size={22} color="#ef4444" />
-                        <Text style={styles.stagedDocExt}>{file.extension.toUpperCase() || 'DOC'}</Text>
+                      <View
+                        style={[
+                          styles.stagedDocThumb,
+                          { backgroundColor: colors.primary + '14' },
+                        ]}
+                      >
+                        <FileText size={22} color={colors.primary} />
+                        <Text style={[styles.stagedDocExt, { color: colors.primary }]}>
+                          {file.extension.toUpperCase() || 'DOC'}
+                        </Text>
                       </View>
                     )}
                     <TouchableOpacity
-                      style={styles.stagedRemoveBtn}
+                      style={[styles.stagedRemoveBtn, { backgroundColor: colors.danger }]}
                       onPress={() => handleRemoveAttachment(file.id)}
                     >
                       <X size={12} color="#ffffff" />
                     </TouchableOpacity>
-                    <Text style={styles.stagedName} numberOfLines={1}>
+                    <Text
+                      style={[styles.stagedName, { color: colors.textPrimary }]}
+                      numberOfLines={1}
+                    >
                       {file.name}
                     </Text>
-                    <Text style={styles.stagedSize}>{file.sizeFormatted}</Text>
+                    <Text style={[styles.stagedSize, { color: colors.textMuted }]}>
+                      {file.sizeFormatted}
+                    </Text>
                   </View>
                 ))}
               </ScrollView>
             </View>
           )}
 
-          {/* Attachment Action Buttons Toolbar (Always accessible!) */}
+          {/* Attachment Toolbar (Photos, Video, Documents) */}
           <View style={styles.toolbar}>
-            <TouchableOpacity style={styles.toolBtn} onPress={handlePickImage}>
-              <View style={[styles.toolIconBox, { backgroundColor: '#1e3a8a' }]}>
-                <ImageIcon size={18} color="#60a5fa" />
+            <TouchableOpacity
+              style={[
+                styles.toolBtn,
+                { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+              ]}
+              onPress={handlePickImage}
+              disabled={processingImages}
+            >
+              <View style={[styles.toolIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
+                <ImageIcon size={17} color="#3b82f6" />
               </View>
-              <Text style={styles.toolBtnText}>Add Photos</Text>
+              <Text style={[styles.toolBtnText, { color: colors.textPrimary }]}>Photo</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.toolBtn} onPress={handlePickDocument}>
-              <View style={[styles.toolIconBox, { backgroundColor: '#450a0a' }]}>
-                <FileText size={18} color="#f87171" />
+            <TouchableOpacity
+              style={[
+                styles.toolBtn,
+                { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+              ]}
+              onPress={handlePickVideo}
+            >
+              <View style={[styles.toolIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
+                <Video size={17} color={colors.danger} />
               </View>
-              <Text style={styles.toolBtnText}>Add Documents</Text>
+              <Text style={[styles.toolBtnText, { color: colors.textPrimary }]}>Video</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.toolBtn,
+                { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+              ]}
+              onPress={handlePickDocument}
+            >
+              <View style={[styles.toolIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                <FileText size={17} color={colors.success} />
+              </View>
+              <Text style={[styles.toolBtnText, { color: colors.textPrimary }]}>Doc</Text>
             </TouchableOpacity>
           </View>
+          <Text style={[styles.docHintNote, { color: colors.textMuted }]}>
+            Documents upload in original quality • Max {MAX_DOCUMENT_MB} MB per document
+          </Text>
 
-          {/* Zero-Leak Anonymity Toggle Card */}
-          <View style={styles.anonCard}>
+          {/* Zero-Leak Anonymity Toggle */}
+          <View
+            style={[
+              styles.anonCard,
+              { backgroundColor: colors.anonBadge, borderColor: colors.anonPurple + '44' },
+            ]}
+          >
             <View style={styles.anonInfo}>
-              <Text style={styles.anonTitle}>🎭 Post Anonymously</Text>
-              <Text style={styles.anonSubtitle}>
-                Your real name and admission details will be completely hidden. A random mascot will be assigned.
+              <Text style={[styles.anonTitle, { color: colors.anonPurple }]}>
+                🎭 Post Anonymously
+              </Text>
+              <Text style={[styles.anonSubtitle, { color: colors.textSecondary }]}>
+                Your real name and admission details will be completely hidden. A random mascot will
+                be assigned.
               </Text>
             </View>
             <Switch
@@ -699,20 +1218,22 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                   }
                 }
               }}
-              trackColor={{ false: '#334155', true: '#7c3aed' }}
-              thumbColor={isAnonymous ? '#c084fc' : '#94a3b8'}
+              trackColor={{ false: colors.cardBorder, true: colors.anonPurple }}
+              thumbColor="#ffffff"
             />
           </View>
         </ScrollView>
       </View>
 
-      {/* Interactive Custom Freeform Crop & Rotate Modal */}
+      {/* Instagram/X Style Crop & Rotate Modal */}
       {croppingImage && (
         <ImageCropperModal
           visible={!!croppingImage}
-          imageUri={croppingImage.uri}
+          imageUri={croppingImage.sourceUri || croppingImage.uri}
           onClose={() => setCroppingImage(null)}
           onCropComplete={handleCropComplete}
+          maxDimension={cropPresetConfig.maxDimension}
+          jpegQuality={cropPresetConfig.jpegQuality}
         />
       )}
     </Modal>
@@ -722,7 +1243,6 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
 const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -731,52 +1251,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: colors.cardBorder,
   },
   closeBtn: {
     padding: 6,
   },
   headerTitle: {
-    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
   },
   postBtn: {
-    backgroundColor: colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  postBtnDisabled: {
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
   postBtnText: {
-    color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
-  },
-  postBtnTextDisabled: {
-    color: '#64748b',
-    fontWeight: '600',
   },
   body: {
     flex: 1,
     padding: 16,
   },
   scopeContainer: {
-    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     borderRadius: 14,
     padding: 12,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   scopeHeaderLabel: {
-    color: colors.textMuted,
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 8,
@@ -789,39 +1294,25 @@ const styles = StyleSheet.create({
   scopePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 18,
     gap: 6,
   },
-  scopePillActive: {
-    backgroundColor: 'rgba(94, 106, 210, 0.15)',
-    borderColor: colors.primary,
-  },
   scopePillText: {
-    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '600',
-  },
-  scopePillTextActive: {
-    color: colors.primaryHover,
-    fontWeight: '700',
   },
   commSearchContainer: {
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
   },
   commSearchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -829,7 +1320,6 @@ const styles = StyleSheet.create({
   },
   commSearchInput: {
     flex: 1,
-    color: colors.textPrimary,
     fontSize: 12.5,
   },
   communityScroll: {
@@ -837,107 +1327,156 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   commPill: {
-    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
     marginRight: 8,
   },
-  commPillSelected: {
-    backgroundColor: 'rgba(94, 106, 210, 0.15)',
-    borderColor: colors.primary,
-  },
   commPillText: {
-    color: colors.textSecondary,
     fontSize: 13,
     fontWeight: '600',
   },
-  commPillTextSelected: {
-    color: colors.primaryHover,
-    fontWeight: '700',
+  contentWrapper: {
+    marginBottom: 12,
   },
   contentInput: {
-    color: colors.textPrimary,
     fontSize: 16,
-    minHeight: 110,
+    minHeight: 100,
     textAlignVertical: 'top',
-    marginBottom: 14,
+    marginBottom: 8,
     lineHeight: 22,
   },
+  mentionHelperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  tagStudentBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 5,
+  },
+  tagStudentBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  charCounter: {
+    fontSize: 11,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 14,
+    gap: 8,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
+  },
   mediaStudio: {
-    backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     padding: 12,
     marginBottom: 16,
+    gap: 10,
   },
   studioHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
   },
   hdBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
     gap: 4,
   },
   hdBadgeText: {
-    color: colors.textSecondary,
     fontSize: 11,
     fontWeight: '600',
   },
-  aspectRatioBar: {
+  openCropperBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
-    gap: 6,
-  },
-  aspectRatioBtn: {
+    borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 6,
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderRadius: 8,
+    gap: 5,
   },
-  aspectRatioBtnActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  aspectRatioBtnText: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  aspectRatioBtnTextActive: {
-    color: '#ffffff',
+  openCropperBtnText: {
+    fontSize: 11.5,
     fontWeight: '700',
+  },
+  qualityBar: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    gap: 8,
+  },
+  qualityTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  qualityTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  qualitySub: {
+    fontSize: 11,
+  },
+  qualityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  qualityPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  qualityPillText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   imagePreviewContainer: {
     width: '100%',
-    borderRadius: 8,
+    borderRadius: 10,
     overflow: 'hidden',
-    backgroundColor: colors.surfaceLight,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   imagePreview: {
     width: '100%',
     height: '100%',
   },
+  videoPreviewBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
   stagedSection: {
     marginBottom: 16,
   },
   stagedTitle: {
-    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 8,
@@ -948,9 +1487,7 @@ const styles = StyleSheet.create({
   stagedCard: {
     width: 86,
     alignItems: 'center',
-    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
     borderRadius: 8,
     padding: 6,
     marginRight: 10,
@@ -965,12 +1502,10 @@ const styles = StyleSheet.create({
     width: 74,
     height: 60,
     borderRadius: 6,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   stagedDocExt: {
-    color: '#ef4444',
     fontSize: 9,
     fontWeight: '800',
     marginTop: 2,
@@ -982,113 +1517,9 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#ef4444',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,
-  },
-  stagedName: {
-    color: colors.textPrimary,
-    fontSize: 10,
-    fontWeight: '500',
-    marginTop: 4,
-    width: '100%',
-    textAlign: 'center',
-  },
-  stagedSize: {
-    color: colors.textSecondary,
-    fontSize: 9,
-  },
-  toolbar: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  toolBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 12,
-    padding: 10,
-    gap: 8,
-  },
-  toolIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  toolBtnText: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  anonCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(124, 58, 237, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(124, 58, 237, 0.25)',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 24,
-  },
-  anonInfo: {
-    flex: 1,
-    marginRight: 10,
-  },
-  anonTitle: {
-    color: '#c084fc',
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  anonSubtitle: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    lineHeight: 15,
-  },
-  studioActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  autoCropBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#fbbf24',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 8,
-    gap: 4,
-  },
-  autoCropBtnText: {
-    color: '#fbbf24',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  openCropperBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#0284c7',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 8,
-    gap: 4,
-  },
-  openCropperBtnText: {
-    color: '#38bdf8',
-    fontSize: 11,
-    fontWeight: '700',
   },
   stagedCropBadge: {
     position: 'absolute',
@@ -1097,11 +1528,71 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#0284c7',
     borderWidth: 1,
-    borderColor: '#38bdf8',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,
+  },
+  stagedName: {
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 4,
+    width: '100%',
+    textAlign: 'center',
+  },
+  stagedSize: {
+    fontSize: 9,
+  },
+  toolbar: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 8,
+  },
+  toolBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 10,
+    gap: 8,
+  },
+  toolIconBox: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toolBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  docHintNote: {
+    fontSize: 11,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  anonCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 28,
+  },
+  anonInfo: {
+    flex: 1,
+    marginRight: 10,
+  },
+  anonTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  anonSubtitle: {
+    fontSize: 11,
+    lineHeight: 15,
   },
 });

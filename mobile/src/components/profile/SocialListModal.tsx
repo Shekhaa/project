@@ -8,11 +8,13 @@ import {
   ActivityIndicator,
   FlatList,
   TextInput,
-  Alert,
 } from 'react-native';
 import { colors } from '../../theme/colors';
-import { profileService, ConnectionItem, FollowItem } from '../../services/profileService';
-import { X, Search, Users, UserCheck, UserPlus, Shield, Check, Clock } from 'lucide-react-native';
+import { useTheme } from '../../theme/ThemeContext';
+import { profileService } from '../../services/profileService';
+import { UserAvatar } from '../common/UserAvatar';
+import { showCrossPlatformAlert } from '../../utils/mediaUtils';
+import { X, Search, Shield, Check } from 'lucide-react-native';
 
 export type SocialModalType = 'followers' | 'following' | 'connections';
 
@@ -33,6 +35,7 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
   onClose,
   onSelectUser,
 }) => {
+  const { colors: themeColors } = useTheme();
   // Connections tab state: 'connected' | 'received' | 'sent'
   const [connectionsTab, setConnectionsTab] = useState<'connected' | 'received' | 'sent'>('connected');
   // Followers view mode: 'list' | 'requests'
@@ -83,9 +86,12 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
       setActionLoadingId(requestId);
       await profileService.respondFollowRequest(requestId, action);
       setItems((prev) => prev.filter((item) => item.id !== requestId));
-      Alert.alert(action === 'ACCEPT' ? 'Approved ✅' : 'Declined', `Follow request ${action.toLowerCase()}ed.`);
+      showCrossPlatformAlert(
+        action === 'ACCEPT' ? 'Approved' : 'Declined',
+        `Follow request ${action.toLowerCase()}ed.`
+      );
     } catch (e: any) {
-      Alert.alert('Action Failed', e.response?.data?.error || 'Could not update request.');
+      showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update request.');
     } finally {
       setActionLoadingId(null);
     }
@@ -97,9 +103,12 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
       setActionLoadingId(userId);
       await profileService.respondConnection(userId, action);
       setItems((prev) => prev.filter((item) => item.other_user?.id !== userId && item.id !== userId));
-      Alert.alert(action === 'ACCEPT' ? 'Connected! 🎉' : 'Declined', `Connection request ${action.toLowerCase()}ed.`);
+      showCrossPlatformAlert(
+        action === 'ACCEPT' ? 'Connected' : 'Declined',
+        `Connection request ${action.toLowerCase()}ed.`
+      );
     } catch (e: any) {
-      Alert.alert('Action Failed', e.response?.data?.error || 'Could not update connection.');
+      showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update connection.');
     } finally {
       setActionLoadingId(null);
     }
@@ -111,9 +120,9 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
       setActionLoadingId(userId);
       await profileService.removeConnection(userId);
       setItems((prev) => prev.filter((item) => item.other_user?.id !== userId && item.id !== userId));
-      Alert.alert('Cancelled', 'Connection request cancelled.');
+      showCrossPlatformAlert('Cancelled', 'Connection request cancelled.');
     } catch (e: any) {
-      Alert.alert('Action Failed', e.response?.data?.error || 'Could not cancel request.');
+      showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not cancel request.');
     } finally {
       setActionLoadingId(null);
     }
@@ -140,38 +149,80 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
+      <View style={[styles.backdrop, { backgroundColor: themeColors.modalOverlay }]}>
+        <View
+          style={[
+            styles.sheet,
+            { backgroundColor: themeColors.surface, borderColor: themeColors.cardBorder },
+          ]}
+        >
           {/* Header */}
-          <View style={styles.header}>
+          <View style={[styles.header, { borderBottomColor: themeColors.cardBorder }]}>
             <View style={styles.headerTitleRow}>
-              <Text style={styles.headerTitle}>{getTitle()}</Text>
+              <Text style={[styles.headerTitle, { color: themeColors.textPrimary }]}>
+                {getTitle()}
+              </Text>
               {type === 'followers' && isSelf && (
                 <TouchableOpacity
-                  style={followersMode === 'requests' ? styles.subTabActive : styles.subTab}
+                  style={
+                    followersMode === 'requests'
+                      ? [styles.subTabActive, { backgroundColor: themeColors.primary }]
+                      : [
+                          styles.subTab,
+                          {
+                            backgroundColor: themeColors.primary + '1A',
+                            borderColor: themeColors.primary + '44',
+                          },
+                        ]
+                  }
                   onPress={() => setFollowersMode(followersMode === 'requests' ? 'list' : 'requests')}
                 >
-                  <Text style={followersMode === 'requests' ? styles.subTabTextActive : styles.subTabText}>
+                  <Text
+                    style={
+                      followersMode === 'requests'
+                        ? styles.subTabTextActive
+                        : [styles.subTabText, { color: themeColors.primary }]
+                    }
+                  >
                     {followersMode === 'requests' ? '← Followers' : 'Pending Requests'}
                   </Text>
                 </TouchableOpacity>
               )}
             </View>
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-              <X size={20} color={colors.textSecondary} />
+            <TouchableOpacity
+              style={[
+                styles.closeBtn,
+                { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.cardBorder, borderWidth: 1 },
+              ]}
+              onPress={onClose}
+            >
+              <X size={20} color={themeColors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           {/* Sub-tabs for Connections */}
           {type === 'connections' && (
-            <View style={styles.tabsRow}>
+            <View style={[styles.tabsRow, { borderBottomColor: themeColors.hairline }]}>
               {(['connected', 'received', 'sent'] as const).map((tab) => (
                 <TouchableOpacity
                   key={tab}
-                  style={[styles.tabBtn, connectionsTab === tab && styles.tabBtnActive]}
+                  style={[
+                    styles.tabBtn,
+                    { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.hairline },
+                    connectionsTab === tab && {
+                      backgroundColor: themeColors.primary,
+                      borderColor: themeColors.primary,
+                    },
+                  ]}
                   onPress={() => setConnectionsTab(tab)}
                 >
-                  <Text style={[styles.tabBtnText, connectionsTab === tab && styles.tabBtnTextActive]}>
+                  <Text
+                    style={[
+                      styles.tabBtnText,
+                      { color: themeColors.textSecondary },
+                      connectionsTab === tab && styles.tabBtnTextActive,
+                    ]}
+                  >
                     {tab === 'connected' ? 'Connected' : tab === 'received' ? 'Received' : 'Sent'}
                   </Text>
                 </TouchableOpacity>
@@ -180,18 +231,23 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
           )}
 
           {/* Search Bar */}
-          <View style={styles.searchBar}>
-            <Search size={16} color={colors.textSecondary} style={{ marginRight: 8 }} />
+          <View
+            style={[
+              styles.searchBar,
+              { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.cardBorder },
+            ]}
+          >
+            <Search size={16} color={themeColors.textSecondary} style={{ marginRight: 8 }} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: themeColors.textPrimary }]}
               placeholder="Search students..."
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={themeColors.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <X size={16} color={colors.textSecondary} />
+                <X size={16} color={themeColors.textSecondary} />
               </TouchableOpacity>
             )}
           </View>
@@ -199,11 +255,11 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
           {/* Content */}
           {loading ? (
             <View style={styles.centerContainer}>
-              <ActivityIndicator size="large" color={colors.primary} />
+              <ActivityIndicator size="large" color={themeColors.primary} />
             </View>
           ) : filteredItems.length === 0 ? (
             <View style={styles.centerContainer}>
-              <Text style={styles.emptyText}>
+              <Text style={[styles.emptyText, { color: themeColors.textMuted }]}>
                 {searchQuery
                   ? `No students matching "${searchQuery}"`
                   : type === 'connections'
@@ -224,28 +280,37 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
               renderItem={({ item }) => {
                 const u = item.user || item.other_user || item;
                 const userId = u.id || item.user_id;
-                const initial = (u.full_name || u.username || 'U').charAt(0).toUpperCase();
 
                 return (
                   <TouchableOpacity
-                    style={styles.userRow}
+                    style={[styles.userRow, { borderBottomColor: themeColors.hairline }]}
                     onPress={() => onSelectUser(userId)}
                     activeOpacity={0.7}
                   >
-                    <View style={styles.avatar}>
-                      <Text style={styles.avatarText}>{initial}</Text>
-                    </View>
+                    <UserAvatar
+                      uri={u.profile_picture || u.avatar}
+                      name={u.full_name || u.username}
+                      size={44}
+                      style={{ marginRight: 12 }}
+                    />
 
                     <View style={styles.userInfo}>
                       <View style={styles.userNameRow}>
-                        <Text style={styles.userName}>{u.full_name || u.username}</Text>
+                        <Text style={[styles.userName, { color: themeColors.textPrimary }]}>
+                          {u.full_name || u.username}
+                        </Text>
                         {u.is_verified && (
                           <Shield size={12} color="#38bdf8" style={{ marginLeft: 4 }} />
                         )}
                       </View>
-                      <Text style={styles.userHandle}>@{u.username}</Text>
+                      <Text style={[styles.userHandle, { color: themeColors.textSecondary }]}>
+                        @{u.username}
+                      </Text>
                       {u.college_name ? (
-                        <Text style={styles.userCollege} numberOfLines={1}>
+                        <Text
+                          style={[styles.userCollege, { color: themeColors.textMuted }]}
+                          numberOfLines={1}
+                        >
                           {u.college_name}
                         </Text>
                       ) : null}
@@ -255,7 +320,7 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
                     {followersMode === 'requests' ? (
                       <View style={styles.rowActions}>
                         <TouchableOpacity
-                          style={styles.acceptBtn}
+                          style={[styles.acceptBtn, { backgroundColor: themeColors.primary }]}
                           onPress={() => handleRespondFollowRequest(item.id, 'ACCEPT')}
                           disabled={actionLoadingId === item.id}
                         >
@@ -263,17 +328,20 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
                           <Text style={styles.acceptBtnText}>Confirm</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={styles.declineBtn}
+                          style={[
+                            styles.declineBtn,
+                            { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.hairline },
+                          ]}
                           onPress={() => handleRespondFollowRequest(item.id, 'REJECT')}
                           disabled={actionLoadingId === item.id}
                         >
-                          <X size={14} color={colors.textSecondary} />
+                          <X size={14} color={themeColors.textSecondary} />
                         </TouchableOpacity>
                       </View>
                     ) : type === 'connections' && connectionsTab === 'received' ? (
                       <View style={styles.rowActions}>
                         <TouchableOpacity
-                          style={styles.acceptBtn}
+                          style={[styles.acceptBtn, { backgroundColor: themeColors.primary }]}
                           onPress={() => handleRespondConnection(userId, 'ACCEPT')}
                           disabled={actionLoadingId === userId}
                         >
@@ -281,27 +349,38 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
                           <Text style={styles.acceptBtnText}>Accept</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={styles.declineBtn}
+                          style={[
+                            styles.declineBtn,
+                            { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.hairline },
+                          ]}
                           onPress={() => handleRespondConnection(userId, 'DECLINE')}
                           disabled={actionLoadingId === userId}
                         >
-                          <X size={14} color={colors.textSecondary} />
+                          <X size={14} color={themeColors.textSecondary} />
                         </TouchableOpacity>
                       </View>
                     ) : type === 'connections' && connectionsTab === 'sent' ? (
                       <TouchableOpacity
-                        style={styles.cancelBtn}
+                        style={[
+                          styles.cancelBtn,
+                          { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.hairline },
+                        ]}
                         onPress={() => handleCancelConnection(userId)}
                         disabled={actionLoadingId === userId}
                       >
-                        <Text style={styles.cancelBtnText}>Cancel</Text>
+                        <Text style={[styles.cancelBtnText, { color: themeColors.textSecondary }]}>
+                          Cancel
+                        </Text>
                       </TouchableOpacity>
                     ) : (
                       <TouchableOpacity
-                        style={styles.viewBtn}
+                        style={[
+                          styles.viewBtn,
+                          { backgroundColor: themeColors.surfaceLight, borderColor: themeColors.hairline },
+                        ]}
                         onPress={() => onSelectUser(userId)}
                       >
-                        <Text style={styles.viewBtnText}>View</Text>
+                        <Text style={[styles.viewBtnText, { color: themeColors.textPrimary }]}>View</Text>
                       </TouchableOpacity>
                     )}
                   </TouchableOpacity>
