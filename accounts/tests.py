@@ -112,6 +112,7 @@ def _make_png_bytes(width=240, height=160, color=(94, 106, 210)) -> bytes:
 @override_settings(
     DEBUG=True,
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    BREVO_API_KEY="",
     RESEND_API_KEY="",
 )
 class VerificationGateAndAuthFlowsTests(TestCase):
@@ -544,4 +545,36 @@ class VerificationGateAndAuthFlowsTests(TestCase):
             pending_client.post("/api/posts/create/", {"content": "Should be blocked"}, format="json").status_code,
             status.HTTP_403_FORBIDDEN,
         )
+
+    def test_brevo_https_email_dispatch(self):
+        from unittest.mock import MagicMock, patch
+        from otp.services import OTPService
+
+        mock_resp = MagicMock()
+        mock_resp.status = 201
+        mock_cm = MagicMock()
+        mock_cm.__enter__.return_value = mock_resp
+        mock_cm.__exit__.return_value = False
+
+        with override_settings(
+            BREVO_API_KEY="xkeysib-test-123",
+            BREVO_SENDER_EMAIL="Campus Connect <chandrashekharrana03@gmail.com>",
+            RESEND_API_KEY="",
+        ), patch("urllib.request.urlopen", return_value=mock_cm) as mock_open:
+            sent, msg = OTPService.dispatch_real_email(
+                "ranashekher857@gmail.com",
+                "Campus Connect Code",
+                "Your code is 123456",
+            )
+
+        self.assertTrue(sent)
+        self.assertEqual(msg, "Verification email sent via Brevo.")
+        req = mock_open.call_args[0][0]
+        self.assertEqual(req.full_url, "https://api.brevo.com/v3/smtp/email")
+        self.assertEqual(req.get_header("Api-key"), "xkeysib-test-123")
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body["sender"]["email"], "chandrashekharrana03@gmail.com")
+        self.assertEqual(body["to"], [{"email": "ranashekher857@gmail.com"}])
+        self.assertEqual(body["textContent"], "Your code is 123456")
+
 

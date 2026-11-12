@@ -198,7 +198,10 @@ MEDIA_ROOT = Path(_media_root_env) if _media_root_env else (BASE_DIR / 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Email Delivery Configuration (Resend HTTP API or SMTP with local Console fallback)
+# Email Delivery Configuration (Brevo / Resend HTTP API or SMTP with local Console fallback)
+BREVO_API_KEY = os.getenv('BREVO_API_KEY', '').strip()
+BREVO_SENDER_EMAIL = os.getenv('BREVO_SENDER_EMAIL', '').strip()
+BREVO_SENDER_NAME = os.getenv('BREVO_SENDER_NAME', 'Campus Connect').strip() or 'Campus Connect'
 RESEND_API_KEY = os.getenv('RESEND_API_KEY', '').strip()
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
@@ -212,4 +215,4 @@ _default_email_backend = (
     else 'django.core.mail.backends.console.EmailBackend'
 )
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', _default_email_backend)
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'verify@campusconnect.local')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or BREVO_SENDER_EMAIL or 'verify@campusconnect.local')

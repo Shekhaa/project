@@ -103,11 +103,60 @@ class OTPService:
     @classmethod
     def dispatch_real_email(cls, email: str, subject: str, message: str) -> tuple[bool, str]:
         """
-        Dispatches email via Resend HTTPS API (when RESEND_API_KEY is configured) or Django email backend.
+        Dispatches email via Brevo HTTPS API (when BREVO_API_KEY is configured),
+        Resend HTTPS API (when RESEND_API_KEY is configured), or Django email backend.
         Returns (real_sent: bool, status_message: str).
         """
+        from email.utils import parseaddr
+        import urllib.error
+
+        brevo_key = (getattr(settings, "BREVO_API_KEY", "") or os.getenv("BREVO_API_KEY", "")).strip()
         resend_key = (getattr(settings, "RESEND_API_KEY", "") or os.getenv("RESEND_API_KEY", "")).strip()
         from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "verify@campusconnect.local")
+
+        if brevo_key:
+            raw_sender = (
+                getattr(settings, "BREVO_SENDER_EMAIL", "")
+                or os.getenv("BREVO_SENDER_EMAIL", "")
+                or getattr(settings, "EMAIL_HOST_USER", "")
+                or from_email
+            ).strip()
+            parsed_name, parsed_email = parseaddr(raw_sender)
+            sender_email = (parsed_email or raw_sender).strip()
+            sender_name = (
+                parsed_name
+                or getattr(settings, "BREVO_SENDER_NAME", "Campus Connect")
+                or "Campus Connect"
+            ).strip()
+            try:
+                payload = json.dumps({
+                    "sender": {"name": sender_name, "email": sender_email},
+                    "to": [{"email": email}],
+                    "subject": subject,
+                    "textContent": message,
+                }).encode("utf-8")
+                req = urllib.request.Request(
+                    "https://api.brevo.com/v3/smtp/email",
+                    data=payload,
+                    headers={
+                        "accept": "application/json",
+                        "api-key": brevo_key,
+                        "content-type": "application/json",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    if 200 <= resp.status < 300:
+                        return True, "Verification email sent via Brevo."
+            except urllib.error.HTTPError as e:
+                err_body = ""
+                try:
+                    err_body = e.read().decode("utf-8", errors="ignore")
+                except Exception:
+                    pass
+                print(f"[BREVO EMAIL ERROR] HTTP {e.code}: {err_body or e}")
+            except Exception as e:
+                print(f"[BREVO EMAIL ERROR] {e}")
 
         if resend_key:
             try:
