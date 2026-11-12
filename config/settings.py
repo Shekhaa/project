@@ -94,10 +94,11 @@ if DATABASE_URL:
         'default': dj_database_url.config(default=DATABASE_URL, conn_max_age=600)
     }
 else:
+    sqlite_path = os.getenv('CC_SQLITE_PATH')
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
+            'NAME': Path(sqlite_path) if sqlite_path else (BASE_DIR / 'db.sqlite3'),
         }
     }
 
@@ -192,10 +193,23 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+_media_root_env = os.getenv('CC_MEDIA_ROOT')
+MEDIA_ROOT = Path(_media_root_env) if _media_root_env else (BASE_DIR / 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Development Email Backend: Prints OTPs to terminal/console for seamless local testing
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-DEFAULT_FROM_EMAIL = 'verify@campusconnect.local'
+# Email Delivery Configuration (Resend HTTP API or SMTP with local Console fallback)
+RESEND_API_KEY = os.getenv('RESEND_API_KEY', '').strip()
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '').strip()
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '').strip()
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', 10))
+_default_email_backend = (
+    'django.core.mail.backends.smtp.EmailBackend'
+    if (EMAIL_HOST_USER and EMAIL_HOST_PASSWORD)
+    else 'django.core.mail.backends.console.EmailBackend'
+)
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', _default_email_backend)
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'verify@campusconnect.local')

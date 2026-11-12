@@ -36,6 +36,7 @@ import {
   Link2,
   UserPlus,
   Mic,
+  ShieldCheck,
 } from 'lucide-react-native';
 import { AttachmentPickerModal, StagedAttachment } from '../components/media/AttachmentPickerModal';
 import {
@@ -55,6 +56,8 @@ import { UserAvatar } from '../components/common/UserAvatar';
 
 interface CommunitiesScreenProps {
   currentUser?: any;
+  canParticipate?: boolean;
+  onRequireVerify?: (reason?: string) => void;
   onOpenCommunityChat?: (conversation: any) => void;
   onOpenPostDetail?: (postId: number) => void;
   onOpenProfile?: (userId: number) => void;
@@ -72,6 +75,8 @@ const extractApiError = (err: any, fallback: string): string => {
 
 export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   currentUser,
+  canParticipate = true,
+  onRequireVerify,
   onOpenCommunityChat,
   onOpenPostDetail,
   onOpenProfile,
@@ -245,8 +250,15 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
     };
   }, [activeConv, activeTab]);
 
+  const isVerifyRequiredErr = (err: any) =>
+    err?.response?.status === 403 || err?.response?.data?.code === 'CAMPUS_VERIFICATION_REQUIRED';
+
   // Send Message in Hub Chat
   const handleSendHubMessage = async () => {
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to send messages in Campus Hubs.');
+      return;
+    }
     if (!activeConv || sendingMessage) return;
     const textToSend = messageText.trim();
     if (!textToSend && !draftVoiceNote) return;
@@ -285,6 +297,12 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       setMessages((prev) => upsertMessageUnique(prev, newMsg, tempId));
       setTimeout(() => chatFlatListRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e: any) {
+      if (isVerifyRequiredErr(e)) {
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setMessageText(textToSend);
+        onRequireVerify?.(extractApiError(e, 'Campus verification required to send hub messages.'));
+        return;
+      }
       const errMsg = extractApiError(e, 'Failed to send message.');
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as any } : m)));
       setHubChatError(errMsg);
@@ -301,6 +319,10 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
     files: StagedAttachment[],
     caption?: string
   ) => {
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to share attachments in Campus Hubs.');
+      return;
+    }
     if (!activeConv) return;
     setHubChatError(null);
     setHubChatNotice(null);
@@ -355,6 +377,11 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       setMessages((prev) => upsertMessageUnique(prev, newMsg, tempId));
       setTimeout(() => chatFlatListRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e: any) {
+      if (isVerifyRequiredErr(e)) {
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        onRequireVerify?.(extractApiError(e, 'Campus verification required to upload attachments.'));
+        return;
+      }
       const errMsg = extractApiError(e, 'Could not upload selected attachments.');
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as any } : m)));
       setHubChatError(errMsg);
@@ -367,6 +394,11 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   };
 
   const handleSendRecordedVoiceNow = async () => {
+    if (!canParticipate) {
+      await voiceRecorder.cancelRecording();
+      onRequireVerify?.('Verify your campus ID or enter an invite code to send voice notes.');
+      return;
+    }
     const recorded = await voiceRecorder.stopRecording();
     if (!recorded || !activeConv) return;
     const typedCaption = messageText.trim();
@@ -533,6 +565,11 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
   // Submit Community Report
   const handleSubmitReport = async () => {
+    if (!canParticipate) {
+      setReportModalVisible(false);
+      onRequireVerify?.('Verify your campus ID or enter an invite code to submit reports.');
+      return;
+    }
     if (!reportTarget || !activeCommunity || submittingReport) return;
     setSubmittingReport(true);
     setReportError(null);
@@ -551,6 +588,11 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
         Alert.alert('Report Submitted', 'Community moderators will review this item.');
       }
     } catch (e: any) {
+      if (isVerifyRequiredErr(e)) {
+        setReportModalVisible(false);
+        onRequireVerify?.(extractApiError(e, 'Verify your campus ID or enter an invite code to submit reports.'));
+        return;
+      }
       const errMsg = extractApiError(e, 'Could not submit report.');
       setReportError(errMsg);
       if (Platform.OS !== 'web') {
@@ -638,6 +680,11 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
   // Create Custom Community
   const handleCreateCustom = async () => {
+    if (!canParticipate) {
+      setCreateCommunityModalVisible(false);
+      onRequireVerify?.('Verify your campus ID or enter an invite code to create a community hub.');
+      return;
+    }
     if (!newTitle.trim()) {
       const msg = 'Please enter a community title.';
       setCreateError(msg);
@@ -659,6 +706,11 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       setNewDesc('');
       setActiveCommunity(created);
     } catch (e: any) {
+      if (isVerifyRequiredErr(e)) {
+        setCreateCommunityModalVisible(false);
+        onRequireVerify?.(extractApiError(e, 'Verify your campus ID or enter an invite code to create a community hub.'));
+        return;
+      }
       const msg = extractApiError(e, 'Failed to create community.');
       setCreateError(msg);
       if (Platform.OS !== 'web') {
@@ -970,8 +1022,33 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
               </View>
             )}
 
-            {/* Chat Input Bar or Live Instagram Voice Recording Bar */}
-            {voiceRecorder.isRecording ? (
+            {/* Chat Input Bar, Live Voice Bar, or Read-Only Verification CTA */}
+            {!canParticipate ? (
+              <View
+                style={[
+                  styles.chatInputBar,
+                  {
+                    backgroundColor: colors.surface,
+                    borderTopColor: colors.cardBorder,
+                    justifyContent: 'space-between',
+                    paddingVertical: 10,
+                  },
+                ]}
+              >
+                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ShieldCheck size={16} color={colors.primary} />
+                  <Text style={{ flex: 1, fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>
+                    Verify your campus ID or invite code to send messages in hubs.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={{ backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 }}
+                  onPress={() => onRequireVerify?.('Verify your campus ID or enter an invite code to chat in Campus Hubs.')}
+                >
+                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Verify ID</Text>
+                </TouchableOpacity>
+              </View>
+            ) : voiceRecorder.isRecording ? (
               <View
                 style={{
                   paddingHorizontal: 10,
@@ -1066,6 +1143,8 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
           <DiscussTab
             community={activeCommunity}
             currentUser={currentUser}
+            canParticipate={canParticipate}
+            onRequireVerify={onRequireVerify}
             onOpenProfile={onOpenProfile}
           />
         )}
@@ -1682,7 +1761,13 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                 borderColor: colors.cardBorder,
               },
             ]}
-            onPress={() => setJoinViaInviteModalVisible(true)}
+            onPress={() => {
+              if (!canParticipate) {
+                onRequireVerify?.('Verify your campus ID or enter an invite code to join hubs via link.');
+                return;
+              }
+              setJoinViaInviteModalVisible(true);
+            }}
             activeOpacity={0.8}
           >
             <Link2 size={14} color={colors.primary} style={{ marginRight: 4 }} />
@@ -1692,6 +1777,10 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
           <TouchableOpacity
             style={[styles.createBtn, { backgroundColor: colors.primary }]}
             onPress={() => {
+              if (!canParticipate) {
+                onRequireVerify?.('Verify your campus ID or enter an invite code to create a community hub.');
+                return;
+              }
               setCreateError(null);
               setCreateCommunityModalVisible(true);
             }}
@@ -1702,6 +1791,26 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
           </TouchableOpacity>
         </View>
       </View>
+
+      {!canParticipate && (
+        <TouchableOpacity
+          style={[
+            styles.readOnlyBanner,
+            {
+              backgroundColor: isDark ? '#141516' : '#f1f5f9',
+              borderColor: colors.cardBorder,
+            },
+          ]}
+          onPress={() => onRequireVerify?.('Verify your Campus ID or enter an invite code to participate in Campus Hubs.')}
+          activeOpacity={0.85}
+        >
+          <ShieldCheck size={16} color={colors.primary} />
+          <Text style={[styles.readOnlyBannerText, { color: colors.textSecondary }]}>
+            Read-only mode — verify your Campus ID or enter an invite code to post, vote, or chat in hubs.
+          </Text>
+          <Text style={[styles.readOnlyBannerCta, { color: colors.primary }]}>Verify</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Search Bar */}
       <View style={[styles.searchContainer, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
@@ -2002,6 +2111,26 @@ const styles = StyleSheet.create({
   joinLinkHeaderBtnText: {
     fontWeight: '700',
     fontSize: 12,
+  },
+  readOnlyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 8,
+    marginHorizontal: 14,
+    marginTop: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+  readOnlyBannerText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  readOnlyBannerCta: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   membersActionBar: {
     flexDirection: 'row',

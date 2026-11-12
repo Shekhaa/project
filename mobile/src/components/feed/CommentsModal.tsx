@@ -25,6 +25,10 @@ import {
 interface CommentsModalProps {
   visible: boolean;
   post: Post | null;
+  currentUser?: any;
+  canParticipate?: boolean;
+  onRequireAuth?: () => void;
+  onRequireVerify?: (reason?: string) => void;
   onClose: () => void;
   onOpenProfile?: (userId: number) => void;
 }
@@ -32,6 +36,10 @@ interface CommentsModalProps {
 export const CommentsModal: React.FC<CommentsModalProps> = ({
   visible,
   post,
+  currentUser,
+  canParticipate = true,
+  onRequireAuth,
+  onRequireVerify,
   onClose,
   onOpenProfile,
 }) => {
@@ -94,6 +102,16 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
   };
 
   const handleReplyPress = (targetComment: Comment) => {
+    if (!currentUser) {
+      onClose();
+      onRequireAuth?.();
+      return;
+    }
+    if (!canParticipate) {
+      onClose();
+      onRequireVerify?.('Verify your Campus ID or enter an invite code to reply to discussions.');
+      return;
+    }
     setReplyingTo(targetComment);
     if (targetComment.is_anonymous) return;
     const rawHandle =
@@ -119,6 +137,16 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
   };
 
   const handleSendComment = async () => {
+    if (!currentUser) {
+      onClose();
+      onRequireAuth?.();
+      return;
+    }
+    if (!canParticipate) {
+      onClose();
+      onRequireVerify?.('Verify your Campus ID or enter an invite code to post comments.');
+      return;
+    }
     if (!post || !newComment.trim()) return;
 
     try {
@@ -153,8 +181,13 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
       setCursorPos(0);
       setReplyingTo(null);
       setMentionDismissed(false);
-    } catch (e) {
-      console.log('Failed to post comment', e);
+    } catch (e: any) {
+      if (e?.response?.status === 403 && e?.response?.data?.code === 'CAMPUS_VERIFICATION_REQUIRED') {
+        onClose();
+        onRequireVerify?.(e.response.data.error);
+      } else {
+        console.log('Failed to post comment', e);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -292,8 +325,10 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
     );
   };
 
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType={Platform.OS === 'web' ? 'none' : 'slide'} transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={[styles.backdrop, { backgroundColor: colors.modalOverlay }]}
@@ -373,80 +408,110 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
             </View>
           )}
 
-          {/* Bottom Input Bar */}
-          <View
-            style={[
-              styles.inputBar,
-              { borderTopColor: colors.cardBorder, backgroundColor: colors.surface },
-            ]}
-          >
-            {/* Anonymous Toggle */}
-            <TouchableOpacity
+          {/* Bottom Input Bar (or Read-Only CTA for Guests / Unverified Users) */}
+          {!currentUser || !canParticipate ? (
+            <View
               style={[
-                styles.anonToggle,
-                {
-                  backgroundColor: isAnonymous ? colors.anonBadge : colors.surfaceLight,
-                  borderColor: isAnonymous ? colors.anonPurple : 'transparent',
-                  borderWidth: 1,
-                },
+                styles.inputBar,
+                { borderTopColor: colors.cardBorder, backgroundColor: colors.surface, justifyContent: 'space-between' },
               ]}
-              onPress={() => setIsAnonymous(!isAnonymous)}
-              activeOpacity={0.7}
             >
-              <Text style={styles.anonToggleText}>🎭</Text>
-            </TouchableOpacity>
+              <Text style={{ flex: 1, fontSize: 12.5, color: colors.textMuted, paddingRight: 8 }}>
+                {!currentUser
+                  ? 'Sign in to join the campus conversation'
+                  : 'Verify with an invite code or College ID to comment'}
+              </Text>
+              <TouchableOpacity
+                style={[styles.sendBtn, { backgroundColor: colors.primary, width: 'auto', paddingHorizontal: 14 }]}
+                onPress={() => {
+                  onClose();
+                  if (!currentUser) {
+                    onRequireAuth?.();
+                  } else {
+                    onRequireVerify?.('Verify your Campus ID or enter an invite code to comment.');
+                  }
+                }}
+              >
+                <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '700' }}>
+                  {!currentUser ? 'Sign In' : 'Verify ID'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.inputBar,
+                { borderTopColor: colors.cardBorder, backgroundColor: colors.surface },
+              ]}
+            >
+              {/* Anonymous Toggle */}
+              <TouchableOpacity
+                style={[
+                  styles.anonToggle,
+                  {
+                    backgroundColor: isAnonymous ? colors.anonBadge : colors.surfaceLight,
+                    borderColor: isAnonymous ? colors.anonPurple : 'transparent',
+                    borderWidth: 1,
+                  },
+                ]}
+                onPress={() => setIsAnonymous(!isAnonymous)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.anonToggleText}>🎭</Text>
+              </TouchableOpacity>
 
-            {/* @ Tag Directory Trigger */}
-            <TouchableOpacity
-              style={[
-                styles.tagToggle,
-                {
-                  backgroundColor: activeMention ? colors.primary + '1E' : colors.surfaceLight,
-                },
-              ]}
-              onPress={handleInsertTag}
-              activeOpacity={0.7}
-              accessibilityLabel="Tag student with @"
-            >
-              <AtSign
-                size={16}
-                color={activeMention ? colors.primary : colors.textSecondary}
+              {/* @ Tag Directory Trigger */}
+              <TouchableOpacity
+                style={[
+                  styles.tagToggle,
+                  {
+                    backgroundColor: activeMention ? colors.primary + '1E' : colors.surfaceLight,
+                  },
+                ]}
+                onPress={handleInsertTag}
+                activeOpacity={0.7}
+                accessibilityLabel="Tag student with @"
+              >
+                <AtSign
+                  size={16}
+                  color={activeMention ? colors.primary : colors.textSecondary}
+                />
+              </TouchableOpacity>
+
+              <TextInput
+                style={[
+                  styles.textInput,
+                  { backgroundColor: colors.surfaceLight, color: colors.textPrimary },
+                ]}
+                placeholder={
+                  isAnonymous ? 'Comment anonymously...' : 'Add comment (type @ to tag student)...'
+                }
+                placeholderTextColor={colors.textMuted}
+                value={newComment}
+                onChangeText={handleCommentTextChange}
+                onSelectionChange={(e) => setCursorPos(e.nativeEvent.selection.end)}
+                multiline
+                maxLength={500}
               />
-            </TouchableOpacity>
 
-            <TextInput
-              style={[
-                styles.textInput,
-                { backgroundColor: colors.surfaceLight, color: colors.textPrimary },
-              ]}
-              placeholder={
-                isAnonymous ? 'Comment anonymously...' : 'Add comment (type @ to tag student)...'
-              }
-              placeholderTextColor={colors.textMuted}
-              value={newComment}
-              onChangeText={handleCommentTextChange}
-              onSelectionChange={(e) => setCursorPos(e.nativeEvent.selection.end)}
-              multiline
-              maxLength={500}
-            />
-
-            <TouchableOpacity
-              style={[
-                styles.sendBtn,
-                { backgroundColor: colors.primary },
-                (!newComment.trim() || submitting) && styles.sendBtnDisabled,
-              ]}
-              onPress={handleSendComment}
-              disabled={!newComment.trim() || submitting}
-              activeOpacity={0.8}
-            >
-              {submitting ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Send size={18} color="#fff" />
-              )}
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={[
+                  styles.sendBtn,
+                  { backgroundColor: colors.primary },
+                  (!newComment.trim() || submitting) && styles.sendBtnDisabled,
+                ]}
+                onPress={handleSendComment}
+                disabled={!newComment.trim() || submitting}
+                activeOpacity={0.8}
+              >
+                {submitting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Send size={18} color="#fff" />
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </KeyboardAvoidingView>
     </Modal>

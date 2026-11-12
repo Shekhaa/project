@@ -268,6 +268,11 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                   <Text style={styles.verifiedBadgeText}>VERIFIED</Text>
                 </View>
               )}
+              {!post.is_anonymous && post.author_verification_tier === 'INVITE_VERIFIED' && (
+                <View style={styles.invitedBadgePill}>
+                  <Text style={styles.invitedBadgeText}>🎓 Invited</Text>
+                </View>
+              )}
               {post.is_anonymous && (
                 <View
                   style={[
@@ -687,6 +692,22 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     fontWeight: '700',
     letterSpacing: 0.4,
+  },
+  invitedBadgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(94, 106, 210, 0.14)',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(94, 106, 210, 0.3)',
+  },
+  invitedBadgeText: {
+    color: '#828fff',
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   anonPill: {
     paddingHorizontal: 7,

@@ -249,8 +249,10 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
     );
   };
 
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType={Platform.OS === 'web' ? 'none' : 'slide'} transparent onRequestClose={onClose}>
       <View style={[styles.backdrop, { backgroundColor: themeColors.modalOverlay }]}>
         <TouchableOpacity style={styles.dismissOverlay} onPress={onClose} activeOpacity={1} />
 

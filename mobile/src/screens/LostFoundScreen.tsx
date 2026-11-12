@@ -12,9 +12,19 @@ import {
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { lostFoundService, LostFoundItem } from '../services/lostFoundService';
-import { MapPin, Plus, ShieldCheck, MessageCircle, HelpCircle } from 'lucide-react-native';
+import { MapPin, Plus, ShieldCheck, MessageCircle, HelpCircle, X } from 'lucide-react-native';
+import { Platform } from 'react-native';
 
-export const LostFoundScreen = () => {
+interface LostFoundScreenProps {
+  currentUser?: any;
+  canParticipate?: boolean;
+  onRequireVerify?: (reason?: string) => void;
+}
+
+export const LostFoundScreen: React.FC<LostFoundScreenProps> = ({
+  canParticipate = true,
+  onRequireVerify,
+}) => {
   const { colors, isDark } = useTheme();
   const [items, setItems] = useState<LostFoundItem[]>([]);
   const [activeTab, setActiveTab] = useState<'ALL' | 'LOST' | 'FOUND'>('ALL');
@@ -26,6 +36,7 @@ export const LostFoundScreen = () => {
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [banner, setBanner] = useState<{ kind: 'error' | 'notice'; text: string } | null>(null);
 
   const loadItems = async () => {
     setLoading(true);
@@ -44,13 +55,30 @@ export const LostFoundScreen = () => {
     loadItems();
   }, [activeTab]);
 
+  const handleOpenReportModal = () => {
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to report lost or found items.');
+      return;
+    }
+    setBanner(null);
+    setModalVisible(true);
+  };
+
   const handleReport = async () => {
+    if (!canParticipate) {
+      setModalVisible(false);
+      onRequireVerify?.('Verify your campus ID or enter an invite code to report lost or found items.');
+      return;
+    }
     if (!description.trim() || !location.trim()) {
-      Alert.alert('Required', 'Please describe the item and where it was lost or found.');
+      const msg = 'Please describe the item and where it was lost or found.';
+      setBanner({ kind: 'error', text: msg });
+      if (Platform.OS !== 'web') Alert.alert('Required', msg);
       return;
     }
 
     setSubmitting(true);
+    setBanner(null);
     try {
       await lostFoundService.reportItem({
         item_type: reportType,
@@ -61,28 +89,53 @@ export const LostFoundScreen = () => {
       setDescription('');
       setLocation('');
       await loadItems();
-      Alert.alert('Reported! 📢', 'Your notice is now live for all students on campus.');
+      const okMsg = 'Your notice is now live for all students on campus.';
+      setBanner({ kind: 'notice', text: okMsg });
+      if (Platform.OS !== 'web') Alert.alert('Reported! 📢', okMsg);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to submit report.');
+      if (e?.response?.status === 403 || e?.response?.data?.code === 'CAMPUS_VERIFICATION_REQUIRED') {
+        setModalVisible(false);
+        onRequireVerify?.(e.response?.data?.error || 'Campus verification required to report items.');
+      } else {
+        const msg = e.response?.data?.error || 'Failed to submit report.';
+        setBanner({ kind: 'error', text: msg });
+        if (Platform.OS !== 'web') Alert.alert('Error', msg);
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleContact = async (item: LostFoundItem) => {
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to contact reporters.');
+      return;
+    }
     if (item.is_mine) {
-      Alert.alert('Your Notice', 'This is your own report. Classmates who find or claim this item will message you directly.');
+      const msg = 'This is your own report. Classmates who find or claim this item will message you directly.';
+      setBanner({ kind: 'notice', text: msg });
+      if (Platform.OS !== 'web') Alert.alert('Your Notice', msg);
       return;
     }
 
     try {
       await lostFoundService.contactReporter(item.id);
-      Alert.alert(
-        'Chat Thread Opened! 💬',
-        `Direct chat started with ${item.reporter_name}.\nMessage context: "${item.description.slice(0, 40)}..."`
-      );
+      const okMsg = `Direct chat started with ${item.reporter_name}. Open Chat tab to coordinate pickup.`;
+      setBanner({ kind: 'notice', text: okMsg });
+      if (Platform.OS !== 'web') {
+        Alert.alert(
+          'Chat Thread Opened! 💬',
+          `Direct chat started with ${item.reporter_name}.\nMessage context: "${item.description.slice(0, 40)}..."`
+        );
+      }
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Could not open chat.');
+      if (e?.response?.status === 403 || e?.response?.data?.code === 'CAMPUS_VERIFICATION_REQUIRED') {
+        onRequireVerify?.(e.response?.data?.error || 'Campus verification required to contact students.');
+      } else {
+        const msg = e.response?.data?.error || 'Could not open chat.';
+        setBanner({ kind: 'error', text: msg });
+        if (Platform.OS !== 'web') Alert.alert('Error', msg);
+      }
     }
   };
 
@@ -99,13 +152,78 @@ export const LostFoundScreen = () => {
 
         <TouchableOpacity
           style={[styles.reportBtn, { backgroundColor: colors.primary }]}
-          onPress={() => setModalVisible(true)}
+          onPress={handleOpenReportModal}
           activeOpacity={0.85}
         >
           <Plus size={15} color="#fff" style={{ marginRight: 4 }} />
           <Text style={styles.reportBtnText}>Report Item</Text>
         </TouchableOpacity>
       </View>
+
+      {!canParticipate && (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            backgroundColor: isDark ? 'rgba(94, 106, 210, 0.14)' : '#eef2ff',
+            borderBottomWidth: 1,
+            borderBottomColor: colors.cardBorder,
+          }}
+        >
+          <Text style={{ flex: 1, fontSize: 12, fontWeight: '600', color: colors.textPrimary }}>
+            Read-only browsing · Verify your campus ID to post or claim items.
+          </Text>
+          <TouchableOpacity
+            onPress={() => onRequireVerify?.()}
+            style={{ backgroundColor: colors.primary, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}
+          >
+            <Text style={{ color: '#fff', fontSize: 11.5, fontWeight: '700' }}>Verify ID</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {banner && (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            marginHorizontal: 14,
+            marginTop: 10,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 10,
+            borderWidth: 1,
+            backgroundColor:
+              banner.kind === 'error'
+                ? isDark ? 'rgba(239, 68, 68, 0.14)' : '#fef2f2'
+                : isDark ? 'rgba(34, 197, 94, 0.14)' : '#f0fdf4',
+            borderColor:
+              banner.kind === 'error'
+                ? 'rgba(239, 68, 68, 0.35)'
+                : 'rgba(34, 197, 94, 0.35)',
+          }}
+        >
+          <Text
+            style={{
+              flex: 1,
+              fontSize: 12,
+              fontWeight: '600',
+              color: banner.kind === 'error' ? '#ef4444' : isDark ? '#86efac' : '#15803d',
+            }}
+          >
+            {banner.text}
+          </Text>
+          <TouchableOpacity onPress={() => setBanner(null)}>
+            <X size={14} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Filter Tabs */}
       <View style={[styles.tabsRow, { backgroundColor: colors.background }]}>

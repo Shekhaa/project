@@ -42,6 +42,9 @@ const SCOPE_TABS: Array<{
 
 interface FeedScreenProps {
   currentUser?: any;
+  canParticipate?: boolean;
+  onRequireAuth?: () => void;
+  onRequireVerify?: (reason?: string) => void;
   composerTrigger?: number;
   onNavigateToChat?: (conversationId?: string | number) => void;
   onOpenProfile?: (userId: number) => void;
@@ -49,6 +52,9 @@ interface FeedScreenProps {
 
 export const FeedScreen: React.FC<FeedScreenProps> = ({
   currentUser,
+  canParticipate = true,
+  onRequireAuth,
+  onRequireVerify,
   composerTrigger,
   onNavigateToChat,
   onOpenProfile,
@@ -65,21 +71,28 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Restore persisted feed scope from AsyncStorage on mount
+  // Restore persisted feed scope from AsyncStorage on mount (for signed-in users)
   useEffect(() => {
     let isMounted = true;
     AsyncStorage.getItem('@campus_connect_feed_scope').then((val) => {
       if (!isMounted || !val) return;
       if (['ALL', 'GLOBAL', 'COLLEGE', 'FOLLOWING', 'MEDIA', 'RESOURCES', 'SAVED'].includes(val)) {
+        if (!currentUser && (val === 'FOLLOWING' || val === 'SAVED')) {
+          return;
+        }
         setSelectedScope(val as any);
       }
     });
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [currentUser]);
 
   const handleSelectScope = (scope: 'ALL' | 'GLOBAL' | 'COLLEGE' | 'FOLLOWING' | 'MEDIA' | 'RESOURCES' | 'SAVED' | undefined) => {
+    if (!currentUser && (scope === 'FOLLOWING' || scope === 'SAVED' || scope === 'COLLEGE')) {
+      onRequireAuth?.();
+      return;
+    }
     setSelectedScope(scope);
     setSelectedCommunityId(undefined);
     if (scope) {
@@ -98,6 +111,18 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const [activeSharePost, setActiveSharePost] = useState<Post | null>(null);
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+
+  const handleOpenComposer = () => {
+    if (!currentUser) {
+      onRequireAuth?.();
+      return;
+    }
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your Campus ID or enter an invite code to publish posts or confessions.');
+      return;
+    }
+    setComposerVisible(true);
+  };
 
   const handleSelectNotification = useCallback(
     async (notif: NotificationItem) => {
@@ -128,6 +153,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   );
 
   const syncNotifications = useCallback(async () => {
+    if (!currentUser) return;
     try {
       const res = await notificationService.getNotifications();
       const newUnread = res.unread_count || 0;
@@ -146,27 +172,35 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     } catch {
       // background sync fail silently
     }
-  }, [unreadNotifCount, handleSelectNotification]);
+  }, [currentUser, unreadNotifCount, handleSelectNotification]);
 
   useEffect(() => {
+    if (!currentUser) {
+      setUnreadNotifCount(0);
+      return;
+    }
     syncNotifications();
     const interval = setInterval(syncNotifications, 45000);
     return () => clearInterval(interval);
-  }, [syncNotifications]);
+  }, [currentUser, syncNotifications]);
 
   // Trigger from navigation/header
   useEffect(() => {
     if (composerTrigger && composerTrigger > 0) {
-      setComposerVisible(true);
+      handleOpenComposer();
     }
   }, [composerTrigger]);
 
   const loadCommunities = useCallback(async () => {
+    if (!currentUser) {
+      setCommunities([]);
+      return;
+    }
     try {
       const commsData = await communityService.getMyCommunities();
       setCommunities(commsData || []);
     } catch {}
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     loadCommunities();
@@ -217,7 +251,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [loadData, currentUser?.id]);
 
   const handleRefresh = async () => {
     loadCommunities();
@@ -256,6 +290,15 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   };
 
   const handleLikePost = useCallback(async (postId: number) => {
+    if (!currentUser) {
+      onRequireAuth?.();
+      return;
+    }
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your Campus ID or enter an invite code to react to campus posts.');
+      return;
+    }
+
     // Optimistic UI update
     setPosts((prev) =>
       prev.map((p) => {
@@ -281,11 +324,13 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             : p
         )
       );
-    } catch (e) {
-      // Revert if error
+    } catch (e: any) {
       loadData();
+      if (e?.response?.status === 403 && e?.response?.data?.code === 'CAMPUS_VERIFICATION_REQUIRED') {
+        onRequireVerify?.(e.response.data.error);
+      }
     }
-  }, [loadData]);
+  }, [currentUser, canParticipate, onRequireAuth, onRequireVerify, loadData]);
 
   const handleDeletePost = useCallback(async (postId: number) => {
     try {
@@ -343,8 +388,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       {/* Top Navbar */}
       <View style={[styles.navBar, isCompactViewport && { paddingHorizontal: 12 }]}>
         <View style={styles.brandRow}>
-          <Text style={[styles.brandTitle, { color: colors.textPrimary }, isCompactViewport && { fontSize: 17 }]}>Campus</Text>
-          <Text style={[styles.brandAccent, { color: colors.primary }, isCompactViewport && { fontSize: 17 }]}>Connect</Text>
+          <Text style={[styles.brandTitle, { color: colors.textPrimary }, isCompactViewport && { fontSize: 16 }]}>Campus</Text>
+          <Text style={[styles.brandAccent, { color: colors.primary }, isCompactViewport && { fontSize: 16 }]}>Connect</Text>
         </View>
 
         <View style={[styles.navActions, isCompactViewport && { gap: 6 }]}>
@@ -381,36 +426,69 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             {isFiltered && <View style={styles.filterDot} />}
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.iconBtn,
-              { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
-              isCompactViewport && { width: 32, height: 32, borderRadius: 16 },
-            ]}
-            onPress={() => setNotificationsVisible(true)}
-            activeOpacity={0.7}
-            accessibilityLabel="Open notifications"
-          >
-            <Bell size={isCompactViewport ? 17 : 20} color={colors.textPrimary} />
-            {unreadNotifCount > 0 && (
-              <View style={styles.bellBadge}>
-                <Text style={styles.bellBadgeText}>
-                  {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          {currentUser ? (
+            <TouchableOpacity
+              style={[
+                styles.iconBtn,
+                { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                isCompactViewport && { width: 32, height: 32, borderRadius: 16 },
+              ]}
+              onPress={() => setNotificationsVisible(true)}
+              activeOpacity={0.7}
+              accessibilityLabel="Open notifications"
+            >
+              <Bell size={isCompactViewport ? 17 : 20} color={colors.textPrimary} />
+              {unreadNotifCount > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>
+                    {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[
+                styles.navVerifyPill,
+                { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                isCompactViewport && { paddingHorizontal: 10, paddingVertical: 6 },
+              ]}
+              onPress={() => onRequireAuth?.()}
+              activeOpacity={0.8}
+              accessibilityLabel="Sign In"
+            >
+              <Text style={[styles.navVerifyPillText, { color: colors.textPrimary }, isCompactViewport && { fontSize: 12 }]}>
+                Sign In
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {currentUser && !canParticipate && !isCompactViewport && (
+            <TouchableOpacity
+              style={[
+                styles.navVerifyPill,
+                {
+                  backgroundColor: isDark ? 'rgba(245, 158, 11, 0.14)' : 'rgba(245, 158, 11, 0.12)',
+                  borderColor: 'rgba(245, 158, 11, 0.4)',
+                },
+              ]}
+              onPress={() => onRequireVerify?.()}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.navVerifyPillText, { color: '#d97706' }]}>Verify ID</Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={[
               styles.createPostBtn,
-              isCompactViewport && { paddingHorizontal: 11, paddingVertical: 7, gap: 4 },
+              isCompactViewport && { paddingHorizontal: 10, paddingVertical: 7, gap: 4 },
             ]}
-            onPress={() => setComposerVisible(true)}
+            onPress={handleOpenComposer}
             activeOpacity={0.8}
           >
-            <Plus size={isCompactViewport ? 16 : 18} color="#fff" />
-            <Text style={[styles.createPostBtnText, isCompactViewport && { fontSize: 12.5 }]}>Post</Text>
+            <Plus size={isCompactViewport ? 15 : 18} color="#fff" />
+            <Text style={[styles.createPostBtnText, isCompactViewport && { fontSize: 12 }]}>Post</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -460,6 +538,40 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         })}
       </ScrollView>
 
+      {/* Slim Read-Only Campus Banner */}
+      {(!currentUser || !canParticipate) && (
+        <View
+          style={[
+            styles.readOnlyBanner,
+            {
+              backgroundColor: isDark ? 'rgba(94, 106, 210, 0.1)' : 'rgba(94, 106, 210, 0.07)',
+              borderTopColor: colors.cardBorder,
+            },
+          ]}
+        >
+          <Text style={[styles.readOnlyBannerText, { color: colors.textSecondary }]} numberOfLines={2}>
+            {!currentUser
+              ? 'Read-only campus preview · Sign in to post, comment & join chats'
+              : currentUser.verification_method === 'ID_CARD_PENDING'
+              ? 'ID card queued for review · Enter a batch invite code or link College ID to post now'
+              : 'Read-only access · Unlock posting with a batch invite code or Student ID'}
+          </Text>
+          <TouchableOpacity
+            style={[styles.readOnlyCtaBtn, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              if (!currentUser) {
+                onRequireAuth?.();
+              } else {
+                onRequireVerify?.();
+              }
+            }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.readOnlyCtaText}>{!currentUser ? 'Sign In' : 'Verify ID'}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Active Filter Pill Bar if filtered by a specific community */}
       {selectedCommunityId !== undefined && (
         <View style={[styles.activeFilterBar, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
@@ -492,9 +604,9 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         </Text>
         <TouchableOpacity
           style={styles.emptyCta}
-          onPress={() => setComposerVisible(true)}
+          onPress={handleOpenComposer}
         >
-          <Text style={styles.emptyCtaText}>Create First Post</Text>
+          <Text style={styles.emptyCtaText}>{!currentUser ? 'Sign In to Post' : 'Create First Post'}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -527,13 +639,13 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       {loading && posts.length === 0 ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Syncing campus updates...</Text>
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Syncing campus updates...</Text>
         </View>
       ) : error && posts.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={{ fontSize: 36, marginBottom: 8 }}>⚠️</Text>
-          <Text style={styles.emptyTitle}>Could not load campus updates</Text>
-          <Text style={styles.emptySub}>{error}</Text>
+          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>Could not load campus updates</Text>
+          <Text style={[styles.emptySub, { color: colors.textSecondary }]}>{error}</Text>
           <TouchableOpacity
             style={styles.emptyCta}
             onPress={() => loadData(false)}
@@ -554,7 +666,13 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
               onSharePress={(p) => setActiveSharePost(p)}
               onDeletePost={handleDeletePost}
               onArchivePost={handleArchivePost}
-              onAuthorPress={onOpenProfile}
+              onAuthorPress={(uid) => {
+                if (!currentUser) {
+                  onRequireAuth?.();
+                  return;
+                }
+                onOpenProfile?.(uid);
+              }}
               onBookmarkToggle={handleBookmarkToggle}
             />
           )}
@@ -579,10 +697,11 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       )}
 
       {/* Clean Feed Filter Modal */}
+      {filterModalVisible && (
       <Modal
         visible={filterModalVisible}
         transparent
-        animationType="fade"
+        animationType={Platform.OS === 'web' ? 'none' : 'fade'}
         onRequestClose={() => setFilterModalVisible(false)}
       >
         <TouchableOpacity
@@ -715,6 +834,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           </View>
         </TouchableOpacity>
       </Modal>
+      )}
 
       {/* Dedicated Post Composer & Photo Editor / PDF Modal */}
       <PostComposerModal
@@ -723,12 +843,17 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         onPostCreated={loadData}
         communities={communities}
         defaultCommunityId={selectedCommunityId}
+        onRequireVerify={onRequireVerify}
       />
 
       {/* Comments Modal */}
       <CommentsModal
         visible={!!activeCommentsPost}
         post={activeCommentsPost}
+        currentUser={currentUser}
+        canParticipate={canParticipate}
+        onRequireAuth={onRequireAuth}
+        onRequireVerify={onRequireVerify}
         onClose={() => setActiveCommentsPost(null)}
         onOpenProfile={onOpenProfile}
       />
@@ -802,6 +927,43 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  navVerifyPill: {
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navVerifyPillText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  readOnlyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+  },
+  readOnlyBannerText: {
+    flex: 1,
+    fontSize: 11.5,
+    fontWeight: '500',
+    lineHeight: 16,
+  },
+  readOnlyCtaBtn: {
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  readOnlyCtaText: {
+    color: '#ffffff',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
   iconBtn: {
     width: 36,

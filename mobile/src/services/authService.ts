@@ -1,5 +1,37 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { api } from '../config/api';
+
+export const AZURE_CLIENT_ID =
+  (process.env as any)?.EXPO_PUBLIC_AZURE_CLIENT_ID || '3b64e29f-bcab-4aee-9fa2-11bb605f161a';
+const MS_OAUTH_MODE_KEY = 'cc_ms_oauth_mode';
+
+export const buildMicrosoftAuthUrl = () => {
+  let redirectUri = 'https://jwt.ms';
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
+    redirectUri = `${window.location.origin}/`;
+  }
+  const scopes = encodeURIComponent('openid profile email');
+  return `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${AZURE_CLIENT_ID}&response_type=id_token&redirect_uri=${encodeURIComponent(
+    redirectUri
+  )}&scope=${scopes}&response_mode=fragment&nonce=${Date.now()}&prompt=select_account`;
+};
+
+export const setMsOAuthMode = async (mode: 'login' | 'link') => {
+  try {
+    await AsyncStorage.setItem(MS_OAUTH_MODE_KEY, mode);
+  } catch {}
+};
+
+export const consumeMsOAuthMode = async (): Promise<'login' | 'link' | null> => {
+  try {
+    const mode = await AsyncStorage.getItem(MS_OAUTH_MODE_KEY);
+    await AsyncStorage.removeItem(MS_OAUTH_MODE_KEY);
+    return mode === 'link' || mode === 'login' ? mode : null;
+  } catch {
+    return null;
+  }
+};
 
 export interface User {
   id: number;
@@ -11,10 +43,40 @@ export interface User {
   profile_picture?: string | null;
   is_verified_student: boolean;
   profile_completed: boolean;
-  verification_tier?: 'FULLY_VERIFIED' | 'SEMI_VERIFIED' | 'UNVERIFIED';
+  verification_tier?: 'FULLY_VERIFIED' | 'INVITE_VERIFIED' | 'SEMI_VERIFIED' | 'UNVERIFIED';
+  verification_method?: string | null;
+  can_participate?: boolean;
   badge_label?: string;
   is_staff?: boolean;
   is_superuser?: boolean;
+}
+
+export const computeCanParticipate = (user?: Partial<User> | null): boolean => {
+  if (!user) return false;
+  if (typeof user.can_participate === 'boolean') return user.can_participate;
+  return (
+    user.verification_tier === 'FULLY_VERIFIED' ||
+    user.verification_tier === 'INVITE_VERIFIED' ||
+    Boolean(user.is_verified_student) ||
+    Boolean(user.is_staff) ||
+    Boolean(user.is_superuser)
+  );
+};
+
+export interface CampusInviteCodeItem {
+  id: number;
+  code: string;
+  batch_label: string;
+  college_id: number;
+  college_name: string;
+  college_short_name: string;
+  uses_count: number;
+  max_uses: number;
+  remaining_uses: number;
+  is_active: boolean;
+  is_valid: boolean;
+  expires_at?: string | null;
+  created_at: string;
 }
 
 export interface DemoUser {
@@ -44,6 +106,48 @@ export const authService = {
       id_token: token,
     });
     await this.saveSession(res.data.access, res.data.refresh, res.data.user);
+    return res.data;
+  },
+
+  // Upgrade existing Gmail / Invite / ID-Review account with College Microsoft ID (no duplicate user)
+  async linkWithMicrosoft(token: string) {
+    const res = await api.post('/authentication/microsoft/link/', {
+      token,
+      access_token: token,
+      id_token: token,
+    });
+    if (res.data?.access && res.data?.refresh && res.data?.user) {
+      await this.saveSession(res.data.access, res.data.refresh, res.data.user);
+    } else if (res.data?.user) {
+      await this.updateCurrentUser(res.data.user);
+    }
+    return res.data;
+  },
+
+  // Redeem Campus Invite Code to unlock full posting/confessing/chatting
+  async redeemInviteCode(code: string) {
+    const res = await api.post('/authentication/invite/redeem/', { code: code.trim().toUpperCase() });
+    if (res.data?.user) {
+      await this.updateCurrentUser(res.data.user);
+    }
+    return res.data;
+  },
+
+  // Fetch user's peer or admin invite codes
+  async getMyInviteCodes(): Promise<CampusInviteCodeItem[]> {
+    const res = await api.get('/authentication/invite/codes/');
+    return res.data?.codes || [];
+  },
+
+  // Create peer or staff batch invite code
+  async createBatchInviteCode(payload?: {
+    college_id?: number;
+    batch_label?: string;
+    max_uses?: number;
+    code?: string;
+    expires_days?: number;
+  }): Promise<CampusInviteCodeItem> {
+    const res = await api.post('/authentication/invite/codes/', payload || {});
     return res.data;
   },
 

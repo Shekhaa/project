@@ -7,14 +7,7 @@ class SendEmailOTPSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
 
     def validate_email(self, value):
-        email = value.strip().lower()
-        domain_match = CollegeDomain.find_by_email(email)
-        if not domain_match:
-            domain = email.split("@")[-1] if "@" in email else email
-            raise serializers.ValidationError(
-                f"The domain '{domain}' is not authorized. Please use your valid college-issued email."
-            )
-        return email
+        return value.strip().lower()
 
 
 class VerifyEmailOTPSerializer(serializers.Serializer):
@@ -60,6 +53,8 @@ class UserMeSerializer(serializers.ModelSerializer):
     profile = serializers.SerializerMethodField()
     profile_picture = serializers.SerializerMethodField()
     primary_device = serializers.SerializerMethodField()
+    verification_method = serializers.SerializerMethodField()
+    can_participate = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = User
@@ -72,7 +67,11 @@ class UserMeSerializer(serializers.ModelSerializer):
             "is_email_verified",
             "is_phone_verified",
             "is_verified_student",
+            "is_staff",
+            "is_superuser",
             "verification_tier",
+            "verification_method",
+            "can_participate",
             "badge_label",
             "last_login_device",
             "profile_completed",
@@ -80,6 +79,10 @@ class UserMeSerializer(serializers.ModelSerializer):
             "profile",
             "created_at",
         ]
+
+    def get_verification_method(self, obj):
+        prof = getattr(obj, "profile", None)
+        return prof.verification_method if prof else None
 
     def get_profile_picture(self, obj):
         if hasattr(obj, "profile") and obj.profile.profile_picture:
@@ -95,6 +98,8 @@ class UserMeSerializer(serializers.ModelSerializer):
                 "username": p.username,
                 "bio": p.bio,
                 "gender": p.gender,
+                "college_email": p.college_email,
+                "admission_number": p.admission_number,
                 "profile_picture": resolve_media_url(request, p.profile_picture) if p.profile_picture else None,
                 "college": {
                     "id": p.college_id,
@@ -105,6 +110,11 @@ class UserMeSerializer(serializers.ModelSerializer):
                 "branch": {"id": p.branch_id, "name": p.branch.name} if p.branch else None,
                 "academic_year": {"id": p.academic_year_id, "display_name": p.academic_year.display_name} if p.academic_year else None,
                 "section": {"id": p.section_id, "name": p.section.name} if p.section else None,
+                "verified": p.verified,
+                "id_card_verified": p.id_card_verified,
+                "verification_method": p.verification_method,
+                "is_flagged_fake": p.is_flagged_fake,
+                "flag_reason": p.flag_reason,
                 "profile_completed": p.profile_completed,
             }
         return None

@@ -36,18 +36,22 @@ import {
   RefreshCw,
   Mail,
   LogIn,
+  ArrowLeft,
 } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
-import { authService } from '../services/authService';
+import {
+  authService,
+  buildMicrosoftAuthUrl,
+  setMsOAuthMode,
+} from '../services/authService';
+import { showCrossPlatformAlert } from '../utils/mediaUtils';
 
 interface AuthScreenProps {
   onLoginSuccess: (user: any) => void;
+  onDismiss?: () => void;
 }
 
-// Microsoft Entra ID (Azure AD) Client ID for CampusConnect
-const AZURE_CLIENT_ID = (process.env as any)?.EXPO_PUBLIC_AZURE_CLIENT_ID || '3b64e29f-bcab-4aee-9fa2-11bb605f161a';
-
-export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
+export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismiss }) => {
   const { colors, isDark, toggleTheme } = useTheme();
 
   // Mode Switcher: 'LOGIN' (Existing Student Credentials) vs 'SIGN_IN' (New Student Verification / SSO)
@@ -74,12 +78,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
   const [forgotError, setForgotError] = useState('');
 
   // ==========================================
-  // 2. MICROSOFT SSO & ONBOARDING STATE
+  // 2. MICROSOFT SSO, EMAIL OTP & ONBOARDING STATE
   // ==========================================
   const [ssoTokenModal, setSsoTokenModal] = useState(false);
   const [manualTokenInput, setManualTokenInput] = useState('');
   const [ssoLoading, setSsoLoading] = useState(false);
   const [ssoError, setSsoError] = useState<string | null>(null);
+
+  // Email / Gmail 6-digit OTP State
+  const [emailOtpInput, setEmailOtpInput] = useState('');
+  const [emailOtpCode, setEmailOtpCode] = useState('');
+  const [emailOtpStep, setEmailOtpStep] = useState<'EMAIL' | 'OTP'>('EMAIL');
+  const [emailOtpLoading, setEmailOtpLoading] = useState(false);
+  const [emailOtpError, setEmailOtpError] = useState<string | null>(null);
+  const [emailOtpInfo, setEmailOtpInfo] = useState<string | null>(null);
+  const [emailOtpDevCode, setEmailOtpDevCode] = useState<string | null>(null);
 
   // ID Card Scan State
   const [idScanLoading, setIdScanLoading] = useState(false);
@@ -150,11 +163,64 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
   };
 
   // ==========================================
+  // EMAIL / GMAIL 6-DIGIT OTP ACTION
+  // ==========================================
+  const handleSendEmailOtp = async () => {
+    const cleanEmail = emailOtpInput.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setEmailOtpError('Please enter a valid @gmail.com or college email address.');
+      return;
+    }
+    setEmailOtpLoading(true);
+    setEmailOtpError(null);
+    setEmailOtpInfo(null);
+    setEmailOtpDevCode(null);
+    try {
+      const res = await authService.sendEmailOTP(cleanEmail);
+      setEmailOtpStep('OTP');
+      setEmailOtpInfo(res.message || `6-digit verification code sent to ${cleanEmail}`);
+      if (res.dev_otp) {
+        setEmailOtpDevCode(String(res.dev_otp));
+      }
+    } catch (err: any) {
+      const errMsg =
+        err?.response?.data?.error ||
+        err?.response?.data?.email?.[0] ||
+        err?.message ||
+        'Could not send OTP. Check email address and try again.';
+      setEmailOtpError(String(errMsg));
+    } finally {
+      setEmailOtpLoading(false);
+    }
+  };
+
+  const handleVerifyEmailOtp = async () => {
+    const cleanEmail = emailOtpInput.trim().toLowerCase();
+    const cleanCode = emailOtpCode.trim();
+    if (!cleanCode || cleanCode.length < 4) {
+      setEmailOtpError('Enter the 6-digit OTP code sent to your inbox.');
+      return;
+    }
+    setEmailOtpLoading(true);
+    setEmailOtpError(null);
+    try {
+      const res = await authService.verifyEmailOTP(cleanEmail, cleanCode);
+      onLoginSuccess(res.user);
+    } catch (err: any) {
+      const errMsg =
+        err?.response?.data?.error || err?.message || 'Invalid or expired verification code.';
+      setEmailOtpError(String(errMsg));
+    } finally {
+      setEmailOtpLoading(false);
+    }
+  };
+
+  // ==========================================
   // FORGOT PASSWORD FLOW
   // ==========================================
   const handleSendForgotOTP = async () => {
     if (!forgotEmail.trim() || !forgotEmail.includes('@')) {
-      setForgotError('Please enter your valid college email address (@geu.ac.in).');
+      setForgotError('Please enter your valid registered email address.');
       return;
     }
     setForgotLoading(true);
@@ -183,7 +249,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     setForgotError('');
     try {
       await authService.resetPassword(forgotEmail.trim().toLowerCase(), forgotOtp.trim(), forgotNewPassword.trim());
-      Alert.alert('Password Updated! 🔒', 'Your password has been successfully reset. You can now log in.');
+      showCrossPlatformAlert('Password Updated', 'Your password has been reset. You can now log in.');
       setForgotModalVisible(false);
       setLoginIdentifier(forgotEmail.trim());
       setLoginPassword(forgotNewPassword.trim());
@@ -211,8 +277,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
         }
         if (Platform.OS !== 'web') {
           Alert.alert(
-            'University Identity Verified! 🎓',
-            `Welcome, ${res.user.full_name || 'Student'}!\nVerified Email: ${res.user.email}\nRoll Number: ${res.detected_student?.roll_number || 'Verified'}\nCollege: ${res.detected_student?.college_name || 'Graphic Era University'}`
+            'University Identity Verified!',
+            `Welcome, ${res.user.full_name || 'Student'}!\nVerified Email: ${res.user.email}\nCollege: ${res.detected_student?.college_name || 'Graphic Era University'}`
           );
         }
         onLoginSuccess(res.user);
@@ -232,16 +298,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       return;
     }
 
-    const clientId = AZURE_CLIENT_ID;
-    let redirectUri = 'https://jwt.ms';
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
-      redirectUri = `${window.location.origin}/`;
-    }
-    const scopes = encodeURIComponent('openid profile email');
-
-    const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${clientId}&response_type=id_token&redirect_uri=${encodeURIComponent(
-      redirectUri
-    )}&scope=${scopes}&response_mode=fragment&nonce=${Date.now()}&prompt=select_account`;
+    await setMsOAuthMode('login');
+    const authUrl = buildMicrosoftAuthUrl();
 
     try {
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -255,38 +313,22 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  // Auto-detect OAuth redirect if returning with token in hash (Vercel / Web)
-  useEffect(() => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location.hash) {
-      try {
-        const hash = window.location.hash.substring(1);
-        const params = new URLSearchParams(hash);
-        const idToken = params.get('id_token') || params.get('access_token');
-        if (idToken) {
-          if (window.history?.replaceState) {
-            window.history.replaceState(null, '', window.location.pathname);
-          }
-          handleMicrosoftSSO(idToken);
-        }
-      } catch {}
-    }
-  }, []);
-
   // ==========================================
-  // PHYSICAL ID CARD SCAN (OCR)
+  // PHYSICAL ID CARD SUBMISSION (PENDING ADMIN REVIEW)
   // ==========================================
   const handleScanAndLogin = async (base64Data: string) => {
     setIdScanLoading(true);
     try {
       const res = await authService.loginWithIDCard(base64Data);
-      Alert.alert(
-        'Physical ID Verified! 🎓',
-        `Welcome, ${res.user.full_name || 'Student'}!\nRoll No: ${res.extracted_data?.admission_number || 'GEU'}\nStatus: Semi-Verified (Yellow Badge)`
+      showCrossPlatformAlert(
+        'ID Card Submitted for Review',
+        res.message ||
+          'You can browse the campus feed in read-only mode now. Full posting unlocks once a campus admin approves your ID or you redeem a batch invite code.'
       );
       onLoginSuccess(res.user);
     } catch (e: any) {
-      const errMsg = e.response?.data?.error || e.message || 'Could not verify ID card image. Please ensure photo is clear.';
-      Alert.alert('ID Verification Notice', errMsg);
+      const errMsg = e.response?.data?.error || e.message || 'Could not process ID card image. Please ensure photo is clear.';
+      showCrossPlatformAlert('ID Upload Notice', errMsg);
     } finally {
       setIdScanLoading(false);
     }
@@ -453,14 +495,26 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Top Navbar: Campus Identity + Quick Theme Switcher */}
+        {/* Top Navbar: Browse Feed / Campus Identity + Quick Theme Switcher */}
         <View style={styles.topNavRow}>
-          <View style={styles.topBrandPill}>
-            <View style={styles.activeDot} />
-            <Text style={[styles.topBrandText, { color: colors.textSecondary }]}>
-              GEU & GEHU Campus Network
-            </Text>
-          </View>
+          {onDismiss ? (
+            <TouchableOpacity
+              style={[styles.browseFeedBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+              onPress={onDismiss}
+              activeOpacity={0.8}
+              accessibilityLabel="Browse Feed"
+            >
+              <ArrowLeft size={14} color={colors.textPrimary} />
+              <Text style={[styles.browseFeedText, { color: colors.textPrimary }]}>Browse Feed</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.topBrandPill}>
+              <View style={styles.activeDot} />
+              <Text style={[styles.topBrandText, { color: colors.textSecondary }]}>
+                GEU & GEHU Campus Network
+              </Text>
+            </View>
+          )}
 
           <TouchableOpacity
             style={[styles.themeToggleBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
@@ -824,26 +878,189 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
               {/* Elegant Divider */}
               <View style={styles.dividerRow}>
                 <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
-                <Text style={[styles.dividerLabel, { color: colors.textTertiary }]}>OR VERIFY WITH PHYSICAL ID</Text>
+                <Text style={[styles.dividerLabel, { color: colors.textTertiary }]}>OR SIGN IN WITH GMAIL / EMAIL OTP</Text>
                 <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
               </View>
 
-              {/* SECONDARY LOGIN: PHYSICAL ID CARD PHOTO SCAN (OCR) */}
+              {/* EMAIL / GMAIL 6-DIGIT OTP CARD */}
+              <View style={[styles.ssoCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                <View style={styles.ssoCardHeader}>
+                  <View style={styles.badgeRow}>
+                    <View style={styles.emailOtpBadge}>
+                      <Mail size={12} color={colors.primary} />
+                      <Text style={[styles.emailOtpBadgeText, { color: colors.primary }]}>GMAIL / EMAIL OTP</Text>
+                    </View>
+                    <Text style={[styles.zeroOtpLabel, { color: colors.textMuted }]}>6-Digit Code</Text>
+                  </View>
+
+                  <Text style={[styles.ssoTitle, { color: colors.textPrimary }]}>
+                    Continue with Gmail or College Email
+                  </Text>
+                  <Text style={[styles.ssoDesc, { color: colors.textSecondary }]}>
+                    Forgot Outlook credentials? Enter your `@gmail.com` or college email. Browse the feed immediately, then unlock posting with a batch invite code or ID upload.
+                  </Text>
+                </View>
+
+                {emailOtpError && (
+                  <View style={styles.errorAlertBox}>
+                    <AlertCircle size={16} color="#ef4444" />
+                    <Text style={styles.errorAlertText}>{emailOtpError}</Text>
+                  </View>
+                )}
+
+                {emailOtpStep === 'EMAIL' ? (
+                  <View>
+                    <View
+                      style={[
+                        styles.inputFieldRow,
+                        { backgroundColor: colors.surface, borderColor: colors.cardBorder, marginBottom: 10 },
+                      ]}
+                    >
+                      <Mail size={16} color={colors.textSecondary} />
+                      <TextInput
+                        style={[styles.fieldTextInput, { color: colors.textPrimary }]}
+                        placeholder="you@gmail.com or 2313812137@geu.ac.in"
+                        placeholderTextColor={colors.textMuted}
+                        value={emailOtpInput}
+                        onChangeText={(val) => {
+                          setEmailOtpInput(val);
+                          setEmailOtpError(null);
+                        }}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                        onSubmitEditing={handleSendEmailOtp}
+                      />
+                    </View>
+
+                    <TouchableOpacity
+                      style={[styles.primaryActionBtn, { backgroundColor: colors.primary }]}
+                      onPress={handleSendEmailOtp}
+                      disabled={emailOtpLoading}
+                      activeOpacity={0.88}
+                    >
+                      {emailOtpLoading ? (
+                        <ActivityIndicator color="#ffffff" size="small" />
+                      ) : (
+                        <View style={styles.primaryActionContent}>
+                          <Text style={styles.primaryActionText}>Send 6-Digit Verification Code</Text>
+                          <ArrowRight size={15} color="#ffffff" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View>
+                    {emailOtpInfo && (
+                      <View
+                        style={[
+                          styles.emailOtpInfoBox,
+                          {
+                            backgroundColor: isDark ? 'rgba(94, 106, 210, 0.12)' : 'rgba(94, 106, 210, 0.08)',
+                            borderColor: 'rgba(94, 106, 210, 0.3)',
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.emailOtpInfoText, { color: colors.textSecondary }]}>
+                          {emailOtpInfo}
+                        </Text>
+                        {emailOtpDevCode && (
+                          <View style={styles.devOtpRow}>
+                            <Text style={[styles.devOtpLabel, { color: colors.primary }]}>
+                              Dev Code: {emailOtpDevCode}
+                            </Text>
+                            <TouchableOpacity
+                              style={[styles.devOtpFillBtn, { borderColor: colors.primary }]}
+                              onPress={() => setEmailOtpCode(emailOtpDevCode)}
+                            >
+                              <Text style={[styles.devOtpFillText, { color: colors.primary }]}>Fill Code</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    )}
+
+                    <View
+                      style={[
+                        styles.inputFieldRow,
+                        { backgroundColor: colors.surface, borderColor: colors.cardBorder, marginBottom: 10 },
+                      ]}
+                    >
+                      <KeyRound size={16} color={colors.textSecondary} />
+                      <TextInput
+                        style={[styles.fieldTextInput, { color: colors.textPrimary }]}
+                        placeholder="Enter 6-digit OTP code"
+                        placeholderTextColor={colors.textMuted}
+                        value={emailOtpCode}
+                        onChangeText={(val) => {
+                          setEmailOtpCode(val.replace(/[^0-9]/g, ''));
+                          setEmailOtpError(null);
+                        }}
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        onSubmitEditing={handleVerifyEmailOtp}
+                      />
+                    </View>
+
+                    <TouchableOpacity
+                      style={[styles.primaryActionBtn, { backgroundColor: colors.primary }]}
+                      onPress={handleVerifyEmailOtp}
+                      disabled={emailOtpLoading}
+                      activeOpacity={0.88}
+                    >
+                      {emailOtpLoading ? (
+                        <ActivityIndicator color="#ffffff" size="small" />
+                      ) : (
+                        <View style={styles.primaryActionContent}>
+                          <CheckCircle2 size={16} color="#ffffff" />
+                          <Text style={styles.primaryActionText}>Verify OTP & Continue</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+                    <View style={styles.otpSecondaryActions}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setEmailOtpStep('EMAIL');
+                          setEmailOtpCode('');
+                          setEmailOtpError(null);
+                          setEmailOtpDevCode(null);
+                        }}
+                      >
+                        <Text style={[styles.otpSecondaryLink, { color: colors.textSecondary }]}>
+                          ← Change email
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={handleSendEmailOtp} disabled={emailOtpLoading}>
+                        <Text style={[styles.otpSecondaryLink, { color: colors.primary }]}>Resend code</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+
+              {/* Elegant Divider */}
+              <View style={styles.dividerRow}>
+                <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
+                <Text style={[styles.dividerLabel, { color: colors.textTertiary }]}>OR SUBMIT PHYSICAL ID CARD</Text>
+                <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
+              </View>
+
+              {/* TERTIARY LOGIN: PHYSICAL ID CARD SUBMISSION (PENDING ADMIN REVIEW) */}
               <View style={[styles.idScanSection, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
                 <View style={styles.idScanHeader}>
                   <View style={styles.idScanBadgeRow}>
                     <View style={styles.semiBadge}>
                       <View style={styles.semiBadgeDot} />
-                      <Text style={styles.semiBadgeText}>SEMI-VERIFIED (YELLOW BADGE)</Text>
+                      <Text style={styles.semiBadgeText}>ID CARD REVIEW</Text>
                     </View>
-                    <Text style={[styles.semiBadgeSub, { color: colors.textMuted }]}>Instant Entry</Text>
+                    <Text style={[styles.semiBadgeSub, { color: colors.textMuted }]}>Pending Admin Approval</Text>
                   </View>
 
                   <Text style={[styles.idScanTitle, { color: colors.textPrimary }]}>
-                    Scan Physical Student ID Card
+                    Upload Physical Student ID Card
                   </Text>
                   <Text style={[styles.idScanDesc, { color: colors.textSecondary }]}>
-                    Freshman or haven't received college Outlook email yet? Snap a clear photo of your Graphic Era ID card. Our scanner extracts your identity.
+                    No batch invite code or Outlook login yet? Upload a clear photo of your Graphic Era ID card to create an account and queue it for campus admin review.
                   </Text>
                 </View>
 
@@ -863,7 +1080,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                           <Camera size={18} color="#d97706" />
                         </View>
                         <View style={styles.idActionTextWrap}>
-                          <Text style={styles.idActionTitleYellow}>Direct Camera Scan</Text>
+                          <Text style={styles.idActionTitleYellow}>Direct Camera Capture</Text>
                           <Text style={[styles.idActionSub, { color: colors.textMuted }]}>
                             Photograph physical ID card
                           </Text>
@@ -979,7 +1196,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                           <View style={styles.presetTop}>
                             <Text style={[styles.presetName, { color: colors.textPrimary }]}>{p.name}</Text>
                             <View style={styles.presetBadgeYellow}>
-                              <Text style={styles.presetBadgeYellowText}>🟡 ID Card</Text>
+                              <Text style={styles.presetBadgeYellowText}>🟡 Pending Review</Text>
                             </View>
                           </View>
                           <Text style={[styles.presetMeta, { color: colors.textMuted }]}>
@@ -1007,10 +1224,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
       {/* ========================================================= */}
       {/* FORGOT PASSWORD MODAL (EMAIL + OTP + NEW PASSWORD)        */}
       {/* ========================================================= */}
+      {forgotModalVisible && (
       <Modal
         visible={forgotModalVisible}
         transparent
-        animationType="fade"
+        animationType={Platform.OS === 'web' ? 'none' : 'fade'}
         onRequestClose={() => setForgotModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
@@ -1143,14 +1361,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* ========================================================= */}
       {/* MICROSOFT SSO TOKEN & DEV MODAL                           */}
       {/* ========================================================= */}
+      {ssoTokenModal && (
       <Modal
         visible={ssoTokenModal}
         transparent
-        animationType="fade"
+        animationType={Platform.OS === 'web' ? 'none' : 'fade'}
         onRequestClose={() => setSsoTokenModal(false)}
       >
         <View style={styles.modalOverlay}>
@@ -1212,14 +1432,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
               {/* Open in Browser */}
               <TouchableOpacity
                 style={[styles.modalSecondaryBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                onPress={() => {
-                  let redirectUri = 'https://jwt.ms';
-                  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
-                    redirectUri = `${window.location.origin}/`;
-                  }
-                  const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${AZURE_CLIENT_ID}&response_type=id_token&redirect_uri=${encodeURIComponent(
-                    redirectUri
-                  )}&scope=openid%20profile%20email&response_mode=fragment&nonce=${Date.now()}&prompt=select_account`;
+                onPress={async () => {
+                  await setMsOAuthMode('login');
+                  const authUrl = buildMicrosoftAuthUrl();
                   if (Platform.OS === 'web' && typeof window !== 'undefined') {
                     window.location.href = authUrl;
                   } else {
@@ -1235,6 +1450,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           </View>
         </View>
       </Modal>
+      )}
     </KeyboardAvoidingView>
   );
 };
@@ -1259,6 +1475,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 14,
     paddingHorizontal: 4,
+  },
+  browseFeedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  browseFeedText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   topBrandPill: {
     flexDirection: 'row',
@@ -1287,6 +1516,65 @@ const styles = StyleSheet.create({
   },
   themeToggleText: {
     fontSize: 11,
+    fontWeight: '600',
+  },
+  emailOtpBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(94, 106, 210, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(94, 106, 210, 0.35)',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  emailOtpBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  emailOtpInfoBox: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 10,
+    gap: 6,
+  },
+  emailOtpInfoText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  devOtpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
+  devOtpLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  devOtpFillBtn: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  devOtpFillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  otpSecondaryActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingHorizontal: 2,
+  },
+  otpSecondaryLink: {
+    fontSize: 12,
     fontWeight: '600',
   },
   card: {

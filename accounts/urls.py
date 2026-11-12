@@ -5,6 +5,9 @@ from .views import (
     VerifyEmailOTPView,
     MagicLoginView,
     MicrosoftSSOView,
+    LinkMicrosoftSSOView,
+    RedeemInviteCodeView,
+    InviteCodesView,
     SendPhoneOTPView,
     VerifyPhoneOTPView,
     SetPasswordView,
@@ -32,6 +35,10 @@ urlpatterns = [
     path("email/verify-otp/", VerifyEmailOTPView.as_view(), name="auth-email-verify-otp"),
     path("email/magic-login/", MagicLoginView.as_view(), name="auth-email-magic-login"),
 
+    # Campus Invite Code Verification & Generation
+    path("invite/redeem/", RedeemInviteCodeView.as_view(), name="auth-invite-redeem"),
+    path("invite/codes/", InviteCodesView.as_view(), name="auth-invite-codes"),
+
     # Direct Mobile Phone Login (Frictionless for Campus Blind Testing)
     path("phone-login/send-otp/", SendPhoneLoginOTPView.as_view(), name="auth-phone-login-send-otp"),
     path("phone-login/verify-otp/", VerifyPhoneLoginOTPView.as_view(), name="auth-phone-login-verify-otp"),
@@ -39,8 +46,9 @@ urlpatterns = [
     # Spotify-Style College ID Card Photo OCR Instant Login
     path("id-card-login/", IDCardLoginView.as_view(), name="auth-id-card-login"),
 
-    # Microsoft Entra ID (Azure SSO) Single-Tap Authentication
+    # Microsoft Entra ID (Azure SSO) Single-Tap Authentication & In-Account Linking
     path("microsoft/", MicrosoftSSOView.as_view(), name="auth-microsoft-sso"),
+    path("microsoft/link/", LinkMicrosoftSSOView.as_view(), name="auth-microsoft-link"),
 
     # Rapid Testing & Multi-User Switcher
     path("demo-users/", DemoUsersListView.as_view(), name="auth-demo-users"),

@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from accounts.permissions import IsCampusVerified
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.core.exceptions import ValidationError
 
@@ -135,7 +136,7 @@ class AttachmentUploadView(APIView):
     Uploads a standalone attachment ahead of time and returns its metadata & ID.
     Can later be linked to a post or message.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCampusVerified]
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):

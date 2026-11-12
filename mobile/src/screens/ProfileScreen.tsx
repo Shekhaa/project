@@ -12,11 +12,19 @@ import {
   KeyboardAvoidingView,
   Platform,
   Switch,
+  Image,
+  Share,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
-import { authService, User, DemoUser } from '../services/authService';
+import {
+  authService,
+  User,
+  DemoUser,
+  CampusInviteCodeItem,
+  computeCanParticipate,
+} from '../services/authService';
 import { profileService } from '../services/profileService';
 import { postService, Post } from '../services/postService';
 import { PostCard } from '../components/feed/PostCard';
@@ -50,6 +58,10 @@ import {
   Edit3,
   Camera,
   Upload,
+  Copy,
+  Ticket,
+  Clock,
+  Share2,
 } from 'lucide-react-native';
 
 interface ProfileData {
@@ -81,6 +93,8 @@ interface ProfileData {
 
 interface ProfileScreenProps {
   currentUser: User;
+  canParticipate?: boolean;
+  onRequireVerify?: (reason?: string) => void;
   onUserSwitched: (newUser: User) => void;
   onLogout: () => void;
   onStartCall?: (receiverId: number, receiverName: string, callType: 'AUDIO' | 'VIDEO') => void;
@@ -90,11 +104,15 @@ type SettingsSection = 'PROFILE' | 'PASSWORD' | 'PREFERENCES' | 'AUDIT';
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   currentUser,
+  canParticipate,
+  onRequireVerify,
   onUserSwitched,
   onLogout,
   onStartCall,
 }) => {
   const { colors, themeMode, setThemeMode, isDark } = useTheme();
+  const effectiveCanParticipate =
+    typeof canParticipate === 'boolean' ? canParticipate : computeCanParticipate(currentUser);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [demoUsers, setDemoUsers] = useState<DemoUser[]>([]);
@@ -122,11 +140,24 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
 
-  // Blind-Testing 100-User Audit State
+  // Blind-Testing 100-User Audit & Batch Invite State
   const [auditStudents, setAuditStudents] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [totalStudentsCount, setTotalStudentsCount] = useState(0);
+  const [pendingReviewsCount, setPendingReviewsCount] = useState(0);
   const [flaggedCount, setFlaggedCount] = useState(0);
+  const [auditFeedback, setAuditFeedback] = useState<{ kind: 'error' | 'notice'; text: string } | null>(null);
+  const [batchCodeInput, setBatchCodeInput] = useState('');
+  const [batchLabelInput, setBatchLabelInput] = useState('Campus Batch Drop');
+  const [batchMaxUsesInput, setBatchMaxUsesInput] = useState('50');
+  const [batchColleges, setBatchColleges] = useState<Array<{ id: number; name: string; short_name: string }>>([]);
+  const [batchCollegeId, setBatchCollegeId] = useState<number | undefined>(undefined);
+  const [creatingBatchCode, setCreatingBatchCode] = useState(false);
+
+  // Student Invite Codes State
+  const [inviteCodes, setInviteCodes] = useState<CampusInviteCodeItem[]>([]);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteFeedback, setInviteFeedback] = useState<{ kind: 'error' | 'notice'; text: string } | null>(null);
 
   // Edit Profile State
   const [editFullName, setEditFullName] = useState(currentUser.full_name || '');
@@ -294,39 +325,125 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     await AsyncStorage.setItem(key, val ? 'true' : 'false').catch(() => {});
   };
 
+  const loadInviteCodes = async () => {
+    if (!effectiveCanParticipate) {
+      setInviteCodes([]);
+      return;
+    }
+    setInviteLoading(true);
+    try {
+      const codes = await authService.getMyInviteCodes();
+      setInviteCodes(codes);
+    } catch {
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
+  const handleCopyInviteCode = async (code: string, collegeShort?: string) => {
+    const shareText = `Join me on Campus Connect${collegeShort ? ` (${collegeShort})` : ''}! Use my campus invite code: ${code}`;
+    if (Platform.OS === 'web') {
+      try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+          await navigator.clipboard.writeText(code);
+        }
+      } catch {}
+      setInviteFeedback({ kind: 'notice', text: `Copied invite code ${code} to clipboard.` });
+      return;
+    }
+    try {
+      await Share.share({ message: shareText });
+    } catch {
+      setInviteFeedback({ kind: 'notice', text: `Share code: ${code}` });
+    }
+  };
+
+  const handleCreateBatchCode = async () => {
+    setAuditFeedback(null);
+    setCreatingBatchCode(true);
+    try {
+      const parsedMax = parseInt(batchMaxUsesInput.trim(), 10);
+      const created = await authService.createBatchInviteCode({
+        ...(batchCodeInput.trim() ? { code: batchCodeInput.trim().toUpperCase() } : {}),
+        batch_label: batchLabelInput.trim() || 'Campus Batch Drop',
+        max_uses: Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : 50,
+        ...(batchCollegeId ? { college_id: batchCollegeId } : {}),
+      });
+      setBatchCodeInput('');
+      setAuditFeedback({
+        kind: 'notice',
+        text: `Batch code ${created.code} ready (${created.remaining_uses}/${created.max_uses} uses).`,
+      });
+      await loadInviteCodes();
+    } catch (e: any) {
+      const msg = e?.response?.data?.error || 'Could not generate batch invite code.';
+      setAuditFeedback({ kind: 'error', text: msg });
+      if (Platform.OS !== 'web') {
+        Alert.alert('Error', msg);
+      }
+    } finally {
+      setCreatingBatchCode(false);
+    }
+  };
+
   const loadAuditList = async () => {
     setAuditLoading(true);
     try {
-      const data = await profileService.getAdminAuditStudents();
+      const [data, colleges] = await Promise.all([
+        profileService.getAdminAuditStudents(),
+        batchColleges.length === 0 ? profileService.getColleges().catch(() => []) : Promise.resolve(batchColleges),
+      ]);
       setAuditStudents(data.students || []);
       setTotalStudentsCount(data.total_students || 0);
+      setPendingReviewsCount(data.pending_reviews || 0);
       setFlaggedCount(data.flagged_accounts || 0);
+      if (Array.isArray(colleges) && colleges.length > 0) {
+        setBatchColleges(colleges);
+        if (!batchCollegeId) {
+          const geuCol =
+            colleges.find((c: any) => c.short_name === 'GEU' || c.name === 'Graphic Era University') ||
+            colleges[0];
+          setBatchCollegeId(geuCol.id);
+        }
+      }
+      await loadInviteCodes();
     } catch (e: any) {
-      console.log('Error loading audit students', e);
+      setAuditFeedback({
+        kind: 'error',
+        text: e?.response?.data?.error || 'Could not load audit queue.',
+      });
     } finally {
       setAuditLoading(false);
     }
   };
 
   const handleAuditAction = async (userId: number, action: 'APPROVE' | 'FLAG_FAKE') => {
+    setAuditFeedback(null);
     try {
       const reason = action === 'FLAG_FAKE' ? 'Flagged fake profile during admin campus audit' : undefined;
-      await profileService.auditUserAction(userId, action, reason);
-      showCrossPlatformAlert(
-        action === 'APPROVE' ? 'Student Approved' : 'Profile Flagged',
-        action === 'APPROVE'
+      const res = await profileService.auditUserAction(userId, action, reason);
+      const msg =
+        res?.message ||
+        (action === 'APPROVE'
           ? 'Account marked as verified student.'
-          : 'Account flagged as fake. Student will be restricted from posting.'
-      );
+          : 'Account flagged as fake. Student will be restricted from posting.');
+      setAuditFeedback({ kind: 'notice', text: msg });
+      if (Platform.OS !== 'web') {
+        Alert.alert(action === 'APPROVE' ? 'Student Approved' : 'Profile Flagged', msg);
+      }
       loadAuditList();
     } catch (e: any) {
-      showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update student status.');
+      const errMsg = e.response?.data?.error || 'Could not update student status.';
+      setAuditFeedback({ kind: 'error', text: errMsg });
+      if (Platform.OS !== 'web') {
+        Alert.alert('Action Failed', errMsg);
+      }
     }
   };
 
   useEffect(() => {
     loadProfileAndDemoUsers();
-  }, [currentUser.id]);
+  }, [currentUser.id, effectiveCanParticipate]);
 
   const loadProfileAndDemoUsers = async () => {
     setLoading(true);
@@ -350,6 +467,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         setMessagingPreference(profileData.messaging_preference || 'EVERYONE');
       }
       setEditFullName(currentUser.full_name || '');
+      loadInviteCodes();
     } catch (e) {
       console.log('Error loading profile data', e);
     } finally {
@@ -624,6 +742,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     .substring(0, 2)
     .toUpperCase();
 
+  const verificationTier =
+    currentUser.verification_tier ||
+    (profile?.verified ? 'FULLY_VERIFIED' : 'UNVERIFIED');
+
   const triggerLogout = () => {
     if (Platform.OS === 'web') {
       const confirmed = typeof window !== 'undefined' ? window.confirm('Are you sure you want to sign out from Campus Connect?') : true;
@@ -757,15 +879,25 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <View style={styles.heroIdentity}>
             <View style={styles.nameBadgeRow}>
               <Text style={[styles.fullName, { color: colors.textPrimary }]}>{currentUser.full_name || 'Campus Student'}</Text>
-              {currentUser.verification_tier === 'SEMI_VERIFIED' || !profile?.verified ? (
+              {verificationTier === 'FULLY_VERIFIED' ? (
+                <View style={styles.verifiedTag}>
+                  <ShieldCheck size={12} color="#27a644" />
+                  <Text style={styles.verifiedTagText}>OFFICIAL ID</Text>
+                </View>
+              ) : verificationTier === 'INVITE_VERIFIED' ? (
+                <View style={styles.inviteVerifiedTag}>
+                  <Ticket size={11} color="#828fff" />
+                  <Text style={styles.inviteVerifiedTagText}>INVITE VERIFIED</Text>
+                </View>
+              ) : verificationTier === 'SEMI_VERIFIED' ? (
                 <View style={styles.semiVerifiedTag}>
-                  <AlertCircle size={11} color="#f59e0b" />
+                  <Clock size={11} color="#f59e0b" />
                   <Text style={styles.semiVerifiedTagText}>ID PENDING</Text>
                 </View>
               ) : (
-                <View style={styles.verifiedTag}>
-                  <ShieldCheck size={12} color="#27a644" />
-                  <Text style={styles.verifiedTagText}>VERIFIED</Text>
+                <View style={styles.unverifiedTag}>
+                  <AlertCircle size={11} color={colors.textMuted} />
+                  <Text style={[styles.unverifiedTagText, { color: colors.textMuted }]}>READ-ONLY</Text>
                 </View>
               )}
             </View>
@@ -790,15 +922,55 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         </View>
 
-        {/* Semi-Verified Callout Banner */}
-        {(currentUser.verification_tier === 'SEMI_VERIFIED' || !profile?.verified) && (
-          <View style={styles.semiVerifiedBanner}>
+        {/* Campus Verification Upgrade Callout */}
+        {(verificationTier !== 'FULLY_VERIFIED' || !effectiveCanParticipate) && (
+          <View
+            style={[
+              verificationTier === 'INVITE_VERIFIED' ? styles.inviteUpgradeBanner : styles.semiVerifiedBanner,
+            ]}
+          >
             <View style={{ flex: 1 }}>
-              <Text style={styles.semiVerifiedBannerTitle}>Verification in Progress</Text>
-              <Text style={styles.semiVerifiedBannerSub}>
-                Phone presence verified on campus. Scan your physical College ID card to earn the Verified Student badge.
+              <Text
+                style={[
+                  verificationTier === 'INVITE_VERIFIED'
+                    ? styles.inviteUpgradeBannerTitle
+                    : styles.semiVerifiedBannerTitle,
+                ]}
+              >
+                {verificationTier === 'INVITE_VERIFIED'
+                  ? 'Invite Verified — Upgrade to Official ID'
+                  : verificationTier === 'SEMI_VERIFIED'
+                  ? 'Student ID Under Admin Review'
+                  : 'Read-Only Access — Verify to Participate'}
+              </Text>
+              <Text style={[styles.semiVerifiedBannerSub, { color: colors.textSecondary }]}>
+                {verificationTier === 'INVITE_VERIFIED'
+                  ? 'Link your @geu/@gehu Microsoft account anytime to upgrade from Campus Invited to Official Verified Student.'
+                  : verificationTier === 'SEMI_VERIFIED'
+                  ? 'Your uploaded ID card is queued for admin approval. Enter a Batch Invite Code or link Microsoft SSO for instant access.'
+                  : 'Personal email accounts browse read-only. Enter a Batch Invite Code, upload your Student ID card, or link Microsoft SSO.'}
               </Text>
             </View>
+            {onRequireVerify && (
+              <TouchableOpacity
+                style={[
+                  styles.verifyUpgradeBtn,
+                  { backgroundColor: colors.primary },
+                ]}
+                onPress={() =>
+                  onRequireVerify(
+                    verificationTier === 'INVITE_VERIFIED'
+                      ? 'Link your @geu/@gehu Microsoft ID to upgrade to an Official Verified Student badge.'
+                      : 'Verify your Campus ID or redeem an invite code to unlock posting, commenting, and messaging.'
+                  )
+                }
+                activeOpacity={0.85}
+              >
+                <Text style={styles.verifyUpgradeBtnText}>
+                  {verificationTier === 'INVITE_VERIFIED' ? 'Upgrade' : 'Verify ID'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -864,6 +1036,104 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Invite Classmates Card (Verified Students & Admins) */}
+      {effectiveCanParticipate && (
+        <View style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ticket size={16} color={colors.primary} />
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary, marginBottom: 0 }]}>
+                Invite Classmates
+              </Text>
+            </View>
+            <TouchableOpacity onPress={loadInviteCodes} disabled={inviteLoading}>
+              <Text style={[styles.sectionBadgeText, { color: colors.primary }]}>
+                {inviteLoading ? 'Refreshing...' : 'Refresh'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.hubDescText, { color: colors.textSecondary, marginTop: 6 }]}>
+            Share your campus invite code with trusted batchmates who signed up via Gmail so they can post and chat immediately.
+          </Text>
+
+          {inviteFeedback && (
+            <View
+              style={[
+                styles.inlineNoticeBanner,
+                {
+                  backgroundColor:
+                    inviteFeedback.kind === 'error'
+                      ? 'rgba(239, 68, 68, 0.12)'
+                      : 'rgba(94, 106, 210, 0.12)',
+                  borderColor:
+                    inviteFeedback.kind === 'error'
+                      ? 'rgba(239, 68, 68, 0.35)'
+                      : 'rgba(94, 106, 210, 0.35)',
+                },
+              ]}
+            >
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontWeight: '600',
+                  color: inviteFeedback.kind === 'error' ? '#ef4444' : colors.primary,
+                }}
+              >
+                {inviteFeedback.text}
+              </Text>
+            </View>
+          )}
+
+          {inviteLoading && inviteCodes.length === 0 ? (
+            <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 10 }} />
+          ) : inviteCodes.length === 0 ? (
+            <Text style={[styles.subtext, { color: colors.textMuted, marginBottom: 0 }]}>
+              Tap Refresh to load your campus invite code.
+            </Text>
+          ) : (
+            <View style={{ gap: 8 }}>
+              {inviteCodes.map((item) => (
+                <View
+                  key={item.id}
+                  style={[
+                    styles.inviteCodeRow,
+                    { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                  ]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={[styles.inviteCodeValue, { color: colors.textPrimary }]}>
+                        {item.code}
+                      </Text>
+                      <Text style={[styles.inviteCodeBadge, { color: colors.primary }]}>
+                        {item.college_short_name || 'Campus'}
+                      </Text>
+                    </View>
+                    <Text style={[styles.inviteCodeMeta, { color: colors.textMuted }]}>
+                      {item.batch_label || 'Peer Invite'} • {item.uses_count}/{item.max_uses} used
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.copyCodeBtn, { backgroundColor: colors.primary }]}
+                    onPress={() => handleCopyInviteCode(item.code, item.college_short_name)}
+                    activeOpacity={0.8}
+                  >
+                    {Platform.OS === 'web' ? (
+                      <Copy size={13} color="#ffffff" />
+                    ) : (
+                      <Share2 size={13} color="#ffffff" />
+                    )}
+                    <Text style={styles.copyCodeBtnText}>
+                      {Platform.OS === 'web' ? 'Copy' : 'Share'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
 
       {/* ⚡ Student Hub & Quick Access (My Saves, Blocked IDs, Account Info, Preferences, Notification Controls) */}
       <View style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
@@ -1244,9 +1514,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       </TouchableOpacity>
 
       {/* ⚙️ Comprehensive Campus Settings Modal */}
+      {settingsModalVisible && (
       <Modal
         visible={settingsModalVisible}
-        animationType="slide"
+        animationType={Platform.OS === 'web' ? 'none' : 'slide'}
         transparent
         onRequestClose={() => setSettingsModalVisible(false)}
       >
@@ -1321,26 +1592,28 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  styles.settingsNavTab,
-                  activeSettingsSection === 'AUDIT' && styles.settingsNavTabActive,
-                ]}
-                onPress={() => {
-                  setActiveSettingsSection('AUDIT');
-                  loadAuditList();
-                }}
-              >
-                <Text
+              {(currentUser.is_staff || currentUser.is_superuser) && (
+                <TouchableOpacity
                   style={[
-                    styles.settingsNavText,
-                    { color: colors.textSecondary },
-                    activeSettingsSection === 'AUDIT' && styles.settingsNavTextActive,
+                    styles.settingsNavTab,
+                    activeSettingsSection === 'AUDIT' && styles.settingsNavTabActive,
                   ]}
+                  onPress={() => {
+                    setActiveSettingsSection('AUDIT');
+                    loadAuditList();
+                  }}
                 >
-                  📋 Audit (100)
-                </Text>
-              </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.settingsNavText,
+                      { color: colors.textSecondary },
+                      activeSettingsSection === 'AUDIT' && styles.settingsNavTextActive,
+                    ]}
+                  >
+                    📋 Audit ({totalStudentsCount || 100})
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             <ScrollView style={styles.settingsContentScroll} keyboardShouldPersistTaps="handled">
@@ -1797,9 +2070,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 <View style={styles.settingsSectionBody}>
                   <View style={styles.auditHeaderRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Campus 100-User Audit Shield</Text>
+                      <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Campus Verification & Audit Shield</Text>
                       <Text style={[styles.auditHeaderSub, { color: colors.textSecondary }]}>
-                        Track verified ID cards and eliminate fake accounts during blind testing.
+                        Review pending physical student IDs, flag fake profiles, and drop batch invite codes.
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -1811,6 +2084,35 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     </TouchableOpacity>
                   </View>
 
+                  {auditFeedback && (
+                    <View
+                      style={[
+                        styles.inlineNoticeBanner,
+                        {
+                          backgroundColor:
+                            auditFeedback.kind === 'error'
+                              ? 'rgba(239, 68, 68, 0.12)'
+                              : 'rgba(39, 166, 68, 0.12)',
+                          borderColor:
+                            auditFeedback.kind === 'error'
+                              ? 'rgba(239, 68, 68, 0.35)'
+                              : 'rgba(39, 166, 68, 0.35)',
+                          marginBottom: 12,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: '600',
+                          color: auditFeedback.kind === 'error' ? '#ef4444' : '#27a644',
+                        }}
+                      >
+                        {auditFeedback.text}
+                      </Text>
+                    </View>
+                  )}
+
                   {/* Metrics Bar */}
                   <View style={styles.auditMetricsRow}>
                     <View style={[styles.auditMetricBox, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
@@ -1818,8 +2120,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       <Text style={[styles.auditMetricLabel, { color: colors.textMuted }]}>STUDENTS</Text>
                     </View>
                     <View style={[styles.auditMetricBox, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                      <Text style={[styles.auditMetricNum, { color: '#f59e0b' }]}>{pendingReviewsCount}</Text>
+                      <Text style={[styles.auditMetricLabel, { color: colors.textMuted }]}>PENDING ID</Text>
+                    </View>
+                    <View style={[styles.auditMetricBox, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
                       <Text style={[styles.auditMetricNum, { color: '#34d399' }]}>
-                        {totalStudentsCount - flaggedCount}
+                        {Math.max(0, totalStudentsCount - flaggedCount - pendingReviewsCount)}
                       </Text>
                       <Text style={[styles.auditMetricLabel, { color: colors.textMuted }]}>VERIFIED</Text>
                     </View>
@@ -1827,8 +2133,122 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       <Text style={[styles.auditMetricNum, { color: '#ef4444' }]}>
                         {flaggedCount}
                       </Text>
-                      <Text style={[styles.auditMetricLabel, { color: colors.textMuted }]}>FLAGGED FAKE</Text>
+                      <Text style={[styles.auditMetricLabel, { color: colors.textMuted }]}>FLAGGED</Text>
                     </View>
+                  </View>
+
+                  {/* Founder Batch Invite Code Generator */}
+                  <View
+                    style={[
+                      styles.batchDropCard,
+                      { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                    ]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                      <Ticket size={15} color={colors.primary} />
+                      <Text style={[styles.batchDropTitle, { color: colors.textPrimary }]}>
+                        Generate Batch Invite Code
+                      </Text>
+                    </View>
+                    <Text style={[styles.auditHeaderSub, { color: colors.textMuted, marginBottom: 10 }]}>
+                      Hand out a batch code during lectures or WhatsApp group launches so students can unlock full posting after Gmail OTP sign-in.
+                    </Text>
+
+                    {batchColleges.length > 0 && (
+                      <View style={styles.batchCollegeRow}>
+                        {batchColleges.map((c) => {
+                          const selected = batchCollegeId === c.id;
+                          return (
+                            <TouchableOpacity
+                              key={c.id}
+                              style={[
+                                styles.batchCollegePill,
+                                {
+                                  backgroundColor: selected ? colors.primary : colors.surface,
+                                  borderColor: selected ? colors.primary : colors.cardBorder,
+                                },
+                              ]}
+                              onPress={() => setBatchCollegeId(c.id)}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: '700',
+                                  color: selected ? '#ffffff' : colors.textSecondary,
+                                }}
+                              >
+                                {c.short_name}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                    <View style={styles.batchInputRow}>
+                      <TextInput
+                        style={[
+                          styles.settingsInput,
+                          {
+                            flex: 1,
+                            backgroundColor: colors.surface,
+                            color: colors.textPrimary,
+                            borderColor: colors.cardBorder,
+                            marginBottom: 0,
+                          },
+                        ]}
+                        placeholder="Custom code (optional, e.g. GEUBTECH)"
+                        placeholderTextColor={colors.textMuted}
+                        autoCapitalize="characters"
+                        value={batchCodeInput}
+                        onChangeText={setBatchCodeInput}
+                      />
+                      <TextInput
+                        style={[
+                          styles.settingsInput,
+                          {
+                            width: 72,
+                            backgroundColor: colors.surface,
+                            color: colors.textPrimary,
+                            borderColor: colors.cardBorder,
+                            marginBottom: 0,
+                            textAlign: 'center',
+                          },
+                        ]}
+                        placeholder="50"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="numeric"
+                        value={batchMaxUsesInput}
+                        onChangeText={setBatchMaxUsesInput}
+                      />
+                    </View>
+
+                    <TextInput
+                      style={[
+                        styles.settingsInput,
+                        {
+                          backgroundColor: colors.surface,
+                          color: colors.textPrimary,
+                          borderColor: colors.cardBorder,
+                          marginTop: 8,
+                          marginBottom: 10,
+                        },
+                      ]}
+                      placeholder="Batch label (e.g. CSE Sec A Batch 2026)"
+                      placeholderTextColor={colors.textMuted}
+                      value={batchLabelInput}
+                      onChangeText={setBatchLabelInput}
+                    />
+
+                    <TouchableOpacity
+                      style={[styles.saveChangesBtn, { marginTop: 0, backgroundColor: colors.primary }]}
+                      onPress={handleCreateBatchCode}
+                      disabled={creatingBatchCode}
+                    >
+                      <Text style={styles.saveChangesText}>
+                        {creatingBatchCode ? 'Creating Code...' : 'Generate Batch Invite Code'}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
 
                   {auditLoading ? (
@@ -1846,6 +2266,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                           style={[
                             styles.auditCard,
                             { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                            s.pending_review && styles.auditCardPending,
                             s.is_flagged_fake && styles.auditCardFlagged,
                           ]}
                         >
@@ -1856,18 +2277,24 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                               size={40}
                             />
                             <View style={{ flex: 1 }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                 <Text style={[styles.auditName, { color: colors.textPrimary }]}>@{s.username}</Text>
                                 <View
                                   style={[
                                     styles.auditMethodPill,
-                                    s.verification_method === 'ID_CARD_OCR'
+                                    s.pending_review
+                                      ? styles.pillPending
+                                      : s.verification_method === 'ID_CARD_OCR'
                                       ? styles.pillOcr
                                       : styles.pillEmail,
                                   ]}
                                 >
                                   <Text style={styles.auditMethodText}>
-                                    {s.verification_method === 'ID_CARD_OCR' ? '📷 ID CARD OCR' : s.verification_method}
+                                    {s.pending_review
+                                      ? '⏳ ID REVIEW PENDING'
+                                      : s.verification_method === 'ID_CARD_OCR'
+                                      ? '📷 ID CARD'
+                                      : s.verification_method || s.verification_tier}
                                   </Text>
                                 </View>
                               </View>
@@ -1883,6 +2310,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                             </View>
                           </View>
 
+                          {s.id_card_image ? (
+                            <View style={[styles.auditIdImageWrap, { borderColor: colors.cardBorder, backgroundColor: colors.surface }]}>
+                              <Image
+                                source={{ uri: s.id_card_image }}
+                                style={styles.auditIdImage}
+                                resizeMode="contain"
+                              />
+                            </View>
+                          ) : null}
+
                           {s.is_flagged_fake && (
                             <View style={styles.auditFlagBox}>
                               <Text style={styles.auditFlagIcon}>⚠️</Text>
@@ -1892,20 +2329,21 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                             </View>
                           )}
 
-                          <View style={styles.auditActionsRow}>
-                            {s.is_flagged_fake ? (
+                          <View style={[styles.auditActionsRow, { gap: 8 }]}>
+                            {(!s.id_card_verified || s.is_flagged_fake || !s.can_participate) && (
                               <TouchableOpacity
                                 style={styles.auditApproveBtn}
                                 onPress={() => handleAuditAction(s.user_id, 'APPROVE')}
                               >
                                 <Text style={styles.auditApproveText}>✅ Approve Student</Text>
                               </TouchableOpacity>
-                            ) : (
+                            )}
+                            {!s.is_flagged_fake && (
                               <TouchableOpacity
                                 style={styles.auditFlagBtn}
                                 onPress={() => handleAuditAction(s.user_id, 'FLAG_FAKE')}
                               >
-                                <Text style={styles.auditFlagText}>🚫 Flag Fake Account</Text>
+                                <Text style={styles.auditFlagText}>🚫 Flag Fake</Text>
                               </TouchableOpacity>
                             )}
                           </View>
@@ -1919,11 +2357,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      )}
 
       {/* Full Screen Modal Switcher */}
+      {switcherModalVisible && (
       <Modal
         visible={switcherModalVisible}
-        animationType="slide"
+        animationType={Platform.OS === 'web' ? 'none' : 'slide'}
         transparent
         onRequestClose={() => setSwitcherModalVisible(false)}
       >
@@ -1984,6 +2424,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         </View>
       </Modal>
+      )}
 
       {/* Social List Modal (Followers / Following / Connections) */}
       <SocialListModal
@@ -2007,6 +2448,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       <StudentProfileModal
         visible={viewingStudentId !== null}
         userId={viewingStudentId}
+        canParticipate={effectiveCanParticipate}
+        onRequireVerify={onRequireVerify}
         onClose={() => {
           setViewingStudentId(null);
           // Refresh own profile counts when closing student profile modal
@@ -2027,7 +2470,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {/* 🔖 My Saved Posts Modal */}
       <Modal
         visible={savedModalVisible}
-        animationType="slide"
+        animationType={Platform.OS === 'web' ? 'none' : 'slide'}
         transparent
         onRequestClose={() => setSavedModalVisible(false)}
       >
@@ -2101,7 +2544,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {/* 🚫 My Blocked IDs Modal */}
       <Modal
         visible={blockedModalVisible}
-        animationType="slide"
+        animationType={Platform.OS === 'web' ? 'none' : 'slide'}
         transparent
         onRequestClose={() => setBlockedModalVisible(false)}
       >
@@ -2186,7 +2629,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {/* 🏛️ My Account Info Modal */}
       <Modal
         visible={accountInfoModalVisible}
-        animationType="slide"
+        animationType={Platform.OS === 'web' ? 'none' : 'slide'}
         transparent
         onRequestClose={() => setAccountInfoModalVisible(false)}
       >
@@ -2209,17 +2652,36 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 {/* Verification Badge Hero */}
                 <View style={[styles.credentialHeroCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <ShieldCheck size={26} color={currentUser.verification_tier === 'SEMI_VERIFIED' || !profile?.verified ? '#f59e0b' : '#10b981'} />
+                    <ShieldCheck
+                      size={26}
+                      color={
+                        verificationTier === 'FULLY_VERIFIED'
+                          ? '#10b981'
+                          : verificationTier === 'INVITE_VERIFIED'
+                          ? '#828fff'
+                          : verificationTier === 'SEMI_VERIFIED'
+                          ? '#f59e0b'
+                          : colors.textMuted
+                      }
+                    />
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.credentialStatusTitle, { color: colors.textPrimary }]}>
-                        {currentUser.verification_tier === 'SEMI_VERIFIED' || !profile?.verified
-                          ? 'Semi-Verified (ID Pending)'
-                          : 'Fully Verified Student ✅'}
+                        {verificationTier === 'FULLY_VERIFIED'
+                          ? 'Official Verified Student ✅'
+                          : verificationTier === 'INVITE_VERIFIED'
+                          ? 'Campus Invited (Verified Peer)'
+                          : verificationTier === 'SEMI_VERIFIED'
+                          ? 'Student ID Under Admin Review'
+                          : 'Read-Only Account (Unverified)'}
                       </Text>
                       <Text style={[styles.credentialStatusSub, { color: colors.textMuted }]}>
-                        {currentUser.verification_tier === 'SEMI_VERIFIED' || !profile?.verified
-                          ? 'Physical college ID scan is pending. Phone presence active on campus.'
-                          : 'Institutional credentials verified via official college ID & email.'}
+                        {verificationTier === 'FULLY_VERIFIED'
+                          ? 'Institutional credentials verified via official college Microsoft ID or admin review.'
+                          : verificationTier === 'INVITE_VERIFIED'
+                          ? 'Full participation unlocked via a Campus Batch Invite Code. Link Microsoft ID anytime to upgrade.'
+                          : verificationTier === 'SEMI_VERIFIED'
+                          ? 'Physical student ID uploaded and queued for review. Enter an invite code or link Microsoft SSO for instant access.'
+                          : 'Personal email accounts are read-only until verified via invite code, student ID, or college Microsoft ID.'}
                       </Text>
                     </View>
                   </View>
@@ -2295,7 +2757,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {/* ⚙️ My Preferences Modal */}
       <Modal
         visible={preferencesModalVisible}
-        animationType="slide"
+        animationType={Platform.OS === 'web' ? 'none' : 'slide'}
         transparent
         onRequestClose={() => setPreferencesModalVisible(false)}
       >
@@ -2453,7 +2915,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {/* 🔔 My Notification Settings Modal */}
       <Modal
         visible={notifModalVisible}
-        animationType="slide"
+        animationType={Platform.OS === 'web' ? 'none' : 'slide'}
         transparent
         onRequestClose={() => setNotifModalVisible(false)}
       >
@@ -2893,13 +3355,44 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
+  inviteVerifiedTag: {
+    backgroundColor: 'rgba(94, 106, 210, 0.14)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(94, 106, 210, 0.35)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  inviteVerifiedTagText: {
+    color: '#828fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  unverifiedTag: {
+    backgroundColor: 'rgba(138, 143, 152, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(138, 143, 152, 0.28)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  unverifiedTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
   semiVerifiedBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(245, 158, 11, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(245, 158, 11, 0.25)',
-    borderRadius: 12,
+    borderRadius: 10,
     padding: 12,
     marginTop: 14,
     gap: 10,
@@ -2909,11 +3402,82 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  inviteUpgradeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(94, 106, 210, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(94, 106, 210, 0.25)',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 14,
+    gap: 10,
+  },
+  inviteUpgradeBannerTitle: {
+    color: '#828fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  verifyUpgradeBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifyUpgradeBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   semiVerifiedBannerSub: {
     color: colors.textSecondary,
     fontSize: 11,
     marginTop: 2,
     lineHeight: 16,
+  },
+  inlineNoticeBanner: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  inviteCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  inviteCodeValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  inviteCodeBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  inviteCodeMeta: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  copyCodeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  copyCodeBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   handleText: {
     color: colors.primary,
@@ -3602,12 +4166,43 @@ const styles = StyleSheet.create({
     marginTop: 2,
     letterSpacing: 0.5,
   },
+  batchDropCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 10,
+  },
+  batchDropTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  batchCollegeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+  },
+  batchCollegePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  batchInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
   auditCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 14,
+  },
+  auditCardPending: {
+    borderColor: 'rgba(245, 158, 11, 0.45)',
+    backgroundColor: 'rgba(245, 158, 11, 0.04)',
   },
   auditCardFlagged: {
     borderColor: 'rgba(239, 68, 68, 0.5)',
@@ -3640,6 +4235,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 5,
   },
+  pillPending: {
+    backgroundColor: 'rgba(245, 158, 11, 0.16)',
+  },
   pillOcr: {
     backgroundColor: 'rgba(99, 102, 241, 0.2)',
   },
@@ -3650,6 +4248,18 @@ const styles = StyleSheet.create({
     color: '#a5b4fc',
     fontSize: 9,
     fontWeight: '800',
+  },
+  auditIdImageWrap: {
+    marginTop: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+    padding: 4,
+  },
+  auditIdImage: {
+    width: '100%',
+    height: 140,
+    borderRadius: 6,
   },
   auditMetaText: {
     fontSize: 11,

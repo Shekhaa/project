@@ -2,6 +2,7 @@ from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from accounts.permissions import IsCampusVerified
 from django.shortcuts import get_object_or_404
 from django.db.models import Count, Q, F
 from django.utils import timezone
@@ -57,7 +58,7 @@ class CreateCustomCommunityView(APIView):
     Allows any student to create their own custom campus community/club (Reddit/WhatsApp style).
     Creator is set as OWNER.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCampusVerified]
 
     def post(self, request):
         serializer = CreateCustomCommunitySerializer(data=request.data)
@@ -115,7 +116,7 @@ class CommunityDetailView(generics.RetrieveDestroyAPIView):
 
 
 class JoinLeaveCommunityView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCampusVerified]
 
     def post(self, request, slug):
         community = get_object_or_404(Community, slug=slug)
@@ -147,7 +148,7 @@ class CommunityGroupChatView(APIView):
     POST /api/communities/<slug>/chat/
     Opens or retrieves the dedicated group chat conversation for this community.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCampusVerified]
 
     def post(self, request, slug):
         community = get_object_or_404(Community, slug=slug)
@@ -182,7 +183,10 @@ class CommunityDiscussionsView(APIView):
     GET /api/communities/<slug>/discussions/
     POST /api/communities/<slug>/discussions/
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), IsCampusVerified()]
 
     def get(self, request, slug):
         community = get_object_or_404(Community, slug=slug)
@@ -367,7 +371,7 @@ class DiscussionRepliesView(APIView):
     POST /api/communities/<slug>/discussions/<id>/replies/
     Supports typed text, voice notes / attachments, or both together.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCampusVerified]
 
     def post(self, request, slug, pk):
         import uuid
@@ -598,7 +602,7 @@ class DiscussionVoteView(APIView):
     POST /api/communities/<slug>/discussions/<id>/vote/
     Upvote / unvote on a discussion or a reply.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCampusVerified]
 
     def post(self, request, slug, pk):
         community = get_object_or_404(Community, slug=slug)
@@ -769,7 +773,10 @@ class CommunityReportsView(APIView):
     POST /api/communities/<slug>/reports/ (Submit report)
     GET /api/communities/<slug>/reports/ (List reports for moderators)
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), IsCampusVerified()]
 
     def post(self, request, slug):
         community = get_object_or_404(Community, slug=slug)
@@ -873,7 +880,10 @@ class CommunityJoinByInviteView(APIView):
     GET /api/communities/invite/<invite_code>/ (Preview community)
     POST /api/communities/invite/<invite_code>/ (Join community)
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), IsCampusVerified()]
 
     def get(self, request, invite_code):
         community = get_object_or_404(Community, invite_code=invite_code)

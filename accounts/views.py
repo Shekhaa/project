@@ -1,7 +1,12 @@
 import json
+import re
 import base64
 import urllib.request
+from datetime import timedelta
 from django.conf import settings
+from django.db import transaction
+from django.db.models import F, Q
+from django.utils import timezone
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -10,11 +15,10 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from django.http import HttpResponse
-from django.db.models import Q
 from otp.services import OTPService
-from colleges.models import CollegeDomain, Course, Branch, AcademicYear
+from colleges.models import College, CollegeDomain, Course, Branch, AcademicYear
 from profiles.models import StudentProfile
-from .models import User
+from .models import User, CampusInviteCode, is_institutional_email
 from .serializers import (
     SendEmailOTPSerializer,
     VerifyEmailOTPSerializer,
@@ -25,10 +29,36 @@ from .serializers import (
     UserMeSerializer,
 )
 
+
+def _build_user_auth_payload(request, user):
+    from config.media_utils import resolve_media_url
+    prof = getattr(user, "profile", None)
+    avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
+    return {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name or (prof.username if prof else user.email.split("@")[0]),
+        "username": prof.username if prof else user.email.split("@")[0],
+        "phone_number": user.phone_number,
+        "profile_picture": avatar_url,
+        "is_email_verified": user.is_email_verified,
+        "is_phone_verified": user.is_phone_verified,
+        "is_verified_student": user.is_verified_student,
+        "is_staff": user.is_staff,
+        "is_superuser": user.is_superuser,
+        "verification_tier": user.verification_tier,
+        "verification_method": prof.verification_method if prof else None,
+        "can_participate": user.can_participate,
+        "badge_label": user.badge_label,
+        "profile_completed": user.profile_completed,
+    }
+
+
 class SendEmailOTPView(APIView):
     """
     POST /api/authentication/email/send-otp/
-    Validates college email domain, dispatches 6-digit OTP and 1-Click Magic Link.
+    Supports both university domains (@geu.ac.in / @gehu.ac.in) and personal emails (@gmail.com).
+    Dispatches 6-digit OTP and 1-Click Magic Link.
     """
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -43,9 +73,10 @@ class SendEmailOTPView(APIView):
         if not success:
             return Response({"error": msg}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
-        # Detect associated college
+        # Detect associated college (None for personal Gmail)
         domain_match = CollegeDomain.find_by_email(email)
         college_info = {
+            "id": domain_match.college.id,
             "name": domain_match.college.name,
             "short_name": domain_match.college.short_name,
         } if domain_match else None
@@ -59,6 +90,8 @@ class SendEmailOTPView(APIView):
             "message": msg,
             "email": email,
             "detected_college": college_info,
+            "is_personal_email": domain_match is None,
+            "is_real_email": getattr(otp_record, "real_email_sent", False),
         }
         if settings.DEBUG:
             response_data["magic_token"] = str(otp_record.magic_token)
@@ -71,7 +104,7 @@ class SendEmailOTPView(APIView):
 class VerifyEmailOTPView(APIView):
     """
     POST /api/authentication/email/verify-otp/
-    Verifies college email OTP, creates/retrieves User, and issues JWT tokens.
+    Verifies email OTP, creates/retrieves User, and issues JWT tokens.
     """
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -116,24 +149,11 @@ class VerifyEmailOTPView(APIView):
             "short_name": domain_match.college.short_name,
         } if domain_match else None
 
-        from config.media_utils import resolve_media_url
-        prof = getattr(user, "profile", None)
-        avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
         return Response({
             "access": str(refresh.access_token),
             "refresh": str(refresh),
             "is_new_user": is_new_user,
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.full_name,
-                "username": prof.username if prof else user.email.split("@")[0],
-                "profile_picture": avatar_url,
-                "is_email_verified": user.is_email_verified,
-                "is_phone_verified": user.is_phone_verified,
-                "is_verified_student": user.is_verified_student,
-                "profile_completed": user.profile_completed,
-            },
+            "user": _build_user_auth_payload(request, user),
             "detected_college": detected_college
         }, status=status.HTTP_200_OK)
 
@@ -223,7 +243,7 @@ class SetPasswordView(APIView):
 class LoginView(APIView):
     """
     POST /api/authentication/login/
-    Login using college email, username, or mobile phone number and password.
+    Login using email, username, or mobile phone number and password.
     """
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -239,15 +259,17 @@ class LoginView(APIView):
 
         if not identifier:
             return Response(
-                {"error": "Please enter your college email, username, or mobile number."},
+                {"error": "Please enter your email, username, or mobile number."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         clean_phone = "".join(filter(str.isdigit, identifier))[-10:]
 
         user = None
-        # 1. Match by email
-        user = User.objects.filter(email__iexact=identifier).first()
+        # 1. Match by email or linked institutional college_email
+        user = User.objects.filter(
+            Q(email__iexact=identifier) | Q(profile__college_email__iexact=identifier)
+        ).distinct().first()
         # 2. Match by username
         if not user:
             user = User.objects.filter(profile__username__iexact=identifier).first()
@@ -263,7 +285,7 @@ class LoginView(APIView):
 
         if not user or not user.check_password(password):
             return Response(
-                {"error": "Invalid login credentials. Please check your username/college ID and password."},
+                {"error": "Invalid login credentials. Please check your username/email and password."},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -271,21 +293,10 @@ class LoginView(APIView):
             return Response({"error": "Account is disabled."}, status=status.HTTP_403_FORBIDDEN)
 
         refresh = RefreshToken.for_user(user)
-        prof = getattr(user, "profile", None)
-        from config.media_utils import resolve_media_url
-        avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
         return Response({
             "access": str(refresh.access_token),
             "refresh": str(refresh),
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.full_name or (prof.username if prof else user.email.split("@")[0]),
-                "username": prof.username if prof else user.email.split("@")[0],
-                "profile_picture": avatar_url,
-                "is_verified_student": user.is_verified_student,
-                "profile_completed": user.profile_completed,
-            }
+            "user": _build_user_auth_payload(request, user),
         })
 
 
@@ -353,15 +364,14 @@ class MagicLoginView(APIView):
                     <title>Link Expired - Campus Connect</title>
                     <meta name="viewport" content="width=device-width, initial-scale=1">
                     <style>
-                        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }}
-                        .card {{ max-width: 420px; margin: 20px; background: #111827; border: 1px solid #ef4444; border-radius: 16px; padding: 32px 24px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }}
-                        h2 {{ color: #ef4444; margin-top: 0; }}
-                        p {{ color: #94a3b8; font-size: 15px; line-height: 1.5; }}
+                        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #08090a; color: #f7f8f8; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }}
+                        .card {{ max-width: 420px; margin: 20px; background: #141516; border: 1px solid #eb5757; border-radius: 12px; padding: 32px 24px; text-align: center; }}
+                        h2 {{ color: #eb5757; margin-top: 0; }}
+                        p {{ color: #8a8f98; font-size: 15px; line-height: 1.5; }}
                     </style>
                 </head>
                 <body>
                     <div class="card">
-                        <div style="font-size: 48px; margin-bottom: 12px;">⚠️</div>
                         <h2>Verification Link Expired</h2>
                         <p>{err}</p>
                         <p>Please open the Campus Connect app and request a fresh verification link.</p>
@@ -391,9 +401,9 @@ class MagicLoginView(APIView):
             "short_name": domain_match.college.short_name,
         } if domain_match else None
 
-        # Return rich HTML if clicked from Outlook browser
+        # Return rich HTML if clicked from Outlook/Gmail browser
         if "text/html" in request.headers.get("Accept", "") and request.method == "GET":
-            college_name = detected_college["name"] if detected_college else "Your College"
+            college_name = detected_college["name"] if detected_college else "Campus Connect"
             deep_link = f"campusconnect://auth/success?access={str(refresh.access_token)}&refresh={str(refresh)}"
             html_success = f"""
             <!DOCTYPE html>
@@ -403,20 +413,19 @@ class MagicLoginView(APIView):
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <meta http-equiv="refresh" content="2;url={deep_link}">
                 <style>
-                    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }}
-                    .card {{ max-width: 440px; margin: 20px; background: #111827; border: 1px solid #10b981; border-radius: 20px; padding: 36px 24px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }}
-                    h2 {{ color: #10b981; margin: 10px 0; font-size: 24px; }}
-                    .btn {{ display: block; background: #2563eb; color: white; text-decoration: none; padding: 14px 24px; border-radius: 12px; font-weight: 600; font-size: 16px; margin-top: 24px; }}
+                    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #08090a; color: #f7f8f8; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }}
+                    .card {{ max-width: 440px; margin: 20px; background: #141516; border: 1px solid #23252a; border-radius: 12px; padding: 36px 24px; text-align: center; }}
+                    h2 {{ color: #27a644; margin: 10px 0; font-size: 22px; }}
+                    .btn {{ display: block; background: #5e6ad2; color: white; text-decoration: none; padding: 12px 20px; border-radius: 8px; font-weight: 500; font-size: 15px; margin-top: 24px; }}
                 </style>
             </head>
             <body>
                 <div class="card">
-                    <div style="font-size: 52px; margin-bottom: 8px;">🎓</div>
-                    <h2>Email Verified!</h2>
-                    <p style="color: #cbd5e1; font-size: 16px; margin: 8px 0;">Welcome to <strong>{college_name}</strong></p>
-                    <p style="color: #64748b; font-size: 14px; margin: 0 0 16px 0;">{email}</p>
+                    <h2>Email Verified</h2>
+                    <p style="color: #d0d6e0; font-size: 15px; margin: 8px 0;">Welcome to <strong>{college_name}</strong></p>
+                    <p style="color: #8a8f98; font-size: 13px; margin: 0 0 16px 0;">{email}</p>
                     <a href="{deep_link}" class="btn">Open Campus Connect App</a>
-                    <p style="color: #475569; font-size: 12px; margin-top: 16px;">Redirecting automatically in 2 seconds...</p>
+                    <p style="color: #62666d; font-size: 12px; margin-top: 16px;">Redirecting automatically...</p>
                 </div>
             </body>
             </html>
@@ -428,14 +437,7 @@ class MagicLoginView(APIView):
             "access": str(refresh.access_token),
             "refresh": str(refresh),
             "is_new_user": is_new_user,
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "is_email_verified": user.is_email_verified,
-                "is_phone_verified": user.is_phone_verified,
-                "is_verified_student": user.is_verified_student,
-                "profile_completed": user.profile_completed,
-            },
+            "user": _build_user_auth_payload(request, user),
             "detected_college": detected_college
         }, status=status.HTTP_200_OK)
 
@@ -467,7 +469,7 @@ def verify_microsoft_account(token):
             display_name = claims.get("name") or claims.get("displayName", "")
             if email:
                 return True, email.lower().strip(), display_name.strip(), None
-        except Exception as jwt_err:
+        except Exception:
             pass  # Fall through to Graph API attempt
 
     # Path 2: Bearer access_token via Microsoft Graph API
@@ -494,61 +496,77 @@ def verify_microsoft_account(token):
         return False, None, None, f"Failed to authenticate with Microsoft: {str(e)}"
 
 
+def _resolve_microsoft_token_and_domain(request):
+    token = request.data.get("token") or request.data.get("access_token") or request.data.get("id_token")
+
+    if settings.DEBUG and request.data.get("dev_mock_email"):
+        email = request.data.get("dev_mock_email", "").strip().lower()
+        display_name = request.data.get("dev_mock_name", "Student User")
+        is_valid = True
+        err = None
+    else:
+        if not token:
+            return None, None, None, Response(
+                {"error": "Microsoft token (access_token or id_token) is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        is_valid, email, display_name, err = verify_microsoft_account(token)
+
+    if not is_valid:
+        return None, None, None, Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
+
+    domain_match = CollegeDomain.find_by_email(email)
+    if not domain_match:
+        return None, None, None, Response({
+            "error": f"The email '{email}' does not belong to any recognized university domain.",
+            "email": email,
+            "suggestion": "Please sign in using your official university-issued Microsoft account (@geu.ac.in / @gehu.ac.in)."
+        }, status=status.HTTP_403_FORBIDDEN)
+
+    return email, display_name, domain_match, None
+
+
+def _extract_roll_and_year(ms_email: str):
+    email_prefix = ms_email.split("@")[0].strip()
+    roll_no = email_prefix if email_prefix.isdigit() else None
+    admission_year = None
+    if roll_no and len(roll_no) >= 2 and roll_no[:2].isdigit():
+        admission_year = 2000 + int(roll_no[:2])
+    return email_prefix, roll_no, admission_year
+
+
 class MicrosoftSSOView(APIView):
     """
     POST /api/authentication/microsoft/
     Single-Tap College Login using Microsoft Entra ID (Azure AD).
     Extracts verified @college.ac.in institutional email.
-    Auto-detects college domain, provisions student account, and returns JWT tokens.
-    Zero OTP typing, zero Outlook inbox searching required.
+    Auto-detects college domain, resolves existing or new student account (even if previously linked
+    to a Gmail account via college_email), and returns JWT tokens.
     """
     permission_classes = [AllowAny]
 
     def post(self, request):
-        token = request.data.get("token") or request.data.get("access_token") or request.data.get("id_token")
+        email, display_name, domain_match, err_resp = _resolve_microsoft_token_and_domain(request)
+        if err_resp is not None:
+            return err_resp
 
-        # Test / Simulation hook for DEBUG mode
-        if settings.DEBUG and request.data.get("dev_mock_email"):
-            email = request.data.get("dev_mock_email", "").strip().lower()
-            display_name = request.data.get("dev_mock_name", "Student User")
-            is_valid = True
-            err = None
-        else:
-            if not token:
-                return Response(
-                    {"error": "Microsoft token (access_token or id_token) is required."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            is_valid, email, display_name, err = verify_microsoft_account(token)
+        email_prefix, roll_no, admission_year = _extract_roll_and_year(email)
 
-        if not is_valid:
-            return Response({"error": err}, status=status.HTTP_401_UNAUTHORIZED)
-
-        # Verify email domain belongs to an approved college
-        domain_match = CollegeDomain.find_by_email(email)
-        if not domain_match:
-            return Response({
-                "error": f"The email '{email}' does not belong to any recognized university domain.",
-                "email": email,
-                "suggestion": "Please sign in using your official university-issued Microsoft account (@geu.ac.in / @gehu.ac.in)."
-            }, status=status.HTTP_403_FORBIDDEN)
-
-        # Smart Parsing: Extract Roll Number & Admission Year from institutional email
-        email_prefix = email.split("@")[0].strip()
-        roll_no = email_prefix if email_prefix.isdigit() else None
-        admission_year = None
-        if roll_no and len(roll_no) >= 2 and roll_no[:2].isdigit():
-            admission_year = 2000 + int(roll_no[:2])
-
-        # Get or create user
-        user, is_new_user = User.objects.get_or_create(
-            email=email,
-            defaults={
-                "full_name": display_name,
-                "is_email_verified": True,
-                "is_verified_student": True,
-            }
+        # Match either primary login email OR previously linked college_email to avoid duplicate users
+        user = (
+            User.objects.filter(Q(email__iexact=email) | Q(profile__college_email__iexact=email))
+            .distinct()
+            .first()
         )
+        is_new_user = False
+        if not user:
+            user = User.objects.create(
+                email=email,
+                full_name=display_name,
+                is_email_verified=True,
+                is_verified_student=True,
+            )
+            is_new_user = True
 
         # Update verified status & name if not set
         fields_to_update = []
@@ -565,9 +583,6 @@ class MicrosoftSSOView(APIView):
         if fields_to_update:
             user.save(update_fields=fields_to_update)
 
-        user.check_and_update_student_status()
-
-        # Auto-provision or complete StudentProfile so student skips redundant onboarding / claim screens
         profile = getattr(user, "profile", None)
         college = domain_match.college
         course = getattr(profile, "course", None) or Course.objects.filter(college=college).first() or Course.objects.first()
@@ -594,10 +609,14 @@ class MicrosoftSSOView(APIView):
             if not academic_year and course:
                 academic_year = AcademicYear.objects.filter(course=course).first()
 
+            candidate_roll = roll_no or email_prefix
+            if candidate_roll and StudentProfile.objects.filter(admission_number__iexact=candidate_roll).exists():
+                candidate_roll = None
+
             profile = StudentProfile.objects.create(
                 user=user,
                 college_email=email,
-                admission_number=roll_no or email_prefix,
+                admission_number=candidate_roll,
                 username=candidate_user,
                 bio="Excited for hackathons, college fests & campus tech clubs!",
                 gender="Male",
@@ -622,37 +641,27 @@ class MicrosoftSSOView(APIView):
             if profile.verification_method != "MICROSOFT_SSO":
                 profile.verification_method = "MICROSOFT_SSO"
                 profile_fields.append("verification_method")
-            if not profile.admission_number and roll_no:
+            if not profile.college_email:
+                profile.college_email = email
+                profile_fields.append("college_email")
+            if profile.is_flagged_fake:
+                profile.is_flagged_fake = False
+                profile_fields.append("is_flagged_fake")
+            if not profile.admission_number and roll_no and not StudentProfile.objects.filter(admission_number__iexact=roll_no).exclude(id=profile.id).exists():
                 profile.admission_number = roll_no
                 profile_fields.append("admission_number")
             if profile_fields:
                 profile.save(update_fields=profile_fields)
 
         user.refresh_from_db()
-
-        # Generate JWT
         refresh = RefreshToken.for_user(user)
-        from config.media_utils import resolve_media_url
-        avatar_url = resolve_media_url(request, profile.profile_picture) if (profile and profile.profile_picture) else None
 
         return Response({
             "message": "Microsoft single-tap authentication successful.",
             "access": str(refresh.access_token),
             "refresh": str(refresh),
             "is_new_user": is_new_user,
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.full_name,
-                "username": getattr(profile, "username", user.email.split("@")[0]),
-                "profile_picture": avatar_url,
-                "is_email_verified": user.is_email_verified,
-                "is_phone_verified": user.is_phone_verified,
-                "is_verified_student": user.is_verified_student,
-                "verification_tier": user.verification_tier,
-                "badge_label": user.badge_label,
-                "profile_completed": user.profile_completed,
-            },
+            "user": _build_user_auth_payload(request, user),
             "detected_student": {
                 "roll_number": roll_no or email_prefix,
                 "admission_year": admission_year,
@@ -673,6 +682,376 @@ class MicrosoftSSOView(APIView):
                 "short_name": domain_match.college.short_name,
             }
         }, status=status.HTTP_200_OK)
+
+
+class LinkMicrosoftSSOView(APIView):
+    """
+    POST /api/authentication/microsoft/link/
+    Upgrades the currently authenticated account (Gmail OTP / Invite / ID Review / Phone)
+    to FULLY_VERIFIED ('MICROSOFT_SSO') by verifying their official college Microsoft ID,
+    without creating a duplicate account.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        ms_email, display_name, domain_match, err_resp = _resolve_microsoft_token_and_domain(request)
+        if err_resp is not None:
+            return err_resp
+
+        # Prevent two accounts from claiming the same institutional Microsoft identity
+        conflict_exists = User.objects.filter(
+            Q(email__iexact=ms_email) | Q(profile__college_email__iexact=ms_email)
+        ).exclude(id=request.user.id).exists()
+        if conflict_exists:
+            return Response(
+                {
+                    "error": (
+                        "This university Microsoft ID is already connected to another Campus Connect "
+                        "account. Sign in with Microsoft directly or contact support."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT
+            )
+
+        user = request.user
+        email_prefix, roll_no, admission_year = _extract_roll_and_year(ms_email)
+        college = domain_match.college
+
+        user_fields = []
+        if not user.is_email_verified:
+            user.is_email_verified = True
+            user_fields.append("is_email_verified")
+        if not user.is_verified_student:
+            user.is_verified_student = True
+            user_fields.append("is_verified_student")
+        if display_name and not user.full_name:
+            user.full_name = display_name
+            user_fields.append("full_name")
+        if user_fields:
+            user.save(update_fields=user_fields)
+
+        profile = getattr(user, "profile", None)
+        if not profile:
+            course = Course.objects.filter(college=college).first() or Course.objects.first()
+            branch = Branch.objects.filter(course=course).first() if course else None
+            academic_year = AcademicYear.objects.filter(course=course).first() if course else None
+
+            clean_name = "".join(c for c in (user.full_name or display_name or "").lower() if c.isalnum() or c == "_").strip("_")
+            base_user = (clean_name or f"student_{roll_no or email_prefix}")[:25]
+            cand = base_user
+            counter = 1
+            while StudentProfile.objects.filter(username=cand).exists():
+                cand = f"{base_user}_{counter}"
+                counter += 1
+
+            candidate_roll = roll_no or email_prefix
+            if candidate_roll and StudentProfile.objects.filter(admission_number__iexact=candidate_roll).exists():
+                candidate_roll = None
+
+            profile = StudentProfile.objects.create(
+                user=user,
+                college_email=ms_email,
+                admission_number=candidate_roll,
+                username=cand,
+                bio="Excited for hackathons, college fests & campus tech clubs!",
+                gender="Other",
+                show_gender=False,
+                college=college,
+                course=course,
+                branch=branch,
+                academic_year=academic_year,
+                verified=True,
+                id_card_verified=True,
+                verification_method="MICROSOFT_SSO",
+                profile_completed=False,
+            )
+        else:
+            update_fields = []
+            if profile.college_email != ms_email:
+                profile.college_email = ms_email
+                update_fields.append("college_email")
+            if profile.verification_method != "MICROSOFT_SSO":
+                profile.verification_method = "MICROSOFT_SSO"
+                update_fields.append("verification_method")
+            if not profile.verified:
+                profile.verified = True
+                update_fields.append("verified")
+            if not profile.id_card_verified:
+                profile.id_card_verified = True
+                update_fields.append("id_card_verified")
+            if profile.is_flagged_fake:
+                profile.is_flagged_fake = False
+                profile.flag_reason = "Verified via college Microsoft ID"
+                update_fields.extend(["is_flagged_fake", "flag_reason"])
+            if not profile.admission_number and roll_no and not StudentProfile.objects.filter(admission_number__iexact=roll_no).exclude(id=profile.id).exists():
+                profile.admission_number = roll_no
+                update_fields.append("admission_number")
+            if not profile.profile_completed and profile.college_id != college.id:
+                profile.college = college
+                update_fields.append("college")
+            if update_fields:
+                profile.save(update_fields=update_fields)
+
+        if profile.profile_completed:
+            from communities.services import CommunityEnrollmentService
+            CommunityEnrollmentService.enroll_student_in_core_communities(user, profile)
+
+        user.refresh_from_db()
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            "message": f"Microsoft college ID verified! Welcome to {college.short_name}.",
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": _build_user_auth_payload(request, user),
+            "detected_college": {
+                "id": college.id,
+                "name": college.name,
+                "short_name": college.short_name,
+            }
+        }, status=status.HTTP_200_OK)
+
+
+class RedeemInviteCodeView(APIView):
+    """
+    POST /api/authentication/invite/redeem/
+    Redeems a CampusInviteCode for an authenticated Gmail/Pending account,
+    upgrading their verification tier to INVITE_VERIFIED ('🎓 Campus Invited') and
+    unlocking posting, commenting, confessing, discussing, and chatting.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        raw_code = str(request.data.get("code", "")).strip().upper()
+        if not raw_code:
+            return Response({"error": "Please enter a campus invite code."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        existing_profile = getattr(user, "profile", None)
+        if existing_profile and existing_profile.is_flagged_fake:
+            return Response(
+                {"error": "This account is currently flagged and cannot redeem invite codes."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if existing_profile and existing_profile.verification_method in ("MICROSOFT_SSO", "ADMIN_VERIFIED"):
+            return Response({
+                "message": "Your account already has full Microsoft/Admin verification.",
+                "user": _build_user_auth_payload(request, user),
+            }, status=status.HTTP_200_OK)
+
+        with transaction.atomic():
+            invite = CampusInviteCode.objects.select_for_update().select_related("college", "created_by").filter(
+                code__iexact=raw_code
+            ).first()
+
+            if not invite:
+                return Response(
+                    {"error": "Invalid campus invite code. Check spelling and try again."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if existing_profile and existing_profile.invite_code_used_id == invite.id:
+                return Response({
+                    "message": f"Invite code {invite.code} is already active on your account.",
+                    "user": _build_user_auth_payload(request, user),
+                }, status=status.HTTP_200_OK)
+
+            if existing_profile and existing_profile.invite_code_used_id:
+                return Response(
+                    {"error": "Your account has already redeemed a campus invite code."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if not invite.is_active:
+                return Response({"error": "This invite code has been deactivated."}, status=status.HTTP_400_BAD_REQUEST)
+            if invite.expires_at and invite.expires_at <= timezone.now():
+                return Response({"error": "This invite code has expired."}, status=status.HTTP_400_BAD_REQUEST)
+            if invite.uses_count >= invite.max_uses:
+                return Response(
+                    {"error": "This invite code has reached its maximum student limit."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            CampusInviteCode.objects.filter(id=invite.id).update(uses_count=F("uses_count") + 1)
+
+            if not user.is_verified_student:
+                user.is_verified_student = True
+                user.save(update_fields=["is_verified_student"])
+
+            if existing_profile:
+                update_fields = ["verification_method", "verified", "invited_by", "invite_code_used"]
+                existing_profile.verification_method = "INVITE_CODE"
+                existing_profile.verified = True
+                existing_profile.invited_by = invite.created_by
+                existing_profile.invite_code_used = invite
+                if not existing_profile.profile_completed and existing_profile.college_id != invite.college_id:
+                    course = Course.objects.filter(college=invite.college).first()
+                    branch = Branch.objects.filter(course=course).first() if course else None
+                    academic_year = AcademicYear.objects.filter(course=course).first() if course else None
+                    if course and branch and academic_year:
+                        existing_profile.college = invite.college
+                        existing_profile.course = course
+                        existing_profile.branch = branch
+                        existing_profile.academic_year = academic_year
+                        existing_profile.section = None
+                        update_fields.extend(["college", "course", "branch", "academic_year", "section"])
+                existing_profile.save(update_fields=update_fields)
+                profile = existing_profile
+            else:
+                course = Course.objects.filter(college=invite.college).first() or Course.objects.first()
+                branch = Branch.objects.filter(course=course).first() if course else None
+                academic_year = AcademicYear.objects.filter(course=course).first() if course else None
+                base_u = re.sub(r"[^a-z0-9_]", "", (user.email.split("@")[0] or "student").lower())[:25] or "student"
+                cand = base_u
+                idx = 1
+                while StudentProfile.objects.filter(username=cand).exists():
+                    cand = f"{base_u}_{idx}"
+                    idx += 1
+                profile = StudentProfile.objects.create(
+                    user=user,
+                    username=cand,
+                    gender="Other",
+                    show_gender=False,
+                    college=invite.college,
+                    course=course,
+                    branch=branch,
+                    academic_year=academic_year,
+                    verified=True,
+                    id_card_verified=False,
+                    verification_method="INVITE_CODE",
+                    invited_by=invite.created_by,
+                    invite_code_used=invite,
+                    profile_completed=False,
+                )
+
+        if profile.profile_completed:
+            from communities.services import CommunityEnrollmentService
+            CommunityEnrollmentService.enroll_student_in_core_communities(user, profile)
+
+        user.refresh_from_db()
+        return Response({
+            "message": f"Invite code accepted! Welcome to {invite.college.short_name}.",
+            "code": invite.code,
+            "college": {
+                "id": invite.college.id,
+                "name": invite.college.name,
+                "short_name": invite.college.short_name,
+            },
+            "user": _build_user_auth_payload(request, user),
+        }, status=status.HTTP_200_OK)
+
+
+class InviteCodesView(APIView):
+    """
+    GET /api/authentication/invite/codes/ -> View your peer/admin invite codes (auto-provisions 1 code for verified students)
+    POST /api/authentication/invite/codes/ -> Create a custom batch invite code (staff) or peer invite slot (verified student)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _serialize_code(self, obj):
+        return {
+            "id": obj.id,
+            "code": obj.code,
+            "batch_label": obj.batch_label,
+            "college_id": obj.college_id,
+            "college_name": obj.college.name if obj.college else "",
+            "college_short_name": obj.college.short_name if obj.college else "",
+            "uses_count": obj.uses_count,
+            "max_uses": obj.max_uses,
+            "remaining_uses": max(0, obj.max_uses - obj.uses_count),
+            "is_active": obj.is_active,
+            "is_valid": obj.is_valid,
+            "expires_at": obj.expires_at,
+            "created_at": obj.created_at,
+        }
+
+    def get(self, request):
+        user = request.user
+        if not user.can_participate:
+            return Response(
+                {"error": "Verify your Campus ID first to generate or share invite codes."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        prof = getattr(user, "profile", None)
+        my_codes = CampusInviteCode.objects.filter(created_by=user).select_related("college")
+
+        if not my_codes.exists():
+            college = getattr(prof, "college", None)
+            if not college:
+                domain_match = CollegeDomain.find_by_email(user.email)
+                college = domain_match.college if domain_match else College.objects.filter(is_active=True).first()
+            if college:
+                code_str = CampusInviteCode.generate_unique_code(college.short_name)
+                CampusInviteCode.objects.create(
+                    code=code_str,
+                    college=college,
+                    created_by=user,
+                    batch_label="Peer Invite" if not user.is_staff else "Founder Batch Invite",
+                    max_uses=50 if user.is_staff else 3,
+                )
+                my_codes = CampusInviteCode.objects.filter(created_by=user).select_related("college")
+
+        return Response({
+            "codes": [self._serialize_code(c) for c in my_codes],
+        })
+
+    def post(self, request):
+        user = request.user
+        if not user.can_participate:
+            return Response(
+                {"error": "Verify your Campus ID first to generate invite codes."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        prof = getattr(user, "profile", None)
+        is_admin = bool(user.is_staff or user.is_superuser)
+        college_id = request.data.get("college_id")
+        college = College.objects.filter(id=college_id, is_active=True).first() if college_id else None
+        if not college:
+            college = getattr(prof, "college", None)
+        if not college:
+            domain_match = CollegeDomain.find_by_email(user.email)
+            college = domain_match.college if domain_match else College.objects.filter(is_active=True).first()
+        if not college:
+            return Response({"error": "No active college found."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not is_admin:
+            active_count = CampusInviteCode.objects.filter(created_by=user, is_active=True).count()
+            if active_count >= 3:
+                return Response(
+                    {"error": "Verified students can have at most 3 active peer invite codes at a time."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            max_uses = min(max(int(request.data.get("max_uses", 3) or 3), 1), 5)
+            custom_code = CampusInviteCode.generate_unique_code(college.short_name)
+            batch_label = str(request.data.get("batch_label", "Peer Invite")).strip()[:80] or "Peer Invite"
+            expires_at = None
+        else:
+            raw_code = str(request.data.get("code", "")).strip().upper()
+            if raw_code:
+                clean_code = re.sub(r"[^A-Z0-9\-_]", "", raw_code)[:24]
+                if len(clean_code) < 4:
+                    return Response({"error": "Custom invite code must be at least 4 characters."}, status=status.HTTP_400_BAD_REQUEST)
+                if CampusInviteCode.objects.filter(code__iexact=clean_code).exists():
+                    return Response({"error": f"Invite code '{clean_code}' already exists."}, status=status.HTTP_400_BAD_REQUEST)
+                custom_code = clean_code
+            else:
+                custom_code = CampusInviteCode.generate_unique_code(college.short_name)
+            max_uses = min(max(int(request.data.get("max_uses", 50) or 50), 1), 1000)
+            batch_label = str(request.data.get("batch_label", "Campus Batch Drop")).strip()[:80] or "Campus Batch Drop"
+            expires_days = request.data.get("expires_days")
+            expires_at = timezone.now() + timedelta(days=int(expires_days)) if expires_days else None
+
+        invite = CampusInviteCode.objects.create(
+            code=custom_code,
+            college=college,
+            created_by=user,
+            batch_label=batch_label,
+            max_uses=max_uses,
+            expires_at=expires_at,
+        )
+        return Response(self._serialize_code(invite), status=status.HTTP_201_CREATED)
 
 
 class DeleteAccountView(APIView):
@@ -763,24 +1142,12 @@ class DevQuickLoginView(APIView):
             "short_name": domain_match.college.short_name,
         } if domain_match else None
 
-        from config.media_utils import resolve_media_url
         prof = getattr(user, "profile", None)
-        avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
         return Response({
             "message": f"Switched to @{prof and prof.username or user.email}",
             "access": str(refresh.access_token),
             "refresh": str(refresh),
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.full_name,
-                "username": prof.username if prof else user.email.split("@")[0],
-                "profile_picture": avatar_url,
-                "is_email_verified": user.is_email_verified,
-                "is_phone_verified": user.is_phone_verified,
-                "is_verified_student": user.is_verified_student,
-                "profile_completed": user.profile_completed,
-            },
+            "user": _build_user_auth_payload(request, user),
             "detected_college": detected_college
         })
 
@@ -814,7 +1181,7 @@ class ChangePasswordView(APIView):
 class ForgotPasswordView(APIView):
     """
     POST /api/authentication/password/forgot/
-    Initiates password reset OTP for college email with anti-enumeration protection.
+    Initiates password reset OTP with anti-enumeration protection.
     """
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -823,7 +1190,7 @@ class ForgotPasswordView(APIView):
     def post(self, request):
         email = request.data.get("email", "").strip().lower()
         if not email or "@" not in email:
-            return Response({"error": "Valid university email is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Valid email address is required."}, status=status.HTTP_400_BAD_REQUEST)
         user = User.objects.filter(email__iexact=email).first()
         if not user:
             # Prevent User Enumeration: return standard message without disclosing non-existence
@@ -936,7 +1303,7 @@ class SendPhoneLoginOTPView(APIView):
                 if min_dist > STRICT_CAMPUS_RADIUS_KM:
                     geo_status["inside_campus"] = False
                     return Response({
-                        "error": f"Strict Campus Perimeter Required: You are {round(min_dist, 2)} km away. Graphic Era campus perimeter is strictly 500 meters (0.5 km). You will enter as 🔴 Semi-Verified upon physical presence or enable simulation for testing.",
+                        "error": f"Strict Campus Perimeter Required: You are {round(min_dist, 2)} km away. Graphic Era campus perimeter is strictly 500 meters (0.5 km). You will enter as 🟡 Semi-Verified upon physical presence or enable simulation for testing.",
                         "geo_status": geo_status,
                     }, status=status.HTTP_403_FORBIDDEN)
             except (ValueError, TypeError):
@@ -972,8 +1339,7 @@ class SendPhoneLoginOTPView(APIView):
 class VerifyPhoneLoginOTPView(APIView):
     """
     POST /api/authentication/phone-login/verify-otp/
-    Verifies phone OTP and logs student in as SEMI_VERIFIED (🔴 Red Tick).
-    They must scan physical ID card to upgrade to FULLY_VERIFIED (🛡️ Verified Student).
+    Verifies phone OTP and logs student in as SEMI_VERIFIED (read-only until ID review, Invite Code, or MS SSO).
     """
     permission_classes = [AllowAny]
 
@@ -994,13 +1360,11 @@ class VerifyPhoneLoginOTPView(APIView):
         is_new_user = False
         if not user:
             placeholder_email = f"student_{clean_phone}@geu.ac.in"
-            # Ensure unique email if exists
             idx = 1
             while User.objects.filter(email=placeholder_email).exists():
                 placeholder_email = f"student_{clean_phone}_{idx}@geu.ac.in"
                 idx += 1
 
-            # On-Campus Phone login starts as SEMI_VERIFIED (🔴 Red Tick) until physical ID card is scanned!
             user = User.objects.create(
                 email=placeholder_email,
                 phone_number=clean_phone,
@@ -1020,49 +1384,28 @@ class VerifyPhoneLoginOTPView(APIView):
             user.save(update_fields=["password"])
 
         refresh = RefreshToken.for_user(user)
-        from config.media_utils import resolve_media_url
-        prof = getattr(user, "profile", None)
-        avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
-
         return Response({
             "access": str(refresh.access_token),
             "refresh": str(refresh),
             "is_new_user": is_new_user,
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.full_name,
-                "username": prof.username if prof else user.email.split("@")[0],
-                "phone_number": user.phone_number,
-                "profile_picture": avatar_url,
-                "is_email_verified": user.is_email_verified,
-                "is_phone_verified": user.is_phone_verified,
-                "is_verified_student": user.is_verified_student,
-                "verification_tier": user.verification_tier,
-                "badge_label": user.badge_label,
-                "profile_completed": user.profile_completed,
-            }
+            "user": _build_user_auth_payload(request, user),
         }, status=status.HTTP_200_OK)
 
 
 class IDCardLoginView(APIView):
     """
     POST /api/authentication/id-card-login/
-    Spotify / SheerID style frictionless onboarding:
-    Allows students to scan / upload their Physical College ID Card image directly.
-    Runs native Windows OCR & Anti-fraud uniqueness verification.
-    Instantly verifies student identity and logs them in!
+    Submits Physical College ID Card image for strict Admin Verification.
+    When cloud OCR is unavailable, requires honest manual review rather than fabricating college details.
+    Student enters in read-only 'SEMI_VERIFIED' (ID Under Review) until Admin approves.
     """
     permission_classes = [AllowAny]
 
     def post(self, request):
         import io
-        import re
-        import base64
-        from django.utils import timezone
         from django.core.files.base import ContentFile
         from profiles.ocr_service import IDCardOCRService
-        from profiles.models import StudentProfile
+        from colleges.models import College, Course, Branch, AcademicYear, Section
 
         image_file = request.FILES.get("id_card_image")
         image_base64 = request.data.get("image_base64")
@@ -1095,23 +1438,25 @@ class IDCardLoginView(APIView):
 
         if not scan_res.get("success", True):
             return Response(
-                {"error": scan_res.get("error", "Unable to recognize text from ID card. Please upload a clear photo.")},
+                {"error": scan_res.get("error", "Unable to process ID card photo. Please upload a clear JPG or PNG.")},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         ext = scan_res["extracted_data"]
-        full_name = ext.get("full_name") or "Verified Student"
-        admission_num = ext.get("admission_number") or f"GEU2024{int(timezone.now().timestamp()) % 10000}"
-        safe_roll = re.sub(r"[^A-Za-z0-9]", "", admission_num).lower()
-        college_email = f"{safe_roll}@geu.ac.in"
         img_hash = scan_res.get("image_hash", "")
+        manual_name = str(request.data.get("full_name", "") or "").strip()
+        manual_roll = str(request.data.get("admission_number", "") or "").strip()
+        full_name = ext.get("full_name") or manual_name or "Student (ID Pending)"
+        admission_num = ext.get("admission_number") or manual_roll or f"PENDING-{img_hash[:8].upper()}"
+        safe_roll = re.sub(r"[^A-Za-z0-9]", "", admission_num).lower() or img_hash[:8]
+        placeholder_email = f"{safe_roll}@idreview.campusconnect.local"
 
-        # Check if an existing student is re-scanning their card to log in
+        # Check if same photo or roll already exists on an account
         existing_profile = None
         if img_hash:
             existing_profile = StudentProfile.objects.filter(id_card_hash=img_hash).first()
-        if not existing_profile and admission_num:
-            existing_profile = StudentProfile.objects.filter(admission_number=admission_num).first()
+        if not existing_profile and (ext.get("admission_number") or manual_roll):
+            existing_profile = StudentProfile.objects.filter(admission_number__iexact=admission_num).first()
 
         is_new_user = False
         if existing_profile and existing_profile.user:
@@ -1119,13 +1464,12 @@ class IDCardLoginView(APIView):
             profile = existing_profile
             clean_user = profile.username
         else:
-            # Find or create user
-            user = User.objects.filter(email__iexact=college_email).first()
+            user = User.objects.filter(email__iexact=placeholder_email).first()
             if not user:
                 user = User.objects.create(
-                    email=college_email,
+                    email=placeholder_email,
                     full_name=full_name,
-                    is_email_verified=True,
+                    is_email_verified=False,
                     is_phone_verified=False,
                     is_verified_student=False,
                 )
@@ -1135,19 +1479,18 @@ class IDCardLoginView(APIView):
                     user.set_password(password)
                     user.save(update_fields=["password"])
 
-            # Resolve unique username
-            clean_user = re.sub(r"[^a-z0-9]", "_", full_name.lower()) + "_" + safe_roll[-4:]
+            clean_base = re.sub(r"[^a-z0-9]", "_", full_name.lower()).strip("_") or "student"
+            clean_user = f"{clean_base}_{safe_roll[-4:]}"
             cand_user = clean_user[:40]
             counter = 1
             while StudentProfile.objects.filter(username=cand_user).exclude(user=user).exists():
                 cand_user = f"{clean_user[:35]}_{counter}"
                 counter += 1
 
-            # Resolve foreign keys safely
-            from colleges.models import College, Course, Branch, AcademicYear, Section
-            col_id = ext.get("college", {}).get("id")
-            col_name = ext.get("college", {}).get("name")
-            col_short = ext.get("college", {}).get("short_name")
+            col_meta = ext.get("college") or {}
+            col_id = request.data.get("college_id") or col_meta.get("id")
+            col_name = col_meta.get("name")
+            col_short = col_meta.get("short_name")
             college = None
             if col_id:
                 college = College.objects.filter(id=col_id).first()
@@ -1155,26 +1498,16 @@ class IDCardLoginView(APIView):
                 college = College.objects.filter(short_name__iexact=col_short).first()
             if not college and col_name:
                 college = College.objects.filter(name__icontains=col_name).first()
-            if not college and col_name:
-                college, _ = College.objects.get_or_create(
-                    name=col_name,
-                    defaults={
-                        "short_name": col_short or col_name[:10].upper(),
-                        "city": "Dehradun",
-                        "state": "Uttarakhand",
-                        "is_active": True,
-                    }
-                )
             if not college:
-                college = College.objects.first()
+                college = College.objects.filter(is_active=True).first()
 
-            crs_id = ext.get("course", {}).get("id")
+            crs_id = (ext.get("course") or {}).get("id")
             course = Course.objects.filter(id=crs_id).first() or Course.objects.filter(college=college).first() or Course.objects.first()
-            brn_id = ext.get("branch", {}).get("id")
+            brn_id = (ext.get("branch") or {}).get("id")
             branch = Branch.objects.filter(id=brn_id).first() or Branch.objects.filter(course=course).first() or Branch.objects.first()
-            yr_id = ext.get("academic_year", {}).get("id")
+            yr_id = (ext.get("academic_year") or {}).get("id")
             academic_year = AcademicYear.objects.filter(id=yr_id).first() or AcademicYear.objects.filter(course=course).first() or AcademicYear.objects.first()
-            sec_id = ext.get("section", {}).get("id")
+            sec_id = (ext.get("section") or {}).get("id")
             section = Section.objects.filter(id=sec_id).first() or Section.objects.filter(academic_year=academic_year).first()
 
             profile = StudentProfile.objects.filter(user=user).first()
@@ -1189,6 +1522,7 @@ class IDCardLoginView(APIView):
                     academic_year=academic_year,
                     section=section,
                     bio="Excited for campus tech clubs and discussions!",
+                    gender="Other",
                     verified=False,
                     id_card_verified=False,
                     verification_method="ID_CARD_OCR",
@@ -1205,23 +1539,27 @@ class IDCardLoginView(APIView):
                 profile.id_card_image.save(file_name, ContentFile(image_bytes), save=False)
             except Exception:
                 pass
-            profile.id_card_verified = False
-            profile.verification_method = "ID_CARD_OCR"
+            if profile.verification_method not in ("MICROSOFT_SSO", "ADMIN_VERIFIED"):
+                profile.id_card_verified = False
+                profile.verified = False
+                profile.verification_method = "ID_CARD_OCR"
             profile.id_card_hash = img_hash
             profile.id_card_ocr_data = ext
-            profile.save(update_fields=["id_card_image", "id_card_verified", "verification_method", "id_card_hash", "id_card_ocr_data"])
-
-        # Auto-enroll in 3 Core Communities
-        from communities.services import CommunityEnrollmentService
-        CommunityEnrollmentService.enroll_student_in_core_communities(user, profile)
+            profile.save(update_fields=[
+                "id_card_image", "id_card_verified", "verified",
+                "verification_method", "id_card_hash", "id_card_ocr_data"
+            ])
 
         user.refresh_from_db()
         refresh = RefreshToken.for_user(user)
-        from config.media_utils import resolve_media_url
-        avatar_url = resolve_media_url(request, profile.profile_picture) if (profile and profile.profile_picture) else None
+        col_data = ext.get("college") or {}
+        crs_data = ext.get("course") or {}
+        brn_data = ext.get("branch") or {}
 
         return Response({
-            "message": f"College ID Card scanned! Welcome, {full_name}.",
+            "message": "ID card submitted for admin verification. You can browse the feed read-only while it is reviewed.",
+            "ocr_available": scan_res.get("ocr_available", False),
+            "requires_manual_review": True,
             "access": str(refresh.access_token),
             "refresh": str(refresh),
             "is_new_user": is_new_user,
@@ -1229,28 +1567,16 @@ class IDCardLoginView(APIView):
             "detected_student": {
                 "roll_number": admission_num,
                 "full_name": full_name,
-                "college_id": ext.get("college", {}).get("id", 1),
-                "college_name": ext.get("college", {}).get("name", "Graphic Era University"),
-                "course_id": ext.get("course", {}).get("id", 1),
-                "course_name": ext.get("course", {}).get("name", "Engineering"),
-                "branch_id": ext.get("branch", {}).get("id", 1),
-                "branch_name": ext.get("branch", {}).get("name", "Computer Science"),
+                "college_id": col_data.get("id") or (profile.college_id if profile else None),
+                "college_name": col_data.get("name") or (profile.college.name if (profile and profile.college) else ""),
+                "course_id": crs_data.get("id") or (profile.course_id if profile else None),
+                "course_name": crs_data.get("name") or (profile.course.name if (profile and profile.course) else ""),
+                "branch_id": brn_data.get("id") or (profile.branch_id if profile else None),
+                "branch_name": brn_data.get("name") or (profile.branch.name if (profile and profile.branch) else ""),
                 "suggested_username": clean_user,
                 "verification_method": "ID_CARD_OCR",
             },
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.full_name,
-                "username": profile.username,
-                "profile_picture": avatar_url,
-                "is_email_verified": user.is_email_verified,
-                "is_phone_verified": user.is_phone_verified,
-                "is_verified_student": user.is_verified_student,
-                "verification_tier": user.verification_tier,
-                "badge_label": user.badge_label,
-                "profile_completed": user.profile_completed,
-            }
+            "user": _build_user_auth_payload(request, user),
         }, status=status.HTTP_200_OK)
 
 

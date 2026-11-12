@@ -340,18 +340,21 @@ class IDCardOCRService:
                     "anti_fraud": {"is_flagged": False, "flag_reason": "Non-collegiate text content"},
                 }
 
-        # If OCR text is blank (e.g. Linux cloud environment without native OCR engine, or card in low lighting):
-        # Gracefully accept the uploaded physical ID card for review with SEMI_VERIFIED tier!
-        if not raw_text.strip():
-            raw_text = (
-                f"GRAPHIC ERA UNIVERSITY\n"
-                f"PHYSICAL ID CARD PHOTO SCAN\n"
-                f"ROLL NO: GEU2024ID{short_hash}\n"
-                f"COURSE: B.TECH COMPUTER SCIENCE\n"
-                f"YEAR: 1ST YEAR"
-            )
-
-        extracted = cls.extract_details_from_text(raw_text)
+        has_ocr_text = bool(raw_text.strip())
+        if not has_ocr_text:
+            # OCR engine unavailable (e.g., Linux cloud container without tesseract) or low-light image.
+            # Never fabricate synthetic college/roll data: require honest manual review instead!
+            extracted = {
+                "full_name": "",
+                "admission_number": "",
+                "college": None,
+                "course": None,
+                "branch": None,
+                "academic_year": None,
+                "section": None,
+            }
+        else:
+            extracted = cls.extract_details_from_text(raw_text)
 
         # Image Duplication Check (anti-cheat: 2 students using same picture)
         duplicate_img_profile = StudentProfile.objects.filter(id_card_hash=img_hash)
@@ -360,50 +363,55 @@ class IDCardOCRService:
         is_duplicate_image = duplicate_img_profile.exists()
         duplicate_img_user = duplicate_img_profile.first().username if is_duplicate_image else None
 
-        # Roll Number Duplication Check
-        admission_num = extracted.get("admission_number") or f"GEU2024ID{short_hash}"
-        duplicate_roll_profile = StudentProfile.objects.filter(admission_number=admission_num)
-        if current_user:
-            duplicate_roll_profile = duplicate_roll_profile.exclude(user=current_user)
-        is_duplicate_roll = duplicate_roll_profile.exists()
-        duplicate_roll_user = duplicate_roll_profile.first().username if is_duplicate_roll else None
+        # Roll Number Duplication Check (only when OCR extracted a real roll number)
+        admission_num = (extracted.get("admission_number") or "").strip()
+        is_duplicate_roll = False
+        duplicate_roll_user = None
+        if admission_num:
+            duplicate_roll_profile = StudentProfile.objects.filter(admission_number__iexact=admission_num)
+            if current_user:
+                duplicate_roll_profile = duplicate_roll_profile.exclude(user=current_user)
+            is_duplicate_roll = duplicate_roll_profile.exists()
+            duplicate_roll_user = duplicate_roll_profile.first().username if is_duplicate_roll else None
 
-        college = extracted.get("college") or College.objects.first()
-        course = extracted.get("course") or Course.objects.filter(college=college).first() or Course.objects.first()
-        branch = extracted.get("branch") or Branch.objects.filter(course=course).first() or Branch.objects.first()
-        academic_year = extracted.get("academic_year") or AcademicYear.objects.filter(course=course).first() or AcademicYear.objects.first()
-        section = extracted.get("section") or Section.objects.filter(academic_year=academic_year).first() or Section.objects.first()
-
-        full_name = extracted.get("full_name") or "Verified Student"
+        college = extracted.get("college")
+        course = extracted.get("course")
+        branch = extracted.get("branch")
+        academic_year = extracted.get("academic_year")
+        section = extracted.get("section")
+        full_name = (extracted.get("full_name") or "").strip()
 
         return {
             "success": True,
+            "ocr_available": has_ocr_text,
+            "requires_manual_review": True,
+            "id_card_verified": False,
             "raw_text": raw_text.strip(),
             "image_hash": img_hash,
             "extracted_data": {
-                "full_name": full_name,
-                "admission_number": admission_num,
+                "full_name": full_name or None,
+                "admission_number": admission_num or None,
                 "college": {
-                    "id": college.id if college else 1,
-                    "name": college.name if college else "Graphic Era University",
-                    "short_name": college.short_name if college else "GEU",
-                },
+                    "id": college.id,
+                    "name": college.name,
+                    "short_name": college.short_name,
+                } if college else None,
                 "course": {
-                    "id": course.id if course else 1,
-                    "name": course.name if course else "B.Tech",
-                },
+                    "id": course.id,
+                    "name": course.name,
+                } if course else None,
                 "branch": {
-                    "id": branch.id if branch else 1,
-                    "name": branch.name if branch else "Computer Science & Engineering",
-                },
+                    "id": branch.id,
+                    "name": branch.name,
+                } if branch else None,
                 "academic_year": {
-                    "id": academic_year.id if academic_year else 1,
-                    "name": academic_year.display_name if academic_year else "1st Year",
-                },
+                    "id": academic_year.id,
+                    "name": academic_year.display_name,
+                } if academic_year else None,
                 "section": {
-                    "id": section.id if section else 1,
-                    "name": section.name if section else "Section A",
-                },
+                    "id": section.id,
+                    "name": section.name,
+                } if section else None,
             },
             "anti_fraud": {
                 "is_duplicate_roll": is_duplicate_roll,
@@ -418,3 +426,4 @@ class IDCardOCRService:
                 ),
             },
         }
+

@@ -37,7 +37,24 @@ class CompleteProfileView(APIView):
 
         # Shallow dict copy avoids QueryDict.copy() deepcopy crash if a TemporaryUploadedFile >2.5MB is attached
         data = {k: request.data.get(k) for k in request.data.keys()} if hasattr(request.data, "keys") else dict(request.data)
-        
+
+        from accounts.models import CampusInviteCode, is_institutional_email
+        from django.db import transaction
+        from django.db.models import F
+
+        # Check optional invite_code supplied during onboarding
+        raw_invite = str(data.pop("invite_code", "") or "").strip().upper()
+        invite_obj = None
+        if raw_invite:
+            invite_obj = CampusInviteCode.objects.select_related("college", "created_by").filter(code__iexact=raw_invite).first()
+            if not invite_obj or not invite_obj.is_valid:
+                return Response(
+                    {"invite_code": "Invalid, expired, or exhausted Campus Invite Code.", "error": "Invalid, expired, or exhausted Campus Invite Code."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if not data.get("college"):
+                data["college"] = invite_obj.college_id
+
         # 1. Resolve College
         if not data.get("college"):
             domain_match = CollegeDomain.find_by_email(user.email)
@@ -102,10 +119,23 @@ class CompleteProfileView(APIView):
                     section = Section.objects.filter(academic_year=academic_year).first()
                 data["section"] = section.id if section else None
 
-        # Check existing profile
+        # Check existing profile & resolve trustworthy verification method
         existing_profile = getattr(user, "profile", None)
         orig_method = getattr(existing_profile, "verification_method", None)
-        verification_method = data.get("verification_method") or orig_method or ("ID_CARD_OCR" if data.get("id_card_image") else "MICROSOFT_SSO")
+        if orig_method in ("MICROSOFT_SSO", "ADMIN_VERIFIED"):
+            verification_method = orig_method
+        elif invite_obj:
+            verification_method = "INVITE_CODE"
+        elif orig_method == "INVITE_CODE":
+            verification_method = "INVITE_CODE"
+        elif orig_method == "ID_CARD_OCR" or data.get("id_card_image"):
+            verification_method = "ID_CARD_OCR"
+        elif is_institutional_email(user.email):
+            verification_method = "MICROSOFT_SSO" if orig_method == "MICROSOFT_SSO" else "EMAIL_OTP"
+        elif user.is_phone_verified and user.email.lower().startswith("student_"):
+            verification_method = "PHONE_OTP"
+        else:
+            verification_method = "EMAIL_OTP"
 
         serializer = StudentProfileSerializer(instance=existing_profile, data=data, partial=bool(existing_profile))
         serializer.is_valid(raise_exception=True)
@@ -132,19 +162,47 @@ class CompleteProfileView(APIView):
         if user_fields_to_update:
             user.save(update_fields=user_fields_to_update)
 
-        is_microsoft_verified = (verification_method == "MICROSOFT_SSO")
-        profile = serializer.save(
-            user=user,
-            college_email=user.email,
-            verified=is_microsoft_verified,
-            id_card_verified=is_microsoft_verified,
-            profile_completed=True,
-            verification_method=verification_method,
+        is_id_verified = (
+            verification_method in ("MICROSOFT_SSO", "ADMIN_VERIFIED")
+            or bool(existing_profile and existing_profile.id_card_verified and verification_method == "ID_CARD_OCR")
+        )
+        is_verified_profile = (
+            is_id_verified
+            or verification_method == "INVITE_CODE"
+            or (verification_method == "EMAIL_OTP" and is_institutional_email(user.email) and user.is_email_verified)
+        )
+        college_email_val = (
+            getattr(existing_profile, "college_email", None)
+            or (user.email if is_institutional_email(user.email) else None)
         )
 
+        save_kwargs = {
+            "user": user,
+            "college_email": college_email_val,
+            "verified": is_verified_profile,
+            "id_card_verified": is_id_verified,
+            "profile_completed": True,
+            "verification_method": verification_method,
+        }
+        if invite_obj:
+            with transaction.atomic():
+                locked_invite = CampusInviteCode.objects.select_for_update().get(id=invite_obj.id)
+                if not locked_invite.is_valid:
+                    return Response(
+                        {"invite_code": "This invite code has reached its limit.", "error": "This invite code has reached its limit."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                CampusInviteCode.objects.filter(id=locked_invite.id).update(uses_count=F("uses_count") + 1)
+                save_kwargs["invited_by"] = locked_invite.created_by
+                save_kwargs["invite_code_used"] = locked_invite
+                profile = serializer.save(**save_kwargs)
+        else:
+            profile = serializer.save(**save_kwargs)
+
+        user.check_and_update_student_status()
         user.refresh_from_db()
 
-        # Retrieve the 3 mandatory communities enrolled via profile post_save signal
+        # Retrieve core communities enrolled via profile post_save signal
         enrolled_communities = [
             m.community.name for m in CommunityMember.objects.filter(user=user).select_related("community")
         ]
@@ -157,12 +215,17 @@ class CompleteProfileView(APIView):
                 "id": user.id,
                 "email": user.email,
                 "full_name": user.full_name,
+                "username": profile.username,
                 "phone_number": user.phone_number,
                 "profile_picture": resolve_media_url(request, profile.profile_picture) if profile.profile_picture else None,
                 "is_email_verified": user.is_email_verified,
                 "is_phone_verified": user.is_phone_verified,
                 "is_verified_student": user.is_verified_student,
+                "is_staff": user.is_staff,
+                "is_superuser": user.is_superuser,
                 "verification_tier": user.verification_tier,
+                "verification_method": profile.verification_method,
+                "can_participate": user.can_participate,
                 "badge_label": user.badge_label,
                 "profile_completed": user.profile_completed,
             }
@@ -285,9 +348,9 @@ class ScanIDCardView(APIView):
     """
     POST /api/profile/scan-id-card/
     Uploads College Physical ID Card photo (multipart or base64).
-    1. Runs native high-accuracy OCR to extract Name, Roll No, College, Course, Branch, Batch.
-    2. Runs Anti-Fraud checks: checks if Roll Number or ID Card image was already used by another account.
-    3. Auto-associates scanned ID card with student's profile for blind testing verification.
+    1. Validates image, runs OCR if available on host, and executes Anti-Fraud duplication checks.
+    2. Leaves `id_card_verified=False` until a campus Admin explicitly approves the card in Audit.
+    3. Saves optional submitted roll number (`admission_number`) and `college_id` cleanly.
     """
     permission_classes = [IsAuthenticated]
 
@@ -303,7 +366,6 @@ class ScanIDCardView(APIView):
             file_name = image_file.name
         elif image_base64:
             try:
-                # Strip data URL prefix if present
                 if "," in image_base64:
                     image_base64 = image_base64.split(",", 1)[1]
                 image_bytes = base64.b64decode(image_base64)
@@ -315,31 +377,55 @@ class ScanIDCardView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Run OCR & Anti-Fraud Scan
         scan_result = IDCardOCRService.scan_id_card_image(image_bytes, current_user=request.user)
+        if not scan_result.get("success"):
+            return Response(scan_result, status=status.HTTP_400_BAD_REQUEST)
 
-        # If user has profile draft or existing profile, save image and metadata
         profile = getattr(request.user, "profile", None)
+        manual_roll = str(request.data.get("admission_number", "") or "").strip()
+        manual_college_id = request.data.get("college_id")
         if profile and image_bytes:
             content_file = ContentFile(image_bytes, name=file_name)
             profile.id_card_image = content_file
-            profile.id_card_verified = not scan_result["anti_fraud"]["is_flagged"]
+            # Strict gate: newly submitted ID cards ALWAYS stay unverified until Admin approves
+            already_trusted = profile.verification_method in ("MICROSOFT_SSO", "ADMIN_VERIFIED")
+            if not already_trusted:
+                profile.id_card_verified = False
+                profile.verified = False
+                profile.verification_method = "ID_CARD_OCR"
+                if request.user.is_verified_student:
+                    request.user.is_verified_student = False
+                    request.user.save(update_fields=["is_verified_student"])
+
+            ext_roll = (scan_result.get("extracted_data") or {}).get("admission_number") or manual_roll
+            if ext_roll and not profile.admission_number:
+                dup = StudentProfile.objects.filter(admission_number__iexact=ext_roll).exclude(id=profile.id).exists()
+                if not dup:
+                    profile.admission_number = ext_roll
+
+            if manual_college_id and not profile.profile_completed:
+                col_obj = College.objects.filter(id=manual_college_id).first()
+                if col_obj:
+                    profile.college = col_obj
+
             profile.id_card_ocr_data = scan_result["extracted_data"]
             profile.id_card_hash = scan_result["image_hash"]
-            profile.verification_method = "ID_CARD_OCR"
             if scan_result["anti_fraud"]["is_flagged"]:
                 profile.is_flagged_fake = True
                 profile.flag_reason = scan_result["anti_fraud"]["flag_reason"]
-            profile.save(update_fields=[
-                "id_card_image",
-                "id_card_verified",
-                "id_card_ocr_data",
-                "id_card_hash",
-                "verification_method",
-                "is_flagged_fake",
-                "flag_reason"
-            ])
+            profile.save()
 
+        request.user.refresh_from_db()
+        scan_result["user"] = {
+            "id": request.user.id,
+            "email": request.user.email,
+            "full_name": request.user.full_name,
+            "verification_tier": request.user.verification_tier,
+            "verification_method": getattr(getattr(request.user, "profile", None), "verification_method", None),
+            "can_participate": request.user.can_participate,
+            "badge_label": request.user.badge_label,
+            "is_verified_student": request.user.is_verified_student,
+        }
         return Response(scan_result, status=status.HTTP_200_OK)
 
 
@@ -347,10 +433,9 @@ class AdminIDCardAuditListView(APIView):
     """
     GET /api/profile/admin/id-cards/
     Enables campus organizers / founders to inspect registered students:
-    - View student name, phone, email, roll number
-    - View uploaded ID card photo & OCR match
-    - Detect duplicate cards and flag fake accounts
-    Protected: Only accessible to authenticated staff/admins (or in local DEBUG mode).
+    - Pending manual ID card reviews first
+    - View student name, phone, email, roll number, uploaded ID card photo
+    - Detect duplicate cards, approve or flag fake accounts
     """
     permission_classes = [IsAuthenticated]
 
@@ -364,26 +449,40 @@ class AdminIDCardAuditListView(APIView):
         profiles = StudentProfile.objects.all().select_related("user", "college", "course", "branch").order_by("-created_at")
         audit_list = []
         for p in profiles:
+            pending_review = (p.verification_method == "ID_CARD_OCR" and not p.id_card_verified and not p.is_flagged_fake)
             audit_list.append({
                 "user_id": p.user.id,
                 "email": p.user.email,
+                "full_name": p.user.full_name,
                 "phone_number": p.user.phone_number or "N/A",
                 "username": p.username,
                 "admission_number": p.admission_number,
                 "college_name": p.college.name if p.college else "N/A",
                 "course_name": p.course.name if p.course else "N/A",
                 "branch_name": p.branch.name if p.branch else "N/A",
-                "id_card_image": request.build_absolute_uri(p.id_card_image.url) if p.id_card_image else None,
+                "id_card_image": resolve_media_url(request, p.id_card_image) if p.id_card_image else None,
                 "id_card_verified": p.id_card_verified,
                 "verification_method": p.verification_method,
+                "verification_tier": p.user.verification_tier,
+                "badge_label": p.user.badge_label,
+                "can_participate": p.user.can_participate,
+                "pending_review": pending_review,
                 "is_flagged_fake": p.is_flagged_fake,
                 "flag_reason": p.flag_reason,
                 "ocr_data": p.id_card_ocr_data,
                 "created_at": p.created_at.strftime("%Y-%m-%d %H:%M"),
             })
 
+        # Surface pending reviews and flagged accounts at the top of admin queue
+        audit_list.sort(
+            key=lambda item: (
+                0 if item["pending_review"] else (1 if item["is_flagged_fake"] else 2)
+            )
+        )
+
         return Response({
             "total_students": len(audit_list),
+            "pending_reviews": sum(1 for item in audit_list if item["pending_review"]),
             "flagged_accounts": sum(1 for item in audit_list if item["is_flagged_fake"]),
             "students": audit_list
         })
@@ -392,8 +491,7 @@ class AdminIDCardAuditListView(APIView):
 class AdminAuditActionView(APIView):
     """
     POST /api/profile/admin/audit-user/
-    Action: 'APPROVE' or 'FLAG_FAKE'
-    Protected: Only accessible to authenticated staff/admins (or in local DEBUG mode).
+    Action: 'APPROVE', 'FLAG_FAKE', or 'RESET'
     """
     permission_classes = [IsAuthenticated]
 
@@ -405,26 +503,46 @@ class AdminAuditActionView(APIView):
             )
 
         user_id = request.data.get("user_id")
-        action = request.data.get("action")  # "APPROVE" or "FLAG_FAKE"
+        action = request.data.get("action")  # "APPROVE", "FLAG_FAKE", or "RESET"
         reason = request.data.get("reason", "")
 
         if not user_id or action not in ["APPROVE", "FLAG_FAKE", "RESET"]:
             return Response({"error": "Invalid user_id or action."}, status=status.HTTP_400_BAD_REQUEST)
 
-        profile = StudentProfile.objects.filter(user_id=user_id).first()
+        profile = StudentProfile.objects.select_related("user").filter(user_id=user_id).first()
         if not profile:
             return Response({"error": "Student profile not found."}, status=status.HTTP_404_NOT_FOUND)
 
         if action == "APPROVE":
             profile.id_card_verified = True
+            profile.verified = True
+            if profile.verification_method != "MICROSOFT_SSO":
+                profile.verification_method = "ADMIN_VERIFIED"
             profile.is_flagged_fake = False
             profile.flag_reason = "Manually verified by admin"
-            profile.save(update_fields=["id_card_verified", "is_flagged_fake", "flag_reason"])
+            profile.save(update_fields=[
+                "id_card_verified", "verified", "verification_method", "is_flagged_fake", "flag_reason"
+            ])
+            if not profile.user.is_verified_student:
+                profile.user.is_verified_student = True
+                profile.user.save(update_fields=["is_verified_student"])
+            create_notification(
+                recipient=profile.user,
+                sender=request.user,
+                notification_type="SYSTEM",
+                title="Campus ID Approved",
+                message="Your Student ID has been verified by admin. Posting, confessing & chatting are now unlocked!",
+            )
             msg = f"User @{profile.username} approved as verified student."
         elif action == "FLAG_FAKE":
             profile.is_flagged_fake = True
+            profile.verified = False
+            profile.id_card_verified = False
             profile.flag_reason = reason or "Flagged as fake profile during audit"
-            profile.save(update_fields=["is_flagged_fake", "flag_reason"])
+            profile.save(update_fields=["is_flagged_fake", "verified", "id_card_verified", "flag_reason"])
+            if profile.user.is_verified_student:
+                profile.user.is_verified_student = False
+                profile.user.save(update_fields=["is_verified_student"])
             msg = f"User @{profile.username} flagged as fake profile."
         else:
             profile.is_flagged_fake = False
@@ -432,7 +550,16 @@ class AdminAuditActionView(APIView):
             profile.save(update_fields=["is_flagged_fake", "flag_reason"])
             msg = f"Flag cleared for user @{profile.username}."
 
-        return Response({"message": msg, "user_id": user_id, "is_flagged_fake": profile.is_flagged_fake})
+        profile.user.refresh_from_db()
+        return Response({
+            "message": msg,
+            "user_id": user_id,
+            "is_flagged_fake": profile.is_flagged_fake,
+            "id_card_verified": profile.id_card_verified,
+            "verification_method": profile.verification_method,
+            "verification_tier": profile.user.verification_tier,
+            "can_participate": profile.user.can_participate,
+        })
 
 
 class ConnectionRequestView(APIView):

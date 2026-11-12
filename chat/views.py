@@ -3,6 +3,7 @@ from rest_framework.views import APIView
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from accounts.permissions import IsCampusVerified
 from django.shortcuts import get_object_or_404
 from django.db.models import Q, Count
 from django.utils import timezone
@@ -95,7 +96,7 @@ class StartDirectChatView(APIView):
       - FOLLOWING -> requires receiver to follow sender
       - EVERYONE -> creates/returns Message Request (does not clutter recipient's primary inbox)
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCampusVerified]
 
     def post(self, request, identifier):
         filters = Q(email__iexact=identifier) | Q(profile__username__iexact=identifier) | Q(full_name__iexact=identifier)
@@ -238,7 +239,7 @@ class CreateEphemeralGroupView(APIView):
     Creates a temporary self-destructing group (10 min to 24 hrs) for hangouts, trips, or study sessions.
     Automatically cleans itself up after expiration.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCampusVerified]
 
     def post(self, request):
         serializer = CreateEphemeralGroupSerializer(data=request.data)
@@ -309,7 +310,7 @@ class SendMessageView(APIView):
     POST /api/chat/<uuid:conversation_id>/send/
     Sends a message in the conversation with optional attachments. Unhides conversation if previously deleted.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCampusVerified]
 
     def post(self, request, conversation_id):
         conv = get_object_or_404(Conversation, id=conversation_id)
@@ -661,7 +662,10 @@ class JoinByConversationInviteView(APIView):
     GET /api/chat/invite/<str:invite_code>/ (Preview group chat)
     POST /api/chat/invite/<str:invite_code>/ (Join group chat)
     """
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), IsCampusVerified()]
 
     def get(self, request, invite_code):
         conv = get_object_or_404(Conversation, invite_code=invite_code)

@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from accounts.permissions import IsCampusVerified
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from colleges.models import CollegeDomain
@@ -50,7 +51,7 @@ class CreateLostFoundPostView(APIView):
     POST /api/lost-found/create/
     Frictionless 1-step post: simple description + written location + optional photo.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCampusVerified]
 
     def post(self, request):
         college = get_user_college(request.user)
@@ -102,7 +103,7 @@ class ContactReporterView(APIView):
     POST /api/lost-found/<uuid:item_id>/contact/
     1-Click In-App Chat: Starts a chat between the student and the finder/owner with item context.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCampusVerified]
 
     def post(self, request, item_id):
         item = get_object_or_404(LostFoundPost, id=item_id)

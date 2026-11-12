@@ -22,7 +22,7 @@ export interface Post {
   author_name: string;
   author_username?: string;
   author_avatar?: string;
-  author_verification_tier?: 'FULLY_VERIFIED' | 'SEMI_VERIFIED' | 'UNVERIFIED';
+  author_verification_tier?: 'FULLY_VERIFIED' | 'INVITE_VERIFIED' | 'SEMI_VERIFIED' | 'UNVERIFIED';
   author_badge_label?: string;
   anonymous_alias?: string;
   likes_count: number;

@@ -3,15 +3,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 const getBaseUrl = (): string => {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    try {
+      const stored = window.localStorage?.getItem('custom_backend_url');
+      if (stored) return stored;
+    } catch {}
+  }
   const envApiUrl = (process.env as any)?.EXPO_PUBLIC_API_URL;
   if (envApiUrl) {
     return envApiUrl;
   }
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.hostname) {
-    try {
-      const stored = window.localStorage?.getItem('custom_backend_url');
-      if (stored) return stored;
-    } catch {}
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       return `http://${window.location.hostname}:8000/api`;
     }
@@ -136,7 +138,8 @@ api.interceptors.response.use(
       try {
         const refreshToken = await AsyncStorage.getItem('refresh_token');
         if (!refreshToken) {
-          throw new Error('No refresh token available');
+          processQueue(error, null);
+          return Promise.reject(error);
         }
 
         // Call refresh endpoint with raw axios instance to prevent interceptor loops

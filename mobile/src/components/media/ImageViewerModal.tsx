@@ -133,11 +133,13 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
     }
   };
 
+  if (!visible) return null;
+
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType={Platform.OS === 'web' ? 'none' : 'fade'}
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>

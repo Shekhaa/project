@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Share as NativeShare,
+  Platform,
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { useTheme } from '../../theme/ThemeContext';
@@ -142,8 +143,10 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     );
   };
 
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType={Platform.OS === 'web' ? 'none' : 'slide'} transparent onRequestClose={onClose}>
       <View style={[styles.backdrop, { backgroundColor: themeColors.modalOverlay }]}>
         <TouchableOpacity style={styles.dismissOverlay} onPress={onClose} activeOpacity={1} />
 

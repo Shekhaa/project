@@ -101,10 +101,63 @@ class OTPService:
         return False, "No active SMS gateway configured (Simulated Dev Mode)."
 
     @classmethod
+    def dispatch_real_email(cls, email: str, subject: str, message: str) -> tuple[bool, str]:
+        """
+        Dispatches email via Resend HTTPS API (when RESEND_API_KEY is configured) or Django email backend.
+        Returns (real_sent: bool, status_message: str).
+        """
+        resend_key = (getattr(settings, "RESEND_API_KEY", "") or os.getenv("RESEND_API_KEY", "")).strip()
+        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "verify@campusconnect.local")
+
+        if resend_key:
+            try:
+                payload = json.dumps({
+                    "from": from_email,
+                    "to": [email],
+                    "subject": subject,
+                    "text": message,
+                }).encode("utf-8")
+                req = urllib.request.Request(
+                    "https://api.resend.com/emails",
+                    data=payload,
+                    headers={
+                        "Authorization": f"Bearer {resend_key}",
+                        "Content-Type": "application/json",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    if 200 <= resp.status < 300:
+                        return True, "Verification email sent via Resend."
+            except Exception as e:
+                print(f"[RESEND EMAIL ERROR] {e}")
+
+        backend_path = getattr(settings, "EMAIL_BACKEND", "")
+        is_real_backend = (
+            "console" not in backend_path.lower()
+            and "dummy" not in backend_path.lower()
+            and "locmem" not in backend_path.lower()
+        )
+        try:
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=from_email,
+                recipient_list=[email],
+                fail_silently=False,
+            )
+            if is_real_backend:
+                return True, "Verification email sent via SMTP."
+            return False, "Console/Dev email backend active."
+        except Exception as e:
+            print(f"[OTP SMTP ERROR] Failed to send email to {email}: {e}")
+            return False, f"Email dispatch error: {e}"
+
+    @classmethod
     def send_email_otp(cls, email, purpose="EMAIL_LOGIN", return_record=False):
         """
-        Generates and dispatches an OTP to a student's college email.
-        Enforces cooldown and logs or sends via email backend.
+        Generates and dispatches an OTP to a student's email address (institutional or Gmail).
+        Enforces cooldown and sends via Resend API / SMTP / console fallback.
         Includes a 1-click Magic Link for frictionless verification.
         """
         email = email.strip().lower()
@@ -155,24 +208,22 @@ class OTPService:
             f"If you did not request this, please ignore this email.\n\n"
             f"— The Campus Connect Team"
         )
-        try:
-            send_mail(
-                subject=subject,
-                message=message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[email],
-                fail_silently=False
-            )
-        except Exception as e:
-            print(f"[OTP DEV FALLBACK] Failed to send email: {e}. Code: {code}")
+        real_sent, gateway_msg = cls.dispatch_real_email(email, subject, message)
+        otp_record.real_email_sent = real_sent
+        otp_record.email_gateway_msg = gateway_msg
 
         print(f"\n==================================================")
         print(f"  [CAMPUS CONNECT OTP] Destination: {email}")
         print(f"  [6-DIGIT CODE]: {code}  (Expires in {cls.EXPIRY_MINUTES}m)")
         print(f"  [1-CLICK MAGIC LINK]: {magic_link}")
+        print(f"  [REAL EMAIL DISPATCHED]: {'YES' if real_sent else f'NO ({gateway_msg})'}")
         print(f"==================================================\n")
 
-        msg = "OTP sent successfully to your college email."
+        msg = (
+            "OTP sent to your email inbox."
+            if real_sent
+            else "OTP generated and ready to verify."
+        )
         return (True, msg, otp_record) if return_record else (True, msg)
 
     @classmethod

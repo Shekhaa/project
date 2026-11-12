@@ -101,7 +101,7 @@ class PostSerializer(serializers.ModelSerializer):
     likes_count = serializers.SerializerMethodField()
     comments_count = serializers.SerializerMethodField()
     has_liked = serializers.SerializerMethodField()
-    author_college_name = serializers.CharField(source="author.profile.college.name", read_only=True)
+    author_college_name = serializers.SerializerMethodField()
     media_url = serializers.SerializerMethodField()
     document = serializers.SerializerMethodField()
 
@@ -201,6 +201,11 @@ class PostSerializer(serializers.ModelSerializer):
         if hasattr(obj.author, "profile") and obj.author.profile.profile_picture:
             return resolve_media_url(self.context.get("request"), obj.author.profile.profile_picture)
         return None
+
+    def get_author_college_name(self, obj):
+        prof = getattr(obj.author, "profile", None)
+        col = getattr(prof, "college", None) if prof else None
+        return col.name if col else None
 
     def get_media_url(self, obj):
         if not obj.media_url:

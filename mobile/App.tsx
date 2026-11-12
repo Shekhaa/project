@@ -10,6 +10,7 @@ import {
   Platform,
   BackHandler,
   LogBox,
+  Modal,
 } from 'react-native';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 
@@ -31,9 +32,16 @@ if (Platform.OS === 'web' && typeof console !== 'undefined') {
     originalWarn.apply(console, args);
   };
 }
+
 import { Home, Building2, MessageSquare, User as UserIcon, Search } from 'lucide-react-native';
-import { authService, User } from './src/services/authService';
+import {
+  authService,
+  User,
+  computeCanParticipate,
+  consumeMsOAuthMode,
+} from './src/services/authService';
 import { setAuthExpiredListener } from './src/config/api';
+import { showCrossPlatformAlert } from './src/utils/mediaUtils';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { ProfileSetupScreen } from './src/screens/ProfileSetupScreen';
 import { FeedScreen } from './src/screens/FeedScreen';
@@ -42,6 +50,7 @@ import { ChatScreen } from './src/screens/ChatScreen';
 import { LostFoundScreen } from './src/screens/LostFoundScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { StudentProfileModal } from './src/components/profile/StudentProfileModal';
+import { VerificationGateModal } from './src/components/common/VerificationGateModal';
 
 type TabType = 'FEED' | 'COMMUNITIES' | 'CHAT' | 'LOST_FOUND' | 'PROFILE';
 
@@ -53,10 +62,23 @@ function AppMain() {
   const [selectedCommunityConv, setSelectedCommunityConv] = useState<any | null>(null);
   const [composerTrigger, setComposerTrigger] = useState(0);
   const [viewingProfileUserId, setViewingProfileUserId] = useState<number | null>(null);
+  const [authModalVisible, setAuthModalVisible] = useState(false);
+  const [verifyModalVisible, setVerifyModalVisible] = useState(false);
+  const [verifyReason, setVerifyReason] = useState<string | undefined>(undefined);
 
-  // Instagram-style Back Button Support (Android Hardware + Web Browser history)
+  const canParticipate = computeCanParticipate(currentUser);
+
+  // Back Button Support (Android Hardware + Web Browser history)
   useEffect(() => {
     const onBackPress = () => {
+      if (verifyModalVisible) {
+        setVerifyModalVisible(false);
+        return true;
+      }
+      if (authModalVisible) {
+        setAuthModalVisible(false);
+        return true;
+      }
       if (activeTab !== 'FEED') {
         setActiveTab('FEED');
         return true;
@@ -78,9 +100,13 @@ function AppMain() {
     }
 
     return () => backSubscription.remove();
-  }, [activeTab]);
+  }, [activeTab, authModalVisible, verifyModalVisible]);
 
   const navigateToTab = (tab: TabType) => {
+    if (!currentUser && tab !== 'FEED') {
+      setAuthModalVisible(true);
+      return;
+    }
     if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history) {
       window.history.pushState({ tab }, '', `#${tab.toLowerCase()}`);
     }
@@ -90,6 +116,7 @@ function AppMain() {
   useEffect(() => {
     setAuthExpiredListener(() => {
       setCurrentUser(null);
+      setActiveTab('FEED');
     });
     checkInitialSession();
     return () => {
@@ -100,8 +127,62 @@ function AppMain() {
   const checkInitialSession = async () => {
     try {
       const session = await authService.getStoredSession();
-      if (session) {
-        setCurrentUser(session.user);
+      let activeUser: User | null = session?.user || null;
+      if (activeUser) {
+        setCurrentUser(activeUser);
+      }
+
+      // Handle Microsoft Entra ID web redirect fragment (#id_token= or #access_token=) centrally
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location.hash) {
+        const rawHash = window.location.hash.substring(1);
+        if (rawHash.includes('id_token=') || rawHash.includes('access_token=')) {
+          try {
+            const params = new URLSearchParams(rawHash);
+            const msToken = params.get('id_token') || params.get('access_token');
+            if (window.history?.replaceState) {
+              window.history.replaceState(null, '', window.location.pathname);
+            }
+            if (msToken) {
+              const oauthMode = await consumeMsOAuthMode();
+              if (oauthMode === 'link' && session?.token) {
+                const linked = await authService.linkWithMicrosoft(msToken);
+                if (linked?.user) {
+                  activeUser = linked.user;
+                  setCurrentUser(linked.user);
+                  showCrossPlatformAlert(
+                    'College ID Linked',
+                    linked.message || 'Your university Microsoft account is now verified.'
+                  );
+                }
+              } else {
+                const res = await authService.loginWithMicrosoft(msToken);
+                if (res?.user) {
+                  activeUser = res.user;
+                  setCurrentUser(res.user);
+                }
+              }
+            }
+          } catch (oauthErr: any) {
+            const errMsg =
+              oauthErr?.response?.data?.error ||
+              oauthErr?.response?.data?.detail ||
+              oauthErr?.message ||
+              'Microsoft verification failed.';
+            showCrossPlatformAlert('Microsoft Verification', errMsg);
+          }
+        }
+      }
+
+      // Silently refresh user verification tier & admin flags on startup if signed in
+      if (activeUser) {
+        authService
+          .getCurrentUser()
+          .then((freshUser) => {
+            if (freshUser) {
+              setCurrentUser(freshUser);
+            }
+          })
+          .catch(() => {});
       }
     } catch (e) {
       console.log('Session check error', e);
@@ -111,6 +192,7 @@ function AppMain() {
   };
 
   const handleLoginSuccess = (user: User) => {
+    setAuthModalVisible(false);
     setCurrentUser(user);
     setActiveTab('FEED');
   };
@@ -120,30 +202,48 @@ function AppMain() {
     authService.updateCurrentUser(newUser).catch(() => {});
   };
 
-  const handleProfileComplete = async () => {
+  const handleProfileComplete = async (completedUser?: User) => {
+    setActiveTab('FEED');
+    if (completedUser) {
+      setCurrentUser({ ...completedUser, profile_completed: true });
+      return;
+    }
     try {
+      const fresh = await authService.getCurrentUser();
+      if (fresh) {
+        setCurrentUser({ ...fresh, profile_completed: true });
+        return;
+      }
       const updated = await authService.updateCurrentUser({ profile_completed: true });
       if (updated) {
         setCurrentUser(updated);
-        setActiveTab('FEED');
         return;
       }
     } catch (e) {}
     if (currentUser) {
       setCurrentUser({ ...currentUser, profile_completed: true });
-      setActiveTab('FEED');
     }
   };
 
   const handleLogout = async () => {
     await authService.logout();
     setCurrentUser(null);
+    setViewingProfileUserId(null);
+    setVerifyModalVisible(false);
     setActiveTab('FEED');
   };
 
-  const handleOpenCommunityChat = (conv: any) => {
-    setSelectedCommunityConv(conv);
-    setActiveTab('CHAT');
+  const handleRequireAuth = () => {
+    setAuthModalVisible(true);
+  };
+
+  const handleRequireVerify = (reason?: string) => {
+    if (!currentUser) {
+      setAuthModalVisible(true);
+      return;
+    }
+    setVerifyReason(reason);
+    setVerifyModalVisible(true);
   };
 
   if (loading) {
@@ -154,75 +254,92 @@ function AppMain() {
     );
   }
 
-  // 1. Unauthenticated -> Auth Screen
-  if (!currentUser) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
-        <AuthScreen onLoginSuccess={handleLoginSuccess} />
-      </SafeAreaView>
-    );
-  }
-
-  // 2. Authenticated but Profile Incomplete -> Onboarding Screen
-  if (!currentUser.profile_completed) {
+  // Authenticated non-staff with incomplete profile -> Mandatory Onboarding Screen
+  if (currentUser && !currentUser.profile_completed && !currentUser.is_staff && !currentUser.is_superuser) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
         <ProfileSetupScreen
           currentUser={currentUser}
           onProfileComplete={handleProfileComplete}
+          onUserUpdated={handleUserSwitched}
           onBack={handleLogout}
         />
       </SafeAreaView>
     );
   }
 
-  // 3. Fully Onboarded Student -> Main App
+  const displayedTab: TabType = !currentUser ? 'FEED' : activeTab;
+
+  // Main App Shell (Guest Read-Only Feed when !currentUser, Full App when authenticated)
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
 
       {/* Screen Content */}
       <View style={styles.mainContent}>
-        {activeTab === 'FEED' && (
+        {displayedTab === 'FEED' && (
           <FeedScreen
             composerTrigger={composerTrigger}
             currentUser={currentUser}
+            canParticipate={canParticipate}
+            onRequireAuth={handleRequireAuth}
+            onRequireVerify={handleRequireVerify}
             onNavigateToChat={(convId) => {
+              if (!currentUser) {
+                handleRequireAuth();
+                return;
+              }
               if (convId) {
                 setSelectedCommunityConv({ id: String(convId) });
               }
               navigateToTab('CHAT');
             }}
-            onOpenProfile={(uid) => setViewingProfileUserId(uid)}
+            onOpenProfile={(uid) => {
+              if (!currentUser) {
+                handleRequireAuth();
+                return;
+              }
+              setViewingProfileUserId(uid);
+            }}
           />
         )}
-        {activeTab === 'COMMUNITIES' && (
+        {displayedTab === 'COMMUNITIES' && currentUser && (
           <CommunitiesScreen
             currentUser={currentUser}
+            canParticipate={canParticipate}
+            onRequireVerify={handleRequireVerify}
             onOpenProfile={(uid) => setViewingProfileUserId(uid)}
           />
         )}
-        {activeTab === 'CHAT' && (
+        {displayedTab === 'CHAT' && currentUser && (
           <ChatScreen
             currentUser={currentUser}
+            canParticipate={canParticipate}
+            onRequireVerify={handleRequireVerify}
             initialConversation={selectedCommunityConv}
             onClearInitialConversation={() => setSelectedCommunityConv(null)}
             onOpenProfile={(uid) => setViewingProfileUserId(uid)}
           />
         )}
-        {activeTab === 'LOST_FOUND' && <LostFoundScreen />}
-        {activeTab === 'PROFILE' && (
+        {displayedTab === 'LOST_FOUND' && currentUser && (
+          <LostFoundScreen
+            canParticipate={canParticipate}
+            onRequireVerify={handleRequireVerify}
+          />
+        )}
+        {displayedTab === 'PROFILE' && currentUser && (
           <ProfileScreen
             currentUser={currentUser}
+            canParticipate={canParticipate}
+            onRequireVerify={handleRequireVerify}
             onUserSwitched={handleUserSwitched}
             onLogout={handleLogout}
           />
         )}
       </View>
 
-      {/* 4-Tab Bottom Navigation Bar (Feed, Hubs, Chats, Profile) */}
+      {/* Bottom Navigation Bar */}
       <View style={[styles.tabBar, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
         <TouchableOpacity
           style={styles.tabItem}
@@ -231,10 +348,16 @@ function AppMain() {
         >
           <Home
             size={22}
-            color={activeTab === 'FEED' ? colors.primary : colors.textSecondary}
-            strokeWidth={activeTab === 'FEED' ? 2.5 : 1.8}
+            color={displayedTab === 'FEED' ? colors.primary : colors.textSecondary}
+            strokeWidth={displayedTab === 'FEED' ? 2.5 : 1.8}
           />
-          <Text style={[styles.tabLabel, { color: activeTab === 'FEED' ? colors.primary : colors.textMuted }, activeTab === 'FEED' && styles.tabActiveText]}>
+          <Text
+            style={[
+              styles.tabLabel,
+              { color: displayedTab === 'FEED' ? colors.primary : colors.textMuted },
+              displayedTab === 'FEED' && styles.tabActiveText,
+            ]}
+          >
             Feed
           </Text>
         </TouchableOpacity>
@@ -246,10 +369,16 @@ function AppMain() {
         >
           <Building2
             size={22}
-            color={activeTab === 'COMMUNITIES' ? colors.primary : colors.textSecondary}
-            strokeWidth={activeTab === 'COMMUNITIES' ? 2.5 : 1.8}
+            color={displayedTab === 'COMMUNITIES' ? colors.primary : colors.textSecondary}
+            strokeWidth={displayedTab === 'COMMUNITIES' ? 2.5 : 1.8}
           />
-          <Text style={[styles.tabLabel, { color: activeTab === 'COMMUNITIES' ? colors.primary : colors.textMuted }, activeTab === 'COMMUNITIES' && styles.tabActiveText]}>
+          <Text
+            style={[
+              styles.tabLabel,
+              { color: displayedTab === 'COMMUNITIES' ? colors.primary : colors.textMuted },
+              displayedTab === 'COMMUNITIES' && styles.tabActiveText,
+            ]}
+          >
             Campus
           </Text>
         </TouchableOpacity>
@@ -261,10 +390,16 @@ function AppMain() {
         >
           <MessageSquare
             size={22}
-            color={activeTab === 'CHAT' ? colors.primary : colors.textSecondary}
-            strokeWidth={activeTab === 'CHAT' ? 2.5 : 1.8}
+            color={displayedTab === 'CHAT' ? colors.primary : colors.textSecondary}
+            strokeWidth={displayedTab === 'CHAT' ? 2.5 : 1.8}
           />
-          <Text style={[styles.tabLabel, { color: activeTab === 'CHAT' ? colors.primary : colors.textMuted }, activeTab === 'CHAT' && styles.tabActiveText]}>
+          <Text
+            style={[
+              styles.tabLabel,
+              { color: displayedTab === 'CHAT' ? colors.primary : colors.textMuted },
+              displayedTab === 'CHAT' && styles.tabActiveText,
+            ]}
+          >
             Chats
           </Text>
         </TouchableOpacity>
@@ -276,10 +411,16 @@ function AppMain() {
         >
           <Search
             size={22}
-            color={activeTab === 'LOST_FOUND' ? colors.primary : colors.textSecondary}
-            strokeWidth={activeTab === 'LOST_FOUND' ? 2.5 : 1.8}
+            color={displayedTab === 'LOST_FOUND' ? colors.primary : colors.textSecondary}
+            strokeWidth={displayedTab === 'LOST_FOUND' ? 2.5 : 1.8}
           />
-          <Text style={[styles.tabLabel, { color: activeTab === 'LOST_FOUND' ? colors.primary : colors.textMuted }, activeTab === 'LOST_FOUND' && styles.tabActiveText]}>
+          <Text
+            style={[
+              styles.tabLabel,
+              { color: displayedTab === 'LOST_FOUND' ? colors.primary : colors.textMuted },
+              displayedTab === 'LOST_FOUND' && styles.tabActiveText,
+            ]}
+          >
             Lost/Found
           </Text>
         </TouchableOpacity>
@@ -291,11 +432,17 @@ function AppMain() {
         >
           <UserIcon
             size={22}
-            color={activeTab === 'PROFILE' ? colors.primary : colors.textSecondary}
-            strokeWidth={activeTab === 'PROFILE' ? 2.5 : 1.8}
+            color={displayedTab === 'PROFILE' ? colors.primary : colors.textSecondary}
+            strokeWidth={displayedTab === 'PROFILE' ? 2.5 : 1.8}
           />
-          <Text style={[styles.tabLabel, { color: activeTab === 'PROFILE' ? colors.primary : colors.textMuted }, activeTab === 'PROFILE' && styles.tabActiveText]}>
-            Profile
+          <Text
+            style={[
+              styles.tabLabel,
+              { color: displayedTab === 'PROFILE' ? colors.primary : colors.textMuted },
+              displayedTab === 'PROFILE' && styles.tabActiveText,
+            ]}
+          >
+            {currentUser ? 'Profile' : 'Sign In'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -304,11 +451,40 @@ function AppMain() {
       <StudentProfileModal
         visible={!!viewingProfileUserId}
         userId={viewingProfileUserId}
+        canParticipate={canParticipate}
+        onRequireVerify={handleRequireVerify}
         onClose={() => setViewingProfileUserId(null)}
         onOpenChat={(conv) => {
           setViewingProfileUserId(null);
           setSelectedCommunityConv(conv);
           navigateToTab('CHAT');
+        }}
+      />
+
+      {/* Global Sign-In / Sign-Up Auth Modal (for Guests) */}
+      {authModalVisible && (
+        <Modal
+          visible={authModalVisible}
+          animationType={Platform.OS === 'web' ? 'none' : 'slide'}
+          onRequestClose={() => setAuthModalVisible(false)}
+        >
+          <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <AuthScreen
+              onDismiss={() => setAuthModalVisible(false)}
+              onLoginSuccess={handleLoginSuccess}
+            />
+          </SafeAreaView>
+        </Modal>
+      )}
+
+      {/* Global Campus Verification Upgrade Modal (Invite Code / MS Link / ID Review) */}
+      <VerificationGateModal
+        visible={verifyModalVisible}
+        currentUser={currentUser}
+        reason={verifyReason}
+        onClose={() => setVerifyModalVisible(false)}
+        onVerified={(updatedUser) => {
+          handleUserSwitched(updatedUser);
         }}
       />
     </SafeAreaView>
@@ -364,7 +540,3 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
-
-// mctool->changed ->validity rule 
-// ICE_result_df
-// US_MAC_Final_

@@ -37,6 +37,8 @@ import {
 interface StudentProfileModalProps {
   visible: boolean;
   userId: number | null;
+  canParticipate?: boolean;
+  onRequireVerify?: (reason?: string) => void;
   onClose: () => void;
   onOpenChat?: (conversation: any) => void;
   onOpenSocialList?: (type: 'followers' | 'following', targetUserId: number) => void;
@@ -45,6 +47,8 @@ interface StudentProfileModalProps {
 export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   visible,
   userId,
+  canParticipate = true,
+  onRequireVerify,
   onClose,
   onOpenChat,
   onOpenSocialList,
@@ -55,6 +59,9 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   const [actionLoading, setActionLoading] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
+
+  const isVerifyRequiredErr = (err: any) =>
+    err?.response?.status === 403 || err?.response?.data?.code === 'CAMPUS_VERIFICATION_REQUIRED';
 
   useEffect(() => {
     if (visible && userId) {
@@ -90,6 +97,10 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   // Connection Handler
   const handleConnectionAction = async () => {
     if (!profile) return;
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to connect with classmates.');
+      return;
+    }
     try {
       setActionLoading(true);
       if (profile.connection_status === 'NOT_CONNECTED' || profile.connection_status === 'DECLINED') {
@@ -123,7 +134,11 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
       }
       await loadProfile(profile.id);
     } catch (e: any) {
-      showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update connection.');
+      if (isVerifyRequiredErr(e)) {
+        onRequireVerify?.(e.response?.data?.error || 'Campus verification required to connect.');
+      } else {
+        showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update connection.');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -132,6 +147,10 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   // Follow Handler
   const handleFollowAction = async () => {
     if (!profile) return;
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to follow students.');
+      return;
+    }
     try {
       setActionLoading(true);
       if (profile.follow_status === 'NOT_FOLLOWING') {
@@ -148,7 +167,11 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
       }
       await loadProfile(profile.id);
     } catch (e: any) {
-      showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update follow status.');
+      if (isVerifyRequiredErr(e)) {
+        onRequireVerify?.(e.response?.data?.error || 'Campus verification required to follow students.');
+      } else {
+        showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update follow status.');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -157,6 +180,10 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   // Endorse Handler (+1 Credibility toggle)
   const handleEndorseAction = async () => {
     if (!profile) return;
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to endorse classmates.');
+      return;
+    }
     try {
       setActionLoading(true);
       const res = await profileService.endorseStudent(profile.id);
@@ -171,7 +198,11 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
       );
       showCrossPlatformAlert(res.endorsed ? 'Endorsed ⭐' : 'Endorsement Removed', res.message);
     } catch (e: any) {
-      showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update endorsement.');
+      if (isVerifyRequiredErr(e)) {
+        onRequireVerify?.(e.response?.data?.error || 'Campus verification required to endorse.');
+      } else {
+        showCrossPlatformAlert('Action Failed', e.response?.data?.error || 'Could not update endorsement.');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -180,6 +211,10 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   // Message Handler
   const handleMessageAction = async () => {
     if (!profile) return;
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to message classmates.');
+      return;
+    }
     try {
       setActionLoading(true);
       const res: any = await chatService.startDirectChat(profile.email || String(profile.id));
@@ -195,7 +230,11 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
         showCrossPlatformAlert('Direct Chat Ready 💬', 'Conversation is available in your messages.');
       }
     } catch (e: any) {
-      showCrossPlatformAlert('Message Failed', e.response?.data?.error || 'Could not initiate chat.');
+      if (isVerifyRequiredErr(e)) {
+        onRequireVerify?.(e.response?.data?.error || 'Campus verification required to send messages.');
+      } else {
+        showCrossPlatformAlert('Message Failed', e.response?.data?.error || 'Could not initiate chat.');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -246,7 +285,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   return (
     <Modal
       visible={visible}
-      animationType="slide"
+      animationType={Platform.OS === 'web' ? 'none' : 'slide'}
       transparent
       onRequestClose={onClose}
     >
@@ -313,14 +352,22 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                     <Text style={[styles.fullName, { color: colors.textPrimary }]} numberOfLines={1}>
                       {profile.full_name || 'Student'}
                     </Text>
-                    {profile.is_verified ? (
+                    {profile.verification_tier === 'FULLY_VERIFIED' || (!profile.verification_tier && profile.is_verified) ? (
                       <View style={styles.verifiedBadge}>
                         <ShieldCheck size={13} color="#10b981" />
                         <Text style={styles.verifiedText}>OFFICIAL ID</Text>
                       </View>
-                    ) : (
+                    ) : profile.verification_tier === 'INVITE_VERIFIED' ? (
+                      <View style={styles.inviteVerifiedBadge}>
+                        <Text style={styles.inviteVerifiedText}>INVITE VERIFIED</Text>
+                      </View>
+                    ) : profile.verification_tier === 'SEMI_VERIFIED' ? (
                       <View style={styles.semiVerifiedBadge}>
-                        <Text style={styles.semiVerifiedText}>SEMI-VERIFIED</Text>
+                        <Text style={styles.semiVerifiedText}>ID PENDING</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.unverifiedBadge}>
+                        <Text style={styles.unverifiedText}>PERSONAL EMAIL</Text>
                       </View>
                     )}
                   </View>
@@ -765,6 +812,32 @@ const styles = StyleSheet.create({
   },
   semiVerifiedText: {
     color: '#f59e0b',
+    fontSize: 9.5,
+    fontWeight: '700',
+  },
+  inviteVerifiedBadge: {
+    backgroundColor: 'rgba(94, 106, 210, 0.14)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(94, 106, 210, 0.35)',
+  },
+  inviteVerifiedText: {
+    color: '#828fff',
+    fontSize: 9.5,
+    fontWeight: '700',
+  },
+  unverifiedBadge: {
+    backgroundColor: 'rgba(138, 143, 152, 0.12)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(138, 143, 152, 0.28)',
+  },
+  unverifiedText: {
+    color: '#8a8f98',
     fontSize: 9.5,
     fontWeight: '700',
   },

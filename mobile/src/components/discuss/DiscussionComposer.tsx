@@ -35,6 +35,7 @@ interface DiscussionComposerProps {
   visible: boolean;
   autoStartVoice?: boolean;
   onClose: () => void;
+  onRequireVerify?: (reason?: string) => void;
   onSubmit: (payload: {
     title: string;
     content: string;
@@ -48,6 +49,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
   visible,
   autoStartVoice = false,
   onClose,
+  onRequireVerify,
   onSubmit,
 }) => {
   const { colors, isDark } = useTheme();
@@ -191,6 +193,11 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
       setErrorMessage(null);
       onClose();
     } catch (e: any) {
+      if (e?.response?.status === 403 && e?.response?.data?.code === 'CAMPUS_VERIFICATION_REQUIRED') {
+        onClose();
+        onRequireVerify?.(e.response.data.error);
+        return;
+      }
       let errText = e.response?.data?.error;
       if (!errText && e.response?.data) {
         if (typeof e.response.data === 'string') {

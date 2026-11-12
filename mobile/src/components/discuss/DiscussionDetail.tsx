@@ -56,6 +56,7 @@ import {
   AlertTriangle,
   Mic,
   AtSign,
+  ShieldCheck,
 } from 'lucide-react-native';
 
 interface DiscussionDetailProps {
@@ -63,6 +64,8 @@ interface DiscussionDetailProps {
   discussion: Discussion | null;
   communitySlug: string;
   currentUser?: any;
+  canParticipate?: boolean;
+  onRequireVerify?: (reason?: string) => void;
   onClose: () => void;
   onVote: (discussion: Discussion) => void;
   onOpenProfile?: (userId: number) => void;
@@ -74,6 +77,8 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   discussion,
   communitySlug,
   currentUser,
+  canParticipate = true,
+  onRequireVerify,
   onClose,
   onVote,
   onOpenProfile,
@@ -283,7 +288,15 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
     }
   };
 
+  const isVerifyRequiredErr = (err: any) =>
+    err?.response?.status === 403 || err?.response?.data?.code === 'CAMPUS_VERIFICATION_REQUIRED';
+
   const handleOpenReport = (type: 'DISCUSSION' | 'REPLY', id: string) => {
+    if (!canParticipate) {
+      setMenuVisible(false);
+      onRequireVerify?.('Verify your campus ID or enter an invite code to report content.');
+      return;
+    }
     setMenuVisible(false);
     setReportTarget({ type, id });
     setReportReason('SPAM');
@@ -294,6 +307,11 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
 
   const handleSubmitReport = async () => {
     if (!reportTarget) return;
+    if (!canParticipate) {
+      setReportModalVisible(false);
+      onRequireVerify?.('Verify your campus ID or enter an invite code to report content.');
+      return;
+    }
     setSubmittingReport(true);
     setReportError(null);
     try {
@@ -307,6 +325,11 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
       setReplyError(null);
       setReplyNotice('Report submitted. Campus moderators will review this content.');
     } catch (err: any) {
+      if (isVerifyRequiredErr(err)) {
+        setReportModalVisible(false);
+        onRequireVerify?.(err.response?.data?.error || 'Campus verification required.');
+        return;
+      }
       const msg = err.response?.data?.error || 'Could not submit report.';
       setReportError(msg);
       if (Platform.OS !== 'web') {
@@ -318,6 +341,10 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   };
 
   const handleSendReply = async (overrideVoiceNote?: RecordedVoiceNote) => {
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to reply in discussions.');
+      return;
+    }
     const activeVoice = overrideVoiceNote || draftVoiceNote;
     const trimmedText = replyText.trim();
     if ((!trimmedText && !activeVoice) || submittingReply) return;
@@ -341,6 +368,10 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
       setDraftVoiceNote(null);
       setReplyingTo(null);
     } catch (e: any) {
+      if (isVerifyRequiredErr(e)) {
+        onRequireVerify?.(e.response?.data?.error || 'Campus verification required to reply.');
+        return;
+      }
       const msg = e.response?.data?.error || e.message || 'Could not post reply.';
       setReplyError(msg);
       if (Platform.OS !== 'web') {
@@ -352,6 +383,10 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   };
 
   const handleSendPickedAttachments = async (files: StagedAttachment[], pickerCaption: string) => {
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to upload attachments.');
+      return;
+    }
     const combinedText = [replyText.trim(), (pickerCaption || '').trim()].filter(Boolean).join('\n');
     if ((!combinedText && files.length === 0) || submittingReply) return;
 
@@ -372,6 +407,10 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
       setDraftVoiceNote(null);
       setReplyingTo(null);
     } catch (e: any) {
+      if (isVerifyRequiredErr(e)) {
+        onRequireVerify?.(e.response?.data?.error || 'Campus verification required to upload attachments.');
+        return;
+      }
       const msg = e.response?.data?.error || e.message || 'Could not upload reply attachment.';
       setReplyError(msg);
       if (Platform.OS !== 'web') {
@@ -391,6 +430,11 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   };
 
   const handleSendVoiceReplyNow = async () => {
+    if (!canParticipate) {
+      await voiceRecorder.cancelRecording();
+      onRequireVerify?.('Verify your campus ID or enter an invite code to send voice replies.');
+      return;
+    }
     const note = await voiceRecorder.stopRecording();
     if (note) {
       await handleSendReply(note);
@@ -398,6 +442,10 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   };
 
   const handleVoteReply = async (reply: DiscussionReply) => {
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to upvote replies.');
+      return;
+    }
     try {
       const res = await communityService.voteDiscussion(communitySlug, detail.id, reply.id);
       const updateTree = (list: DiscussionReply[]): DiscussionReply[] => {
@@ -414,12 +462,20 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
       if (detail.replies) {
         setDetail({ ...detail, replies: updateTree(detail.replies) });
       }
-    } catch (e) {
-      console.log('Error voting reply', e);
+    } catch (e: any) {
+      if (isVerifyRequiredErr(e)) {
+        onRequireVerify?.(e.response?.data?.error || 'Campus verification required to vote.');
+      } else {
+        console.log('Error voting reply', e);
+      }
     }
   };
 
   const handleAcceptReply = async (reply: DiscussionReply) => {
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to mark solutions.');
+      return;
+    }
     setReplyError(null);
     setReplyNotice(null);
     try {
@@ -428,6 +484,10 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
       setDetail(updated);
       setReplyNotice('Accepted! This reply is now marked as the verified solution.');
     } catch (e: any) {
+      if (isVerifyRequiredErr(e)) {
+        onRequireVerify?.(e.response?.data?.error || 'Campus verification required.');
+        return;
+      }
       const msg = e.response?.data?.error || 'Could not accept reply.';
       setReplyError(msg);
       if (Platform.OS !== 'web') {
@@ -625,6 +685,10 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                 onVoteReply={handleVoteReply}
                 onAcceptReply={handleAcceptReply}
                 onReplyToReply={(r) => {
+                  if (!canParticipate) {
+                    onRequireVerify?.('Verify your campus ID or enter an invite code to reply in discussions.');
+                    return;
+                  }
                   setReplyingTo(r);
                   const rawHandle =
                     r.author_username || (r.author_name || '').replace(/\s+/g, '');
@@ -719,112 +783,145 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
             </View>
           )}
 
-          {activeMention && !voiceRecorder.isRecording && (
-            <View style={{ marginBottom: 8 }}>
-              <MentionSuggestionsBar
-                query={activeMention.query}
-                onSelect={handleSelectMention}
-                onClose={() => setMentionDismissed(true)}
-                prioritizedUsers={prioritizedMembers}
-                maxHeight={190}
-              />
+          {!canParticipate ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10,
+                paddingVertical: 4,
+              }}
+            >
+              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <ShieldCheck size={16} color={colors.primary} />
+                <Text style={{ flex: 1, fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>
+                  Verify your campus ID or invite code to reply or vote.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: colors.primary,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 8,
+                }}
+                onPress={() => onRequireVerify?.('Verify your campus ID or enter an invite code to reply in discussions.')}
+                activeOpacity={0.85}
+              >
+                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Verify ID</Text>
+              </TouchableOpacity>
             </View>
-          )}
-
-          {draftVoiceNote && !voiceRecorder.isRecording && (
-            <VoiceNoteDraftCard
-              voiceNote={draftVoiceNote}
-              onRemove={() => setDraftVoiceNote(null)}
-              compact
-            />
-          )}
-
-          {voiceRecorder.isRecording ? (
-            <VoiceRecordingBar
-              recordSeconds={voiceRecorder.recordSeconds}
-              liveLevels={voiceRecorder.liveLevels}
-              isFinalizing={voiceRecorder.isFinalizing || submittingReply}
-              onCancel={voiceRecorder.cancelRecording}
-              onAttachToDraft={handleAttachVoiceToReplyDraft}
-              onSend={handleSendVoiceReplyNow}
-            />
           ) : (
-            <View style={styles.inputRow}>
-              <TouchableOpacity
-                style={[
-                  styles.micBtn,
-                  {
-                    backgroundColor: isDark ? 'rgba(94, 106, 210, 0.14)' : 'rgba(79, 70, 229, 0.1)',
-                    borderColor: isDark ? 'rgba(94, 106, 210, 0.30)' : 'rgba(79, 70, 229, 0.22)',
-                  },
-                ]}
-                onPress={() => voiceRecorder.startRecording()}
-                activeOpacity={0.8}
-                accessibilityLabel="Record voice note reply"
-              >
-                <Mic size={17} color={colors.primary} />
-              </TouchableOpacity>
+            <>
+              {activeMention && !voiceRecorder.isRecording && (
+                <View style={{ marginBottom: 8 }}>
+                  <MentionSuggestionsBar
+                    query={activeMention.query}
+                    onSelect={handleSelectMention}
+                    onClose={() => setMentionDismissed(true)}
+                    prioritizedUsers={prioritizedMembers}
+                    maxHeight={190}
+                  />
+                </View>
+              )}
 
-              <TouchableOpacity
-                style={[
-                  styles.micBtn,
-                  {
-                    backgroundColor: activeMention
-                      ? colors.primary + '22'
-                      : isDark
-                      ? '#1C1D20'
-                      : '#f1f5f9',
-                    borderColor: activeMention ? colors.primary : colors.cardBorder,
-                  },
-                ]}
-                onPress={handleInsertTag}
-                activeOpacity={0.8}
-                accessibilityLabel="Tag student with @"
-              >
-                <AtSign size={16} color={activeMention ? colors.primary : colors.textSecondary} />
-              </TouchableOpacity>
+              {draftVoiceNote && !voiceRecorder.isRecording && (
+                <VoiceNoteDraftCard
+                  voiceNote={draftVoiceNote}
+                  onRemove={() => setDraftVoiceNote(null)}
+                  compact
+                />
+              )}
 
-              <TextInput
-                style={[
-                  styles.inputField,
-                  {
-                    backgroundColor: isDark ? '#141516' : '#f1f5f9',
-                    borderColor: colors.cardBorder,
-                    color: colors.textPrimary,
-                  },
-                ]}
-                placeholder={
-                  draftVoiceNote
-                    ? 'Add text alongside your voice note (optional)...'
-                    : replyingTo
-                    ? `Reply to ${replyingTo.author_name} (@ to tag)...`
-                    : isQuestion
-                    ? 'Write your answer (type @ to tag) or record a voice note...'
-                    : 'Add to the discussion (type @ to tag)...'
-                }
-                placeholderTextColor={colors.textMuted}
-                value={replyText}
-                onChangeText={handleReplyTextChange}
-                onSelectionChange={(e) => setReplyCursorPos(e.nativeEvent.selection.end)}
-                multiline
-              />
+              {voiceRecorder.isRecording ? (
+                <VoiceRecordingBar
+                  recordSeconds={voiceRecorder.recordSeconds}
+                  liveLevels={voiceRecorder.liveLevels}
+                  isFinalizing={voiceRecorder.isFinalizing || submittingReply}
+                  onCancel={voiceRecorder.cancelRecording}
+                  onAttachToDraft={handleAttachVoiceToReplyDraft}
+                  onSend={handleSendVoiceReplyNow}
+                />
+              ) : (
+                <View style={styles.inputRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.micBtn,
+                      {
+                        backgroundColor: isDark ? 'rgba(94, 106, 210, 0.14)' : 'rgba(79, 70, 229, 0.1)',
+                        borderColor: isDark ? 'rgba(94, 106, 210, 0.30)' : 'rgba(79, 70, 229, 0.22)',
+                      },
+                    ]}
+                    onPress={() => voiceRecorder.startRecording()}
+                    activeOpacity={0.8}
+                    accessibilityLabel="Record voice note reply"
+                  >
+                    <Mic size={17} color={colors.primary} />
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  styles.sendBtn,
-                  { backgroundColor: colors.primary },
-                  (!(replyText.trim() || draftVoiceNote) || submittingReply) && styles.sendBtnDisabled,
-                ]}
-                onPress={() => handleSendReply()}
-                disabled={!(replyText.trim() || draftVoiceNote) || submittingReply}
-              >
-                {submittingReply ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Send size={16} color="#fff" />
-                )}
-              </TouchableOpacity>
-            </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.micBtn,
+                      {
+                        backgroundColor: activeMention
+                          ? colors.primary + '22'
+                          : isDark
+                          ? '#1C1D20'
+                          : '#f1f5f9',
+                        borderColor: activeMention ? colors.primary : colors.cardBorder,
+                      },
+                    ]}
+                    onPress={handleInsertTag}
+                    activeOpacity={0.8}
+                    accessibilityLabel="Tag student with @"
+                  >
+                    <AtSign size={16} color={activeMention ? colors.primary : colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <TextInput
+                    style={[
+                      styles.inputField,
+                      {
+                        backgroundColor: isDark ? '#141516' : '#f1f5f9',
+                        borderColor: colors.cardBorder,
+                        color: colors.textPrimary,
+                      },
+                    ]}
+                    placeholder={
+                      draftVoiceNote
+                        ? 'Add text alongside your voice note (optional)...'
+                        : replyingTo
+                        ? `Reply to ${replyingTo.author_name} (@ to tag)...`
+                        : isQuestion
+                        ? 'Write your answer (type @ to tag) or record a voice note...'
+                        : 'Add to the discussion (type @ to tag)...'
+                    }
+                    placeholderTextColor={colors.textMuted}
+                    value={replyText}
+                    onChangeText={handleReplyTextChange}
+                    onSelectionChange={(e) => setReplyCursorPos(e.nativeEvent.selection.end)}
+                    multiline
+                  />
+
+                  <TouchableOpacity
+                    style={[
+                      styles.sendBtn,
+                      { backgroundColor: colors.primary },
+                      (!(replyText.trim() || draftVoiceNote) || submittingReply) && styles.sendBtnDisabled,
+                    ]}
+                    onPress={() => handleSendReply()}
+                    disabled={!(replyText.trim() || draftVoiceNote) || submittingReply}
+                  >
+                    {submittingReply ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Send size={16} color="#fff" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
           )}
         </View>
 

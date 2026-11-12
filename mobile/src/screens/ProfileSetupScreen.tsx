@@ -14,7 +14,12 @@ import {
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { profileService } from '../services/profileService';
-import { authService, User } from '../services/authService';
+import {
+  authService,
+  buildMicrosoftAuthUrl,
+  setMsOAuthMode,
+  User,
+} from '../services/authService';
 import {
   ShieldCheck,
   AlertCircle,
@@ -31,12 +36,16 @@ import {
   Eye,
   EyeOff,
   KeyRound,
+  Ticket,
+  Link2,
+  Building2,
 } from 'lucide-react-native';
 
 interface ProfileSetupScreenProps {
   currentUser: User;
-  onProfileComplete: () => void;
+  onProfileComplete: (user?: User) => void;
   onBack?: () => void;
+  onUserUpdated?: (user: User) => void;
 }
 
 const AVAILABLE_COURSES = [
@@ -165,9 +174,12 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   currentUser,
   onProfileComplete,
   onBack,
+  onUserUpdated,
 }) => {
   const { colors, isDark, toggleTheme } = useTheme();
   const [loadingInitial, setLoadingInitial] = useState(true);
+
+  const isInstitutionalEmail = /\.(ac|edu)\.in$/i.test(currentUser.email || '');
 
   // Form State
   const [fullName, setFullName] = useState(currentUser.full_name || '');
@@ -177,10 +189,20 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   const [phoneNumber, setPhoneNumber] = useState(currentUser.phone_number || '');
   const [bio, setBio] = useState('Excited for campus tech clubs, hackathons & fests!');
   const [admissionNumber, setAdmissionNumber] = useState('');
+  const [colleges, setColleges] = useState<Array<{ id: number; name: string; short_name: string }>>([]);
+  const [selectedCollegeId, setSelectedCollegeId] = useState<number | undefined>(undefined);
   const [collegeName, setCollegeName] = useState('Graphic Era University');
   const [courseName, setCourseName] = useState('B.Tech');
   const [branchName, setBranchName] = useState('Computer Science & Engineering');
-  const [verificationTier, setVerificationTier] = useState<string>(currentUser.verification_tier || 'FULLY_VERIFIED');
+  const [verificationTier, setVerificationTier] = useState<string>(
+    currentUser.verification_tier || 'UNVERIFIED'
+  );
+
+  // Campus Verification Upgrade inside Onboarding
+  const [inviteCode, setInviteCode] = useState('');
+  const [showMsLinkToken, setShowMsLinkToken] = useState(false);
+  const [msLinkToken, setMsLinkToken] = useState('');
+  const [linkingMs, setLinkingMs] = useState(false);
 
   // Course & Branch Selector Modals
   const [courseModalVisible, setCourseModalVisible] = useState(false);
@@ -193,19 +215,60 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   const [showPassword, setShowPassword] = useState(false);
 
   const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [noticeMsg, setNoticeMsg] = useState<string | null>(null);
 
   useEffect(() => {
     loadExistingData();
   }, []);
 
   const loadExistingData = async () => {
+    const shouldFetchProfile = Boolean(
+      currentUser.profile_completed || currentUser.verification_method
+    );
     try {
-      const data = await profileService.getMyProfile().catch(() => null);
+      const [profileRes, collegesRes] = await Promise.allSettled([
+        shouldFetchProfile ? profileService.getMyProfile() : Promise.resolve(null),
+        profileService.getColleges(),
+      ]);
+
+      const collegesList =
+        collegesRes.status === 'fulfilled' && Array.isArray(collegesRes.value)
+          ? collegesRes.value
+          : [];
+      setColleges(collegesList);
+
+      const data = profileRes.status === 'fulfilled' ? profileRes.value : null;
+      const emailPrefix = (currentUser.email || '').split('@')[0];
+      const safeUserPrefix = emailPrefix.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 18) || 'campus_student';
+
+      const defaultCollege =
+        collegesList.find(
+          (c) => c.short_name === 'GEU' || c.name === 'Graphic Era University'
+        ) || collegesList[0];
+
       if (data) {
         if (data.full_name) setFullName(data.full_name);
-        if (data.username) setUsername(data.username);
-        if (data.admission_number) setAdmissionNumber(data.admission_number);
+        if (data.username) {
+          setUsername(data.username);
+        } else {
+          setUsername(`student_${safeUserPrefix}`);
+        }
+        if (data.admission_number) {
+          setAdmissionNumber(data.admission_number);
+        } else if (isInstitutionalEmail && emailPrefix) {
+          setAdmissionNumber(emailPrefix);
+        }
         if (data.college_name) setCollegeName(data.college_name);
+        if (data.college) {
+          setSelectedCollegeId(Number(data.college));
+        } else if (data.college_name && collegesList.length > 0) {
+          const matched = collegesList.find((c) => c.name === data.college_name);
+          if (matched) setSelectedCollegeId(matched.id);
+        } else if (defaultCollege) {
+          setSelectedCollegeId(defaultCollege.id);
+          setCollegeName(defaultCollege.name);
+        }
         if (data.course_name) setCourseName(data.course_name);
         if (data.branch_name) setBranchName(data.branch_name);
         if (data.gender) setGender(data.gender);
@@ -213,9 +276,14 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
         if (data.verification_tier) setVerificationTier(data.verification_tier);
         if (data.bio) setBio(data.bio);
       } else {
-        const emailPrefix = currentUser.email.split('@')[0];
-        setAdmissionNumber(emailPrefix);
-        setUsername(`student_${emailPrefix}`);
+        if (isInstitutionalEmail && emailPrefix) {
+          setAdmissionNumber(emailPrefix);
+        }
+        setUsername(`student_${safeUserPrefix}`);
+        if (defaultCollege) {
+          setSelectedCollegeId(defaultCollege.id);
+          setCollegeName(defaultCollege.name);
+        }
       }
     } catch (e) {
       console.log('Error loading initial profile', e);
@@ -226,7 +294,6 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
 
   const handleSelectCourse = (selectedCourse: (typeof AVAILABLE_COURSES)[0]) => {
     setCourseName(selectedCourse.name);
-    // Set default branch to first branch of that course
     if (selectedCourse.branches.length > 0) {
       setBranchName(selectedCourse.branches[0]);
     }
@@ -234,38 +301,96 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
     setCourseSearch('');
   };
 
+  const handleLinkMsBrowser = async () => {
+    setErrorMsg(null);
+    await setMsOAuthMode('link');
+    const url = buildMicrosoftAuthUrl();
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.location.href = url;
+    } else {
+      const { Linking } = require('react-native');
+      await Linking.openURL(url);
+      setShowMsLinkToken(true);
+    }
+  };
+
+  const handleLinkMsToken = async () => {
+    const clean = msLinkToken.trim();
+    if (!clean) {
+      setErrorMsg('Paste your Microsoft College ID token first.');
+      return;
+    }
+    setLinkingMs(true);
+    setErrorMsg(null);
+    try {
+      const res = await authService.linkWithMicrosoft(clean);
+      setVerificationTier(res.user.verification_tier || 'FULLY_VERIFIED');
+      if (res.detected_student?.college_name) {
+        setCollegeName(res.detected_student.college_name);
+      }
+      if (res.detected_student?.roll_number) {
+        setAdmissionNumber(res.detected_student.roll_number);
+      }
+      setShowMsLinkToken(false);
+      setMsLinkToken('');
+      setNoticeMsg(res.message || 'Microsoft College ID linked! You now have the Green Verified Badge.');
+      onUserUpdated?.(res.user);
+    } catch (e: any) {
+      const msg =
+        e?.response?.data?.error ||
+        e?.response?.data?.detail ||
+        e?.message ||
+        'Could not link Microsoft College ID.';
+      setErrorMsg(String(msg));
+    } finally {
+      setLinkingMs(false);
+    }
+  };
+
   const currentCourseObj = AVAILABLE_COURSES.find((c) => c.name === courseName) || AVAILABLE_COURSES[0];
 
   const handleFinishSetup = async () => {
+    setErrorMsg(null);
+    setNoticeMsg(null);
     const cleanUser = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
     if (!cleanUser || cleanUser.length < 3) {
-      Alert.alert('Invalid Handle', 'Please choose a nickname/handle with at least 3 letters, numbers, or underscores.');
+      const msg = 'Please choose a nickname/handle with at least 3 letters, numbers, or underscores.';
+      setErrorMsg(msg);
+      if (Platform.OS !== 'web') Alert.alert('Invalid Handle', msg);
       return;
     }
 
     if (accountPassword.trim()) {
       if (accountPassword.trim().length < 6) {
-        Alert.alert('Weak Password', 'Please choose a password with at least 6 characters.');
+        const msg = 'Please choose a password with at least 6 characters.';
+        setErrorMsg(msg);
+        if (Platform.OS !== 'web') Alert.alert('Weak Password', msg);
         return;
       }
       if (accountPassword.trim() !== confirmPassword.trim()) {
-        Alert.alert('Password Mismatch', 'The passwords you entered do not match. Please re-enter.');
+        const msg = 'The passwords you entered do not match. Please re-enter.';
+        setErrorMsg(msg);
+        if (Platform.OS !== 'web') Alert.alert('Password Mismatch', msg);
         return;
       }
     }
 
     setSaving(true);
     try {
+      const cleanInvite = inviteCode.trim().toUpperCase();
       const res = await profileService.completeProfile({
         full_name: fullName.trim() || currentUser.full_name,
         username: cleanUser,
         gender,
         show_gender: showGender,
         phone_number: phoneNumber.trim() || undefined,
+        college: !isGreenVerified && selectedCollegeId ? selectedCollegeId : undefined,
+        admission_number: !isGreenVerified && admissionNumber.trim() ? admissionNumber.trim() : undefined,
         course_name: courseName,
         branch_name: branchName,
         bio: bio.trim(),
         password: accountPassword.trim() || undefined,
+        invite_code: cleanInvite || undefined,
       });
 
       if (res.user) {
@@ -274,26 +399,27 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
         await authService.updateCurrentUser({ profile_completed: true });
       }
 
-      const joinedList = res.communities_joined?.length
-        ? res.communities_joined.map((c: string) => `• ${c}`).join('\n')
-        : `• ${collegeName}\n• ${courseName} (${branchName})`;
-
-      if (Platform.OS === 'web') {
-        window.alert(`Welcome, @${cleanUser}! 🎉\n\nYour campus profile is active. You have joined:\n${joinedList}`);
-      } else {
+      if (Platform.OS !== 'web') {
+        const joinedList = res.communities_joined?.length
+          ? res.communities_joined.map((c: string) => `• ${c}`).join('\n')
+          : `• ${collegeName}\n• ${courseName} (${branchName})`;
         Alert.alert(
-          'Campus Identity Claimed! 🎉',
-          `Welcome, @${cleanUser}!\n\nYour profile is verified and active. You have been auto-enrolled in:\n${joinedList}`
+          'Campus Identity Claimed!',
+          `Welcome, @${cleanUser}!\n\nAuto-enrolled communities:\n${joinedList}`
         );
       }
-      onProfileComplete();
+      onProfileComplete(res.user);
     } catch (e: any) {
       const err =
+        e.response?.data?.invite_code?.[0] ||
         e.response?.data?.username?.[0] ||
         e.response?.data?.error ||
         e.message ||
         'Failed to save campus profile.';
-      Alert.alert('Setup Failed', err);
+      setErrorMsg(String(err));
+      if (Platform.OS !== 'web') {
+        Alert.alert('Setup Failed', String(err));
+      }
     } finally {
       setSaving(false);
     }
@@ -303,12 +429,14 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Verifying University Credentials...</Text>
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading Campus Onboarding...</Text>
       </View>
     );
   }
 
   const isGreenVerified = verificationTier === 'FULLY_VERIFIED';
+  const isInviteVerified = verificationTier === 'INVITE_VERIFIED';
+  const isIdPending = verificationTier === 'SEMI_VERIFIED';
 
   const filteredCourses = AVAILABLE_COURSES.filter(
     (c) =>
@@ -332,7 +460,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
             activeOpacity={0.7}
           >
             <ArrowLeft size={16} color={colors.textPrimary} />
-            <Text style={[styles.backBtnText, { color: colors.textPrimary }]}>Rescan / Switch</Text>
+            <Text style={[styles.backBtnText, { color: colors.textPrimary }]}>Switch Account</Text>
           </TouchableOpacity>
         ) : (
           <View style={{ flex: 1 }} />
@@ -358,7 +486,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
         </View>
         <Text style={[styles.title, { color: colors.textPrimary }]}>Claim Your Campus Identity</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Your academic identity has been verified. Choose your public handle, degree course & preferences before entering the campus feed.
+          Select your campus, degree course, and handle before entering the feed.
         </Text>
       </View>
 
@@ -375,48 +503,180 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
             </Text>
           </View>
         </View>
-      ) : (
+      ) : isInviteVerified ? (
+        <View style={[styles.greenBanner, { borderColor: 'rgba(94, 106, 210, 0.45)', backgroundColor: isDark ? 'rgba(94, 106, 210, 0.14)' : 'rgba(94, 106, 210, 0.08)' }]}>
+          <View style={[styles.bannerIconCircleGreen, { backgroundColor: 'rgba(94, 106, 210, 0.2)' }]}>
+            <Ticket size={20} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.greenBannerTitle, { color: colors.primary }]}>Campus Invite Verified 🎓</Text>
+            <Text style={[styles.greenBannerSub, { color: colors.textSecondary }]}>
+              Full access unlocked! You can post, comment, and join campus discussions. Link your College ID anytime for the Green Badge.
+            </Text>
+          </View>
+        </View>
+      ) : isIdPending ? (
         <View style={styles.yellowBanner}>
           <View style={styles.bannerIconCircleYellow}>
             <AlertCircle size={20} color="#d97706" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.yellowBannerTitle}>Physical ID Card Scanned (Under Review) 🟡</Text>
+            <Text style={styles.yellowBannerTitle}>Physical ID Card Pending Admin Review 🟡</Text>
             <Text style={[styles.yellowBannerSub, { color: isDark ? '#fde68a' : '#b45309' }]}>
-              Anti-fraud OCR verified. You receive the Yellow Badge until campus administration verifies your semester record.
+              You can browse read-only while an admin reviews your ID card. Have a batch invite code? Enter it below to unlock posting immediately.
             </Text>
           </View>
+        </View>
+      ) : (
+        <View
+          style={[
+            styles.infoBanner,
+            {
+              backgroundColor: isDark ? 'rgba(94, 106, 210, 0.1)' : 'rgba(94, 106, 210, 0.06)',
+              borderColor: colors.cardBorder,
+            },
+          ]}
+        >
+          <View style={[styles.bannerIconCircleGreen, { backgroundColor: 'rgba(94, 106, 210, 0.15)' }]}>
+            <Sparkles size={18} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.infoBannerTitle, { color: colors.textPrimary }]}>
+              Personal Email Mode (Read-Only Until Verified)
+            </Text>
+            <Text style={[styles.infoBannerSub, { color: colors.textSecondary }]}>
+              You can browse the campus feed right after setup. Enter a Campus Invite Code below or link your `@geu.ac.in` ID to unlock posting.
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {errorMsg && (
+        <View style={styles.inlineErrorBox}>
+          <AlertCircle size={16} color="#ef4444" />
+          <Text style={styles.inlineErrorText}>{errorMsg}</Text>
+        </View>
+      )}
+
+      {noticeMsg && (
+        <View style={styles.inlineNoticeBox}>
+          <Check size={16} color="#22c55e" />
+          <Text style={[styles.inlineNoticeText, { color: isDark ? '#86efac' : '#15803d' }]}>{noticeMsg}</Text>
         </View>
       )}
 
       {/* ACADEMIC RECORD BOX */}
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
         <View style={styles.cardHeaderRow}>
-          <Lock size={15} color={colors.textMuted} />
+          {isGreenVerified ? (
+            <Lock size={15} color={colors.textMuted} />
+          ) : (
+            <Building2 size={15} color={colors.primary} />
+          )}
           <Text style={[styles.cardSectionTitle, { color: colors.textPrimary }]}>
-            VERIFIED ACADEMIC RECORD
+            {isGreenVerified ? 'VERIFIED ACADEMIC RECORD' : 'CAMPUS & ACADEMIC DETAILS'}
           </Text>
         </View>
         <Text style={[styles.cardHint, { color: colors.textMuted }]}>
-          Auto-linked to your institutional enrollment. University and Roll Number are verified.
+          {isGreenVerified
+            ? 'Auto-linked to your institutional enrollment. University and Roll Number are verified.'
+            : 'Choose your campus and optionally enter your university roll number.'}
         </Text>
 
-        <View style={[styles.lockedGrid, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
-          <View style={[styles.lockedItem, { borderBottomColor: colors.hairline }]}>
-            <Text style={[styles.lockedLabel, { color: colors.textMuted }]}>University / College</Text>
-            <Text style={[styles.lockedValue, { color: colors.textPrimary }]}>{collegeName}</Text>
-          </View>
+        {isGreenVerified ? (
+          <View style={[styles.lockedGrid, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+            <View style={[styles.lockedItem, { borderBottomColor: colors.hairline }]}>
+              <Text style={[styles.lockedLabel, { color: colors.textMuted }]}>University / College</Text>
+              <Text style={[styles.lockedValue, { color: colors.textPrimary }]}>{collegeName}</Text>
+            </View>
 
-          <View style={[styles.lockedItem, { borderBottomColor: colors.hairline }]}>
-            <Text style={[styles.lockedLabel, { color: colors.textMuted }]}>University Roll Number</Text>
-            <Text style={[styles.lockedValueHighlight, { color: colors.primary }]}>{admissionNumber || 'Verified'}</Text>
-          </View>
+            <View style={[styles.lockedItem, { borderBottomColor: colors.hairline }]}>
+              <Text style={[styles.lockedLabel, { color: colors.textMuted }]}>University Roll Number</Text>
+              <Text style={[styles.lockedValueHighlight, { color: colors.primary }]}>
+                {admissionNumber || 'Verified'}
+              </Text>
+            </View>
 
-          <View style={[styles.lockedItem, { borderBottomColor: colors.hairline }]}>
-            <Text style={[styles.lockedLabel, { color: colors.textMuted }]}>Official Name</Text>
-            <Text style={[styles.lockedValue, { color: colors.textPrimary }]}>{fullName || currentUser.email}</Text>
+            <View style={[styles.lockedItem, { borderBottomWidth: 0, paddingBottom: 0 }]}>
+              <Text style={[styles.lockedLabel, { color: colors.textMuted }]}>Official Name</Text>
+              <Text style={[styles.lockedValue, { color: colors.textPrimary }]}>{fullName || currentUser.email}</Text>
+            </View>
           </View>
-        </View>
+        ) : (
+          <View style={{ gap: 12 }}>
+            {/* Campus Selector Pills */}
+            {colleges.length > 0 && (
+              <View>
+                <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 6 }]}>
+                  Your Campus *
+                </Text>
+                <View style={styles.collegeChipsRow}>
+                  {colleges.map((c) => {
+                    const active = selectedCollegeId === c.id;
+                    return (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[
+                          styles.collegeChip,
+                          {
+                            backgroundColor: active
+                              ? isDark
+                                ? 'rgba(94, 106, 210, 0.22)'
+                                : '#e0e7ff'
+                              : colors.surfaceLight,
+                            borderColor: active ? colors.primary : colors.cardBorder,
+                          },
+                        ]}
+                        onPress={() => {
+                          setSelectedCollegeId(c.id);
+                          setCollegeName(c.name);
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.collegeChipText,
+                            { color: active ? colors.primary : colors.textPrimary },
+                          ]}
+                        >
+                          {c.short_name} · {c.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {/* Editable Full Name */}
+            <View>
+              <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 4 }]}>
+                Full Name
+              </Text>
+              <TextInput
+                style={[styles.textInput, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder, color: colors.textPrimary }]}
+                value={fullName}
+                onChangeText={setFullName}
+                placeholder="e.g. Aarav Joshi"
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
+
+            {/* Optional University Roll Number */}
+            <View>
+              <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 4 }]}>
+                University Roll Number (Optional)
+              </Text>
+              <TextInput
+                style={[styles.textInput, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder, color: colors.textPrimary }]}
+                value={admissionNumber}
+                onChangeText={setAdmissionNumber}
+                placeholder="e.g. 2313812137 (Leave blank if unsure)"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="characters"
+              />
+            </View>
+          </View>
+        )}
 
         {/* INTERACTIVE COURSE & DEGREE SELECTION */}
         <View style={{ marginTop: 16 }}>
@@ -608,6 +868,114 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
             />
           </View>
         </View>
+
+        {/* Optional Instant Campus Unlock / Microsoft Link */}
+        {!isGreenVerified && (
+          <View
+            style={[
+              styles.upgradeBox,
+              {
+                backgroundColor: isDark ? '#141516' : '#f8fafc',
+                borderColor: colors.cardBorder,
+              },
+            ]}
+          >
+            <View style={styles.upgradeHeaderRow}>
+              <Ticket size={15} color={colors.primary} />
+              <Text style={[styles.upgradeTitle, { color: colors.textPrimary }]}>
+                {isInviteVerified
+                  ? 'Upgrade to Official Green ID Badge (Optional)'
+                  : 'Unlock Campus Posting Now (Optional)'}
+              </Text>
+            </View>
+            <Text style={[styles.upgradeSub, { color: colors.textMuted }]}>
+              {isInviteVerified
+                ? 'Your invite code already unlocks posting! Link your @geu.ac.in Microsoft account anytime for the Official Green Badge.'
+                : 'Have a batch/classmate invite code or @geu.ac.in Microsoft ID? Enter it below—otherwise you can enter right away in Read-Only mode.'}
+            </Text>
+
+            {!isInviteVerified && (
+              <TextInput
+                style={[
+                  styles.textInput,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.cardBorder,
+                    color: colors.textPrimary,
+                    marginBottom: 10,
+                    fontWeight: '700',
+                    letterSpacing: 0.6,
+                  },
+                ]}
+                value={inviteCode}
+                onChangeText={(txt) => setInviteCode(txt.toUpperCase())}
+                placeholder="Batch Invite Code e.g. GEU2026 (optional)"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="characters"
+                maxLength={24}
+              />
+            )}
+
+            <TouchableOpacity
+              style={[
+                styles.msLinkBtn,
+                {
+                  backgroundColor: isDark ? 'rgba(94, 106, 210, 0.14)' : '#eef2ff',
+                  borderColor: 'rgba(94, 106, 210, 0.35)',
+                },
+              ]}
+              onPress={handleLinkMsBrowser}
+              disabled={linkingMs}
+              activeOpacity={0.8}
+            >
+              <Link2 size={14} color={colors.primary} />
+              <Text style={[styles.msLinkBtnText, { color: colors.primary }]}>
+                Link @geu.ac.in / @gehu.ac.in Microsoft ID
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setShowMsLinkToken((prev) => !prev)}
+              style={{ alignSelf: 'flex-start', marginTop: 8 }}
+            >
+              <Text style={[styles.msTokenToggleText, { color: colors.textSecondary }]}>
+                {showMsLinkToken ? 'Hide manual token input' : 'Have a Microsoft ID token? Paste manually'}
+              </Text>
+            </TouchableOpacity>
+
+            {showMsLinkToken && (
+              <View style={styles.msTokenBox}>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    {
+                      flex: 1,
+                      backgroundColor: colors.surface,
+                      borderColor: colors.cardBorder,
+                      color: colors.textPrimary,
+                    },
+                  ]}
+                  value={msLinkToken}
+                  onChangeText={setMsLinkToken}
+                  placeholder="Paste Microsoft id_token or access_token"
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  style={[styles.msTokenConfirmBtn, { backgroundColor: colors.primary }]}
+                  onPress={handleLinkMsToken}
+                  disabled={linkingMs}
+                >
+                  {linkingMs ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Text style={styles.msTokenConfirmBtnText}>Link</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Finish Button */}
         <TouchableOpacity
@@ -1093,5 +1461,131 @@ const styles = StyleSheet.create({
   },
   eyeBtn: {
     padding: 6,
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  infoBannerTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  infoBannerSub: {
+    fontSize: 11.5,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  inlineErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  inlineErrorText: {
+    flex: 1,
+    color: '#ef4444',
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  inlineNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(34, 197, 94, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.35)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  inlineNoticeText: {
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  collegeChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  collegeChip: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  collegeChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  upgradeBox: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  upgradeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  upgradeTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  upgradeSub: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginBottom: 10,
+  },
+  msLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  msLinkBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  msTokenToggleText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  msTokenBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  msTokenConfirmBtn: {
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  msTokenConfirmBtnText: {
+    color: '#ffffff',
+    fontSize: 12.5,
+    fontWeight: '700',
   },
 });

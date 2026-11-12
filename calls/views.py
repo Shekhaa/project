@@ -3,6 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from accounts.permissions import IsCampusVerified
 from django.shortcuts import get_object_or_404
 from django.db import models
 from accounts.models import User
@@ -19,7 +20,7 @@ class InitiateCallView(APIView):
     POST /api/calls/initiate/
     Caller initiates an Audio or Video call session with a peer.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCampusVerified]
 
     def post(self, request):
         serializer = InitiateCallInputSerializer(data=request.data)

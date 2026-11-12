@@ -53,10 +53,13 @@ import {
   Link2,
   UserPlus,
   MoreVertical,
+  ShieldCheck,
 } from 'lucide-react-native';
 
 interface ChatScreenProps {
   currentUser?: any;
+  canParticipate?: boolean;
+  onRequireVerify?: (reason?: string) => void;
   initialConversation?: Conversation | null;
   onClearInitialConversation?: () => void;
   onOpenProfile?: (userId: number) => void;
@@ -73,6 +76,8 @@ const extractApiError = (err: any, fallback: string): string => {
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({
   currentUser,
+  canParticipate = true,
+  onRequireVerify,
   initialConversation,
   onClearInitialConversation,
   onOpenProfile,
@@ -264,7 +269,15 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     setActiveConv(conv);
   };
 
+  const isVerifyRequiredErr = (err: any) =>
+    err?.response?.status === 403 || err?.response?.data?.code === 'CAMPUS_VERIFICATION_REQUIRED';
+
   const handleSendRecordedVoiceNow = async () => {
+    if (!canParticipate) {
+      await voiceRecorder.cancelRecording();
+      onRequireVerify?.('Verify your campus ID or enter an invite code to send voice notes.');
+      return;
+    }
     const recorded = await voiceRecorder.stopRecording();
     if (!recorded || !activeConv) return;
     if (isRequestPending) {
@@ -286,6 +299,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   };
 
   const toggleAnonMode = () => {
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID first to chat anonymously.');
+      return;
+    }
     if (currentUser?.verification_tier !== 'FULLY_VERIFIED') {
       const msg =
         'Anonymous messaging is exclusive to Green-Verified students. Please verify your student ID.';
@@ -300,6 +317,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   };
 
   const handleSendMessage = async () => {
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to send messages.');
+      return;
+    }
     if (!activeConv || sending || isRequestPending) return;
     const rawText = inputMessage.trim();
     if (!rawText && !draftVoiceNote) return;
@@ -344,6 +365,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       const sent = await chatService.sendMessage(activeConv.id, textToSend);
       setMessages((prev) => upsertMessageUnique(prev, sent, tempId));
     } catch (e: any) {
+      if (isVerifyRequiredErr(e)) {
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setInputMessage(rawText);
+        onRequireVerify?.(extractApiError(e, 'Campus verification required to send messages.'));
+        return;
+      }
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as any } : m)));
       const errStatus = e?.response?.data?.status;
       const errMsg = extractApiError(e, 'Could not deliver message.');
@@ -361,6 +388,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   };
 
   const handleSendAttachments = async (staged: StagedAttachment[], caption: string) => {
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to share attachments.');
+      return;
+    }
     if (!activeConv || isRequestPending) return;
     setDeliveryError(null);
     setRoomNotice(null);
@@ -410,6 +441,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       const sent = await chatService.sendMessageWithAttachments(activeConv.id, finalCaption, filesToSend);
       setMessages((prev) => upsertMessageUnique(prev, sent, tempId));
     } catch (err: any) {
+      if (isVerifyRequiredErr(err)) {
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        onRequireVerify?.(extractApiError(err, 'Campus verification required to share files.'));
+        return;
+      }
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as any } : m)));
       const errStatus = err?.response?.data?.status;
       const errMsg = extractApiError(err, 'Could not send attachments.');
@@ -427,6 +463,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   };
 
   const handleStartDirectChat = async (user: any) => {
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to message classmates.');
+      return;
+    }
     setInboxError(null);
     try {
       setDirectoryModalVisible(false);
@@ -436,6 +476,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       await loadInbox();
       setActiveConv(conv);
     } catch (e: any) {
+      if (isVerifyRequiredErr(e)) {
+        onRequireVerify?.(extractApiError(e, 'Campus verification required to start chats.'));
+        return;
+      }
       const errMsg = extractApiError(e, 'Could not start conversation.');
       setInboxError(errMsg);
       if (Platform.OS !== 'web') {
@@ -805,8 +849,34 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           </View>
         )}
 
-        {/* Bottom Message Input Bar / Live Instagram Voice Recording Bar */}
-        {voiceRecorder.isRecording ? (
+        {/* Bottom Message Input Bar, Voice Bar, or Read-Only Verification CTA */}
+        {!canParticipate ? (
+          <View
+            style={[
+              styles.inputArea,
+              {
+                backgroundColor: colors.surface,
+                borderTopColor: colors.cardBorder,
+                justifyContent: 'space-between',
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+              },
+            ]}
+          >
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <ShieldCheck size={16} color={colors.primary} />
+              <Text style={{ flex: 1, fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>
+                Verify your campus ID or invite code to send messages.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={{ backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 }}
+              onPress={() => onRequireVerify?.('Verify your campus ID or enter an invite code to send messages.')}
+            >
+              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Verify ID</Text>
+            </TouchableOpacity>
+          </View>
+        ) : voiceRecorder.isRecording ? (
           <View
             style={{
               paddingHorizontal: 8,
@@ -1085,7 +1155,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               styles.joinLinkPill,
               { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
             ]}
-            onPress={() => setJoinViaInviteModalVisible(true)}
+            onPress={() => {
+              if (!canParticipate) {
+                onRequireVerify?.('Verify your campus ID or enter an invite code to join group chats.');
+                return;
+              }
+              setJoinViaInviteModalVisible(true);
+            }}
             activeOpacity={0.8}
           >
             <Link2 size={13} color={colors.textSecondary} />
@@ -1097,7 +1173,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               styles.ephemeralPill,
               { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
             ]}
-            onPress={() => setEphemeralModalVisible(true)}
+            onPress={() => {
+              if (!canParticipate) {
+                onRequireVerify?.('Verify your campus ID or enter an invite code to launch ephemeral rooms.');
+                return;
+              }
+              setEphemeralModalVisible(true);
+            }}
             activeOpacity={0.8}
           >
             <Flame size={13} color={colors.ephemeralFire} />
@@ -1106,7 +1188,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
           <TouchableOpacity
             style={[styles.newChatBtn, { backgroundColor: colors.primary }]}
-            onPress={() => setDirectoryModalVisible(true)}
+            onPress={() => {
+              if (!canParticipate) {
+                onRequireVerify?.('Verify your campus ID or enter an invite code to message classmates.');
+                return;
+              }
+              setDirectoryModalVisible(true);
+            }}
             activeOpacity={0.8}
             accessibilityLabel="New message"
           >
@@ -1114,6 +1202,26 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           </TouchableOpacity>
         </View>
       </View>
+
+      {!canParticipate && (
+        <TouchableOpacity
+          style={[
+            styles.readOnlyBanner,
+            {
+              backgroundColor: isDark ? '#141516' : '#f1f5f9',
+              borderColor: colors.cardBorder,
+            },
+          ]}
+          onPress={() => onRequireVerify?.('Verify your Campus ID or enter an invite code to message classmates.')}
+          activeOpacity={0.85}
+        >
+          <ShieldCheck size={16} color={colors.primary} />
+          <Text style={[styles.readOnlyBannerText, { color: colors.textSecondary }]}>
+            Read-only mode — verify your Campus ID or enter an invite code to message classmates.
+          </Text>
+          <Text style={[styles.readOnlyBannerCta, { color: colors.primary }]}>Verify</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Inbox Error Banner */}
       {inboxError && (
@@ -1203,7 +1311,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           </Text>
           <TouchableOpacity
             style={[styles.startChatCta, { backgroundColor: colors.primary }]}
-            onPress={() => setDirectoryModalVisible(true)}
+            onPress={() => {
+              if (!canParticipate) {
+                onRequireVerify?.('Verify your campus ID or enter an invite code to message classmates.');
+                return;
+              }
+              setDirectoryModalVisible(true);
+            }}
           >
             <Text style={styles.startChatCtaText}>Find Classmates</Text>
           </TouchableOpacity>
@@ -1490,6 +1604,26 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
+  },
+  readOnlyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 8,
+    marginHorizontal: 14,
+    marginTop: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+  readOnlyBannerText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  readOnlyBannerCta: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   searchBar: {
     flexDirection: 'row',

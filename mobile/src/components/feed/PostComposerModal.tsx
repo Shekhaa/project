@@ -68,6 +68,7 @@ interface PostComposerModalProps {
   onPostCreated: () => void;
   communities: CommunityOption[];
   defaultCommunityId?: number;
+  onRequireVerify?: (reason?: string) => void;
 }
 
 export const PostComposerModal: React.FC<PostComposerModalProps> = ({
@@ -76,6 +77,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   onPostCreated,
   communities,
   defaultCommunityId,
+  onRequireVerify,
 }) => {
   const { colors } = useTheme();
   const [content, setContent] = useState('');
@@ -564,6 +566,11 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
       handleClose();
       onPostCreated();
     } catch (err: any) {
+      if (err?.response?.status === 403 && err?.response?.data?.code === 'CAMPUS_VERIFICATION_REQUIRED') {
+        handleClose();
+        onRequireVerify?.(err.response.data.error);
+        return;
+      }
       const serverMsg =
         err?.response?.data?.error ||
         err?.response?.data?.detail ||
@@ -583,8 +590,10 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     : 4 / 3;
   const cropPresetConfig = IMAGE_QUALITY_PRESETS[imageQuality];
 
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={handleClose}>
+    <Modal visible={visible} animationType={Platform.OS === 'web' ? 'none' : 'slide'} transparent={false} onRequestClose={handleClose}>
       <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
         {/* Hidden inputs for Web */}
         {Platform.OS === 'web' && (

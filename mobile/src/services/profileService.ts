@@ -16,6 +16,7 @@ export interface CompleteProfilePayload {
   admission_number?: string;
   bio?: string;
   password?: string;
+  invite_code?: string;
 }
 
 export interface PublicProfile {
@@ -88,13 +89,19 @@ export interface FollowItem {
 }
 
 export const profileService = {
+  // Fetch list of active universities / campuses
+  async getColleges(): Promise<Array<{ id: number; name: string; short_name: string }>> {
+    const res = await api.get('/colleges/');
+    return res.data?.results || (Array.isArray(res.data) ? res.data : []);
+  },
+
   // Fetch courses, branches, years, sections for a detected college
   async getCollegeDetails(collegeId: number) {
     const res = await api.get(`/colleges/${collegeId}/`);
     return res.data;
   },
 
-  // Complete Onboarding & Auto-enroll in 3 Communities
+  // Complete Onboarding & Auto-enroll in Core Communities
   async completeProfile(payload: CompleteProfilePayload) {
     const res = await api.post('/profile/complete/', payload);
     return res.data;
@@ -219,9 +226,16 @@ export const profileService = {
     return res.data;
   },
 
-  // Scan Physical College ID Card via OCR & Anti-Fraud
-  async scanIdCard(imageBase64: string) {
-    const res = await api.post('/profile/scan-id-card/', { image_base64: imageBase64 });
+  // Submit Physical College ID Card photo for OCR & Admin Review
+  async scanIdCard(
+    imageBase64: string,
+    meta?: { admission_number?: string; college_id?: number }
+  ) {
+    const res = await api.post('/profile/scan-id-card/', {
+      image_base64: imageBase64,
+      ...(meta?.admission_number ? { admission_number: meta.admission_number.trim() } : {}),
+      ...(meta?.college_id ? { college_id: meta.college_id } : {}),
+    });
     return res.data;
   },
 

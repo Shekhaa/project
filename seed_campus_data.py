@@ -183,6 +183,29 @@ def seed():
         admin_user.save()
         print(" -> Created Admin Superuser: admin@campusconnect.local / admin123")
 
+    admin_course = Course.objects.filter(college=geu, name="B.Tech").first()
+    admin_branch = Branch.objects.filter(course=admin_course, code="CSE").first() if admin_course else None
+    admin_year = AcademicYear.objects.filter(course=admin_course, year_number=4).first() if admin_course else None
+    admin_sec = Section.objects.filter(academic_year=admin_year, name="Section A").first() if admin_year else None
+    StudentProfile.objects.get_or_create(
+        user=admin_user,
+        defaults={
+            "username": "campus_admin",
+            "bio": "Official CampusConnect Administrator & Verification Shield.",
+            "gender": "Male",
+            "admission_number": "ADMIN001",
+            "college": geu,
+            "course": admin_course,
+            "branch": admin_branch,
+            "academic_year": admin_year,
+            "section": admin_sec,
+            "verified": True,
+            "id_card_verified": True,
+            "verification_method": "ADMIN_VERIFIED",
+            "profile_completed": True,
+        },
+    )
+
     # 7. Seed 12 Diverse Campus Students
     print("\n[7/7] Seeding 12 Realistic Campus Students & Interactions...")
 
@@ -338,6 +361,7 @@ def seed():
             "roll": "GEU/23/MBA/044",
             "bio": "E-Cell President. Startup mentor, investor relations & public speaker. 🚀📈",
             "post": "Pitching for the Campus Shark Tank begins next month with ₹5 Lakh seed funding pool! 💼💰",
+            "visibility": "GLOBAL",
             "media_type": "IMAGE",
             "media_url": "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&auto=format&fit=crop",
             "anon_post": None,
@@ -355,6 +379,7 @@ def seed():
             "roll": "GEU/24/CS/199",
             "bio": "Freshman CS engineer. BGMI tier-1 player & game developer in Unity. 🎮🔥",
             "post": "Looking for 2 more players for the Inter-College BGMI Championship qualifiers! 🏆📱",
+            "visibility": "GLOBAL",
             "media_type": "IMAGE",
             "media_url": "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop",
             "anon_post": None,
@@ -379,7 +404,11 @@ def seed():
         }
     ]
 
-    col_comm = Community.objects.filter(community_type="COLLEGE", name=geu.name).first()
+    col_comm, _ = Community.objects.get_or_create(
+        name=geu.name,
+        community_type="COLLEGE",
+        defaults={"description": f"Official campus-wide community for {geu.name}", "is_system_managed": True},
+    )
     created_users = []
 
     for spec in demo_students:
@@ -431,20 +460,28 @@ def seed():
 
         # Public post
         if col_comm and spec.get("post"):
+            vis = spec.get("visibility", "COLLEGE")
             p, _ = Post.objects.get_or_create(
                 community=col_comm,
                 author=user,
                 content=spec["post"],
                 defaults={
+                    "visibility": vis,
                     "is_anonymous": False,
                     "media_type": spec.get("media_type", "TEXT"),
                     "media_url": spec.get("media_url", "")
                 }
             )
+            update_p = []
             if spec.get("media_url") and p.media_url != spec["media_url"]:
                 p.media_type = spec.get("media_type", "TEXT")
                 p.media_url = spec["media_url"]
-                p.save(update_fields=["media_type", "media_url"])
+                update_p.extend(["media_type", "media_url"])
+            if spec.get("visibility") and p.visibility != vis:
+                p.visibility = vis
+                update_p.append("visibility")
+            if update_p:
+                p.save(update_fields=update_p)
 
         # Anonymous post
         if col_comm and spec.get("anon_post"):
@@ -536,6 +573,24 @@ def seed():
             "location": "Central Library Ground Floor"
         }
     )
+
+    # Starter Batch Campus Invite Codes (for Gmail OTP + Batch Invite onboarding)
+    from accounts.models import CampusInviteCode
+    for code_val, col_obj, label in [
+        ("GEU2026", geu, "GEU Launch Batch 2026"),
+        ("GEHU2026", gehu, "GEHU Launch Batch 2026"),
+    ]:
+        CampusInviteCode.objects.get_or_create(
+            code=code_val,
+            defaults={
+                "college": col_obj,
+                "created_by": admin_user,
+                "batch_label": label,
+                "max_uses": 100,
+                "is_active": True,
+            }
+        )
+    print(" -> Seeded Starter Batch Invite Codes: GEU2026, GEHU2026")
 
     print("\n==================================================")
     print("  Canonical Seeding Complete (12 Students + Chats)!")

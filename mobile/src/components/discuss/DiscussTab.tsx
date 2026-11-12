@@ -8,10 +8,18 @@ import { DiscussionDetail } from './DiscussionDetail';
 interface DiscussTabProps {
   community: Community;
   currentUser?: any;
+  canParticipate?: boolean;
+  onRequireVerify?: (reason?: string) => void;
   onOpenProfile?: (userId: number) => void;
 }
 
-export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser, onOpenProfile }) => {
+export const DiscussTab: React.FC<DiscussTabProps> = ({
+  community,
+  currentUser,
+  canParticipate = true,
+  onRequireVerify,
+  onOpenProfile,
+}) => {
   const [discussions, setDiscussions] = useState<Discussion[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -50,6 +58,10 @@ export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser, 
   }, [fetchDiscussions]);
 
   const handleVote = async (disc: Discussion) => {
+    if (!canParticipate) {
+      onRequireVerify?.('Verify your campus ID or enter an invite code to upvote discussions.');
+      return;
+    }
     try {
       const res = await communityService.voteDiscussion(community.slug, disc.id);
       setDiscussions((prev) =>
@@ -64,8 +76,12 @@ export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser, 
           prev ? { ...prev, user_has_voted: res.voted, upvotes_count: res.upvotes_count } : null
         );
       }
-    } catch (e) {
-      console.log('Error voting on discussion', e);
+    } catch (e: any) {
+      if (e?.response?.status === 403 || e?.response?.data?.code === 'CAMPUS_VERIFICATION_REQUIRED') {
+        onRequireVerify?.(e.response?.data?.error || 'Campus verification required to upvote discussions.');
+      } else {
+        console.log('Error voting on discussion', e);
+      }
     }
   };
 
@@ -93,10 +109,18 @@ export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser, 
         sort={sort}
         setSort={setSort}
         onOpenComposer={() => {
+          if (!canParticipate) {
+            onRequireVerify?.('Verify your campus ID or enter an invite code to start a discussion.');
+            return;
+          }
           setComposerAutoVoice(false);
           setComposerVisible(true);
         }}
         onOpenVoiceComposer={() => {
+          if (!canParticipate) {
+            onRequireVerify?.('Verify your campus ID or enter an invite code to post a voice discussion.');
+            return;
+          }
           setComposerAutoVoice(true);
           setComposerVisible(true);
         }}
@@ -115,6 +139,7 @@ export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser, 
           setComposerAutoVoice(false);
         }}
         onSubmit={handleCreateDiscussion}
+        onRequireVerify={onRequireVerify}
       />
 
       {/* Discussion Detail & Replies Modal */}
@@ -124,6 +149,8 @@ export const DiscussTab: React.FC<DiscussTabProps> = ({ community, currentUser, 
           discussion={selectedDiscussion}
           communitySlug={community.slug}
           currentUser={currentUser}
+          canParticipate={canParticipate}
+          onRequireVerify={onRequireVerify}
           onClose={() => setSelectedDiscussion(null)}
           onVote={handleVote}
           onOpenProfile={onOpenProfile}

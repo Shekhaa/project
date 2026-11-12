@@ -51,11 +51,26 @@ class StudentProfile(models.Model):
         choices=[
             ("MICROSOFT_SSO", "Microsoft Entra SSO"),
             ("EMAIL_OTP", "Email OTP"),
+            ("INVITE_CODE", "Campus Invite Code"),
             ("ID_CARD_OCR", "College ID Card OCR"),
             ("PHONE_OTP", "Phone OTP"),
             ("ADMIN_VERIFIED", "Admin Verified"),
             ("MANUAL", "Manual Entry"),
         ]
+    )
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="invited_students",
+    )
+    invite_code_used = models.ForeignKey(
+        "accounts.CampusInviteCode",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="redeemed_profiles",
     )
     is_flagged_fake = models.BooleanField(default=False, help_text="Flagged by admin or duplicate detection")
     flag_reason = models.CharField(max_length=255, blank=True, default="")
