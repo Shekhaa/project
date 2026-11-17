@@ -42,6 +42,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  Coffee,
   Bookmark,
   UserX,
   Bell,
@@ -806,8 +807,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               setSettingsModalVisible(true);
             }}
           >
-            <Edit3 size={13} color="#ffffff" />
-            <Text style={styles.editProfileBtnText}>Edit Profile</Text>
+            <Edit3 size={13} color={colors.onPrimary} />
+            <Text style={[styles.editProfileBtnText, { color: colors.onPrimary }]}>Edit Profile</Text>
           </TouchableOpacity>
           {(currentUser.is_staff || currentUser.is_superuser) && (
             <TouchableOpacity
@@ -966,7 +967,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 }
                 activeOpacity={0.85}
               >
-                <Text style={styles.verifyUpgradeBtnText}>
+                <Text style={[styles.verifyUpgradeBtnText, { color: colors.onPrimary }]}>
                   {verificationTier === 'INVITE_VERIFIED' ? 'Upgrade' : 'Verify ID'}
                 </Text>
               </TouchableOpacity>
@@ -1120,11 +1121,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     activeOpacity={0.8}
                   >
                     {Platform.OS === 'web' ? (
-                      <Copy size={13} color="#ffffff" />
+                      <Copy size={13} color={colors.onPrimary} />
                     ) : (
-                      <Share2 size={13} color="#ffffff" />
+                      <Share2 size={13} color={colors.onPrimary} />
                     )}
-                    <Text style={styles.copyCodeBtnText}>
+                    <Text style={[styles.copyCodeBtnText, { color: colors.onPrimary }]}>
                       {Platform.OS === 'web' ? 'Copy' : 'Share'}
                     </Text>
                   </TouchableOpacity>
@@ -1658,8 +1659,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         style={[styles.photoUploadBtn, { backgroundColor: colors.primary }]}
                         onPress={handlePickPhoto}
                       >
-                        <Upload size={13} color="#ffffff" style={{ marginRight: 6 }} />
-                        <Text style={styles.photoUploadBtnText}>
+                        <Upload size={13} color={colors.onPrimary} style={{ marginRight: 6 }} />
+                        <Text style={[styles.photoUploadBtnText, { color: colors.onPrimary }]}>
                           {editAvatarPreview || profile?.profile_picture ? 'Change Photo' : 'Upload Photo'}
                         </Text>
                       </TouchableOpacity>
@@ -1749,9 +1750,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     disabled={savingProfile}
                   >
                     {savingProfile ? (
-                      <ActivityIndicator color="#fff" />
+                      <ActivityIndicator color={colors.onPrimary} />
                     ) : (
-                      <Text style={styles.saveChangesText}>Save Profile Details</Text>
+                      <Text style={[styles.saveChangesText, { color: colors.onPrimary }]}>Save Profile Details</Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -1799,9 +1800,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     disabled={changingPassword}
                   >
                     {changingPassword ? (
-                      <ActivityIndicator color="#fff" />
+                      <ActivityIndicator color={colors.onPrimary} />
                     ) : (
-                      <Text style={styles.saveChangesText}>Update Password</Text>
+                      <Text style={[styles.saveChangesText, { color: colors.onPrimary }]}>Update Password</Text>
                     )}
                   </TouchableOpacity>
 
@@ -1864,9 +1865,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         disabled={resettingPassword}
                       >
                         {resettingPassword ? (
-                          <ActivityIndicator color="#fff" />
+                          <ActivityIndicator color={colors.onPrimary} />
                         ) : (
-                          <Text style={styles.saveChangesText}>Reset Password Now</Text>
+                          <Text style={[styles.saveChangesText, { color: colors.onPrimary }]}>Reset Password Now</Text>
                         )}
                       </TouchableOpacity>
                     </View>
@@ -1880,15 +1881,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   {/* Theme & Appearance */}
                   <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Appearance & Theme</Text>
                   <Text style={[styles.prefSub, { color: colors.textMuted }]}>
-                    Switch between Dark Mode, Studio Light Mode, or adapt automatically to your OS.
+                    Choose Black (Instagram monochrome), Mocha (Gen-Z cream & cloth brown), or Studio Light.
                   </Text>
 
-                  <View style={styles.themeSelectorRow}>
+                  <View style={[styles.themeSelectorRow, { flexWrap: 'wrap' }]}>
                     {(
                       [
-                        { mode: 'dark' as const, label: 'Dark', icon: Moon, desc: 'Obsidian' },
-                        { mode: 'light' as const, label: 'Light', icon: Sun, desc: 'Daylight' },
-                        { mode: 'system' as const, label: 'System', icon: Monitor, desc: 'Auto OS' },
+                        { mode: 'dark' as const, label: 'Black', icon: Moon, desc: 'Monochrome' },
+                        { mode: 'espresso' as const, label: 'Mocha', icon: Coffee, desc: 'Cream & Brown' },
+                        { mode: 'light' as const, label: 'Light', icon: Sun, desc: 'Studio White' },
+                        { mode: 'system' as const, label: 'Auto', icon: Monitor, desc: 'OS Match' },
                       ] as const
                     ).map((t) => {
                       const IconComp = t.icon;
@@ -1898,9 +1900,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                           key={t.mode}
                           style={[
                             styles.themeOptionCard,
+                            { minWidth: '44%' },
                             isSelected && styles.themeOptionCardActive,
                             {
-                              backgroundColor: isSelected ? (isDark ? '#1a1c23' : '#eff6ff') : colors.surfaceLight,
+                              backgroundColor: isSelected ? colors.chipActiveBg : colors.surfaceLight,
                               borderColor: isSelected ? colors.primary : colors.cardBorder,
                             },
                           ]}
@@ -1913,7 +1916,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                               { backgroundColor: isSelected ? colors.primary : colors.surface },
                             ]}
                           >
-                            <IconComp size={15} color={isSelected ? '#ffffff' : colors.textSecondary} />
+                            <IconComp size={15} color={isSelected ? colors.onPrimary : colors.textSecondary} />
                           </View>
                           <Text
                             style={[
@@ -2245,7 +2248,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       onPress={handleCreateBatchCode}
                       disabled={creatingBatchCode}
                     >
-                      <Text style={styles.saveChangesText}>
+                      <Text style={[styles.saveChangesText, { color: colors.onPrimary }]}>
                         {creatingBatchCode ? 'Creating Code...' : 'Generate Batch Invite Code'}
                       </Text>
                     </TouchableOpacity>

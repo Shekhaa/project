@@ -37,6 +37,7 @@ import {
   Mail,
   LogIn,
   ArrowLeft,
+  Coffee,
 } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
 import {
@@ -52,7 +53,7 @@ interface AuthScreenProps {
 }
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismiss }) => {
-  const { colors, isDark, toggleTheme } = useTheme();
+  const { colors, isDark, resolvedTheme, toggleTheme } = useTheme();
 
   // Mode Switcher: 'LOGIN' (Existing Student Credentials) vs 'SIGN_IN' (New Student Verification / SSO)
   const [activeTab, setActiveTab] = useState<'LOGIN' | 'SIGN_IN'>('LOGIN');
@@ -522,13 +523,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
             activeOpacity={0.8}
             accessibilityLabel="Toggle theme"
           >
-            {isDark ? (
-              <Sun size={15} color="#fbbf24" />
+            {resolvedTheme === 'dark' ? (
+              <Coffee size={15} color="#e5d2b5" />
+            ) : resolvedTheme === 'espresso' ? (
+              <Sun size={15} color="#d9a760" />
             ) : (
               <Moon size={15} color={colors.textPrimary} />
             )}
             <Text style={[styles.themeToggleText, { color: colors.textSecondary }]}>
-              {isDark ? 'Light' : 'Dark'}
+              {resolvedTheme === 'dark' ? 'Mocha' : resolvedTheme === 'espresso' ? 'Light' : 'Black'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -539,7 +542,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
           <View style={styles.brandHero}>
             <Text style={[styles.title, { color: colors.textPrimary }]}>
               Campus
-              <Text style={{ color: isDark ? '#2997ff' : '#0066cc' }}>Connect</Text>
+              <Text style={{ color: colors.brandAccent }}>Connect</Text>
             </Text>
             <Text style={[styles.subtitle, { color: colors.textMuted }]}>
               Verified campus network for Graphic Era students.
@@ -555,7 +558,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                 styles.tabBtn,
                 activeTab === 'LOGIN' && [
                   styles.tabBtnActive,
-                  { backgroundColor: isDark ? '#ffffff' : '#0a0a0a' },
+                  { backgroundColor: colors.primary },
                 ],
               ]}
               onPress={() => {
@@ -566,18 +569,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
             >
               <Lock
                 size={14}
-                color={activeTab === 'LOGIN' ? (isDark ? '#000000' : '#ffffff') : colors.textMuted}
+                color={activeTab === 'LOGIN' ? colors.onPrimary : colors.textMuted}
               />
               <Text
                 style={[
                   styles.tabBtnText,
                   {
-                    color:
-                      activeTab === 'LOGIN'
-                        ? isDark
-                          ? '#000000'
-                          : '#ffffff'
-                        : colors.textMuted,
+                    color: activeTab === 'LOGIN' ? colors.onPrimary : colors.textMuted,
                   },
                   activeTab === 'LOGIN' && styles.tabBtnTextActive,
                 ]}
@@ -591,7 +589,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                 styles.tabBtn,
                 activeTab === 'SIGN_IN' && [
                   styles.tabBtnActive,
-                  { backgroundColor: isDark ? '#ffffff' : '#0a0a0a' },
+                  { backgroundColor: colors.primary },
                 ],
               ]}
               onPress={() => {
@@ -602,18 +600,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
             >
               <ShieldCheck
                 size={14}
-                color={activeTab === 'SIGN_IN' ? (isDark ? '#000000' : '#ffffff') : colors.textMuted}
+                color={activeTab === 'SIGN_IN' ? colors.onPrimary : colors.textMuted}
               />
               <Text
                 style={[
                   styles.tabBtnText,
                   {
-                    color:
-                      activeTab === 'SIGN_IN'
-                        ? isDark
-                          ? '#000000'
-                          : '#ffffff'
-                        : colors.textMuted,
+                    color: activeTab === 'SIGN_IN' ? colors.onPrimary : colors.textMuted,
                   },
                   activeTab === 'SIGN_IN' && styles.tabBtnTextActive,
                 ]}
@@ -651,7 +644,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                 <View
                   style={[
                     styles.inputFieldRow,
-                    { backgroundColor: isDark ? '#000000' : colors.surfaceLight, borderColor: colors.cardBorder },
+                    { backgroundColor: isDark ? colors.background : colors.surfaceLight, borderColor: colors.cardBorder },
                   ]}
                 >
                   <User size={16} color={colors.textMuted} />
@@ -683,14 +676,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                     }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={[styles.forgotLink, { color: isDark ? '#2997ff' : colors.primary }]}>Forgot password?</Text>
+                    <Text style={[styles.forgotLink, { color: colors.primary }]}>Forgot password?</Text>
                   </TouchableOpacity>
                 </View>
 
                 <View
                   style={[
                     styles.inputFieldRow,
-                    { backgroundColor: isDark ? '#000000' : colors.surfaceLight, borderColor: colors.cardBorder },
+                    { backgroundColor: isDark ? colors.background : colors.surfaceLight, borderColor: colors.cardBorder },
                   ]}
                 >
                   <Lock size={16} color={colors.textMuted} />
@@ -729,11 +722,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                 activeOpacity={0.88}
               >
                 {loginLoading ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
                 ) : (
                   <View style={styles.primaryActionContent}>
-                    <LogIn size={16} color="#ffffff" />
-                    <Text style={styles.primaryActionText}>Log In to CampusConnect</Text>
+                    <LogIn size={16} color={colors.onPrimary} />
+                    <Text style={[styles.primaryActionText, { color: colors.onPrimary }]}>Log In to CampusConnect</Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -750,7 +743,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                 style={[
                   styles.msButtonSecondary,
                   {
-                    backgroundColor: isDark ? '#141416' : '#ffffff',
+                    backgroundColor: isDark ? colors.surfaceLight : '#ffffff',
                     borderColor: colors.hairlineStrong,
                   },
                 ]}
@@ -818,13 +811,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
 
                 {/* Microsoft Action Button */}
                 <TouchableOpacity
-                  style={styles.msButton}
+                  style={[styles.msButton, { backgroundColor: colors.primary }]}
                   onPress={() => handleMicrosoftSSO()}
                   disabled={ssoLoading}
                   activeOpacity={0.88}
                 >
                   {ssoLoading ? (
-                    <ActivityIndicator color="#ffffff" size="small" />
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
                   ) : (
                     <View style={styles.msButtonContent}>
                       <View style={styles.msLogoGrid}>
@@ -833,8 +826,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                         <View style={[styles.msLogoCell, { backgroundColor: '#00A4EF' }]} />
                         <View style={[styles.msLogoCell, { backgroundColor: '#FFB900' }]} />
                       </View>
-                      <Text style={styles.msButtonText}>Continue with College ID (@geu.ac.in)</Text>
-                      <ArrowRight size={17} color="#ffffff" />
+                      <Text style={[styles.msButtonText, { color: colors.onPrimary }]}>Continue with College ID (@geu.ac.in)</Text>
+                      <ArrowRight size={17} color={colors.onPrimary} />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -919,11 +912,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                       activeOpacity={0.88}
                     >
                       {emailOtpLoading ? (
-                        <ActivityIndicator color="#ffffff" size="small" />
+                        <ActivityIndicator color={colors.onPrimary} size="small" />
                       ) : (
                         <View style={styles.primaryActionContent}>
-                          <Text style={styles.primaryActionText}>Send 6-Digit Verification Code</Text>
-                          <ArrowRight size={15} color="#ffffff" />
+                          <Text style={[styles.primaryActionText, { color: colors.onPrimary }]}>Send 6-Digit Verification Code</Text>
+                          <ArrowRight size={15} color={colors.onPrimary} />
                         </View>
                       )}
                     </TouchableOpacity>
@@ -988,11 +981,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                       activeOpacity={0.88}
                     >
                       {emailOtpLoading ? (
-                        <ActivityIndicator color="#ffffff" size="small" />
+                        <ActivityIndicator color={colors.onPrimary} size="small" />
                       ) : (
                         <View style={styles.primaryActionContent}>
-                          <CheckCircle2 size={16} color="#ffffff" />
-                          <Text style={styles.primaryActionText}>Verify OTP & Continue</Text>
+                          <CheckCircle2 size={16} color={colors.onPrimary} />
+                          <Text style={[styles.primaryActionText, { color: colors.onPrimary }]}>Verify OTP & Continue</Text>
                         </View>
                       )}
                     </TouchableOpacity>
@@ -1265,9 +1258,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                     disabled={forgotLoading}
                   >
                     {forgotLoading ? (
-                      <ActivityIndicator color="#ffffff" size="small" />
+                      <ActivityIndicator color={colors.onPrimary} size="small" />
                     ) : (
-                      <Text style={styles.primaryActionText}>Send Reset Code ✉️</Text>
+                      <Text style={[styles.primaryActionText, { color: colors.onPrimary }]}>Send Reset Code</Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -1323,9 +1316,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                     disabled={forgotLoading}
                   >
                     {forgotLoading ? (
-                      <ActivityIndicator color="#ffffff" size="small" />
+                      <ActivityIndicator color={colors.onPrimary} size="small" />
                     ) : (
-                      <Text style={styles.primaryActionText}>Update Password & Log In 🚀</Text>
+                      <Text style={[styles.primaryActionText, { color: colors.onPrimary }]}>Update Password & Log In</Text>
                     )}
                   </TouchableOpacity>
 
@@ -1502,9 +1495,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: 'rgba(0, 112, 243, 0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(41, 151, 255, 0.35)',
+    borderColor: 'rgba(255, 255, 255, 0.16)',
     borderRadius: 6,
     paddingHorizontal: 7,
     paddingVertical: 3,

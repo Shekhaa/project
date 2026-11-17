@@ -155,8 +155,8 @@ export const LostFoundScreen: React.FC<LostFoundScreenProps> = ({
           onPress={handleOpenReportModal}
           activeOpacity={0.85}
         >
-          <Plus size={15} color="#fff" style={{ marginRight: 4 }} />
-          <Text style={styles.reportBtnText}>Report Item</Text>
+          <Plus size={15} color={colors.onPrimary} style={{ marginRight: 4 }} />
+          <Text style={[styles.reportBtnText, { color: colors.onPrimary }]}>Report Item</Text>
         </TouchableOpacity>
       </View>
 
@@ -181,7 +181,7 @@ export const LostFoundScreen: React.FC<LostFoundScreenProps> = ({
             onPress={() => onRequireVerify?.()}
             style={{ backgroundColor: colors.primary, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}
           >
-            <Text style={{ color: '#fff', fontSize: 11.5, fontWeight: '700' }}>Verify ID</Text>
+            <Text style={{ color: colors.onPrimary, fontSize: 11.5, fontWeight: '700' }}>Verify ID</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -474,9 +474,9 @@ export const LostFoundScreen: React.FC<LostFoundScreenProps> = ({
                 disabled={submitting}
               >
                 {submitting ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={colors.onPrimary} />
                 ) : (
-                  <Text style={styles.confirmBtnText}>Publish Notice</Text>
+                  <Text style={[styles.confirmBtnText, { color: colors.onPrimary }]}>Publish Notice</Text>
                 )}
               </TouchableOpacity>
             </View>

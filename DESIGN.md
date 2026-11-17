@@ -1,14 +1,13 @@
-# Campus Connect Design System — True Black & Action Blue Specification
-> Inspired by `apple/DESIGN.md`, `vercel/DESIGN.md`, and `x.ai/DESIGN.md` from `awesome-design-md`.
+# Campus Connect Design System — 3-Mode Editorial Specification
+> Inspired by `apple/DESIGN.md`, `vercel/DESIGN.md`, `oura/DESIGN.md`, and `claude/DESIGN.md` from `awesome-design-md`.
 
 ---
 
-## 1. Design Philosophy & Atmosphere
+## 1. Three Signature Modes
 
-- **Aesthetic**: Stark, editorial, high-contrast monochrome craft — zero AI-template purple/indigo gradients or decorative badges.
-- **True Black Canvas**: Built on pure OLED black (`#000000`) with neutral dark surfaces (`#0a0a0a`, `#0d0d0f`, `#141416`) separated strictly by 1px neutral hairlines (`#222226` / `#333338`).
-- **Pure White Ink**: All primary text (`CampusConnect`, headings, posts, labels) uses pure `#ffffff` on dark mode for effortless legibility, paired with crisp `#e4e4e7` secondary text and `#a1a1aa` metadata.
-- **Single Action Blue Accent**: Authentic Vercel/Apple Action Blue (`#0070f3` / `#2997ff` on dark; `#0066cc` on light) used sparingly for intentional primary actions, active links, and focus indicators.
+1. **White (`light` — Studio Daylight):** Crisp `#f8f9fa` / `#ffffff` surfaces, deep `#0a0a0a` ink, and Apple Action Blue (`#0066cc`).
+2. **Black (`dark` — Instagram True Black):** Pure OLED `#000000` canvas, pure white `#ffffff` ink & monochrome white buttons (`onPrimary: #000000`), graphite `#262626` avatars — **only `Connect` in `CampusConnect` carries `#2997ff` blue** (zero neon blue spam).
+3. **Mocha (`espresso` — Gen-Z Cloth Brown & Cream):** Warm espresso-walnut linen surfaces (`#19120e`, `#231a14`, `#30241c`), stitched cocoa borders (`#443429`), creamy ivory ink (`#f6efe2`), creamy oat buttons (`#e5d2b5` with `#19120e` text), caramel `brandAccent` (`#c9a67e`), and quiet-luxury Olive Sage (`#8fa382`) verified badges.
 
 ---
 

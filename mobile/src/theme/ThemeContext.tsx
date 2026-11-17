@@ -1,12 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useColorScheme, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ThemeColors, darkColors, lightColors } from './colors';
+import { ThemeColors, darkColors, espressoColors, lightColors } from './colors';
 
-export type ThemeMode = 'dark' | 'light' | 'system';
+export type ThemeMode = 'dark' | 'light' | 'espresso' | 'system';
+export type ResolvedTheme = 'dark' | 'light' | 'espresso';
 
 interface ThemeContextValue {
   themeMode: ThemeMode;
+  resolvedTheme: ResolvedTheme;
   isDark: boolean;
   colors: ThemeColors;
   setThemeMode: (mode: ThemeMode) => void;
@@ -17,6 +19,7 @@ const THEME_STORAGE_KEY = '@campus_connect_theme_mode';
 
 const ThemeContext = createContext<ThemeContextValue>({
   themeMode: 'dark',
+  resolvedTheme: 'dark',
   isDark: true,
   colors: darkColors,
   setThemeMode: () => {},
@@ -32,7 +35,7 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     (async () => {
       try {
         const saved = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-        if (saved === 'dark' || saved === 'light' || saved === 'system') {
+        if (saved === 'dark' || saved === 'light' || saved === 'espresso' || saved === 'system') {
           setThemeModeState(saved as ThemeMode);
         }
       } catch (err) {
@@ -41,12 +44,21 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     })();
   }, []);
 
-  const isDark =
+  const resolvedTheme: ResolvedTheme =
     themeMode === 'system'
-      ? systemScheme !== 'light'
-      : themeMode === 'dark';
+      ? systemScheme === 'light'
+        ? 'light'
+        : 'dark'
+      : themeMode;
 
-  const activeColors = isDark ? darkColors : lightColors;
+  const isDark = resolvedTheme !== 'light';
+
+  const activeColors =
+    resolvedTheme === 'light'
+      ? lightColors
+      : resolvedTheme === 'espresso'
+      ? espressoColors
+      : darkColors;
 
   // Sync web document background when theme changes
   useEffect(() => {
@@ -55,7 +67,7 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       document.documentElement.style.backgroundColor = activeColors.background;
       document.body.style.color = activeColors.textPrimary;
     }
-  }, [isDark, activeColors]);
+  }, [resolvedTheme, activeColors]);
 
   const setThemeMode = async (mode: ThemeMode) => {
     setThemeModeState(mode);
@@ -66,8 +78,14 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
+  // Cycle cleanly across all 3 signature themes: Dark (Black) -> Mocha (Espresso/Cream) -> Light (White)
   const toggleTheme = () => {
-    const nextMode: ThemeMode = isDark ? 'light' : 'dark';
+    const nextMode: ThemeMode =
+      resolvedTheme === 'dark'
+        ? 'espresso'
+        : resolvedTheme === 'espresso'
+        ? 'light'
+        : 'dark';
     setThemeMode(nextMode);
   };
 
@@ -75,6 +93,7 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     <ThemeContext.Provider
       value={{
         themeMode,
+        resolvedTheme,
         isDark,
         colors: activeColors,
         setThemeMode,

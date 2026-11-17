@@ -1045,7 +1045,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   style={{ backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 }}
                   onPress={() => onRequireVerify?.('Verify your campus ID or enter an invite code to chat in Campus Hubs.')}
                 >
-                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Verify ID</Text>
+                  <Text style={{ color: colors.onPrimary, fontSize: 12, fontWeight: '700' }}>Verify ID</Text>
                 </TouchableOpacity>
               </View>
             ) : voiceRecorder.isRecording ? (
@@ -1128,9 +1128,9 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   disabled={!(messageText.trim() || draftVoiceNote) || sendingMessage}
                 >
                   {sendingMessage ? (
-                    <ActivityIndicator color="#fff" size="small" />
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
                   ) : (
-                    <Send size={16} color="#fff" />
+                    <Send size={16} color={colors.onPrimary} />
                   )}
                 </TouchableOpacity>
               </View>
@@ -1538,7 +1538,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   onPress={handleSubmitReport}
                   disabled={submittingReport}
                 >
-                  {submittingReport ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmBtnText}>Submit Report</Text>}
+                  {submittingReport ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={[styles.confirmBtnText, { color: colors.onPrimary }]}>Submit Report</Text>}
                 </TouchableOpacity>
               </View>
             </View>
@@ -1786,8 +1786,8 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
             }}
             activeOpacity={0.8}
           >
-            <Plus size={15} color="#fff" style={{ marginRight: 4 }} />
-            <Text style={styles.createBtnText}>Create Hub</Text>
+            <Plus size={15} color={colors.onPrimary} style={{ marginRight: 4 }} />
+            <Text style={[styles.createBtnText, { color: colors.onPrimary }]}>Create Hub</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -2037,9 +2037,9 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                 disabled={creatingCommunity}
               >
                 {creatingCommunity ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={colors.onPrimary} />
                 ) : (
-                  <Text style={styles.confirmBtnText}>Create Hub</Text>
+                  <Text style={[styles.confirmBtnText, { color: colors.onPrimary }]}>Create Hub</Text>
                 )}
               </TouchableOpacity>
             </View>

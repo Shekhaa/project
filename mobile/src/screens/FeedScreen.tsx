@@ -25,7 +25,7 @@ import { NotificationsModal } from '../components/notifications/NotificationsMod
 import { notificationService, NotificationItem } from '../services/notificationService';
 import { api } from '../config/api';
 import { showCrossPlatformAlert } from '../utils/mediaUtils';
-import { Plus, Bell, Sparkles, SlidersHorizontal, Check, X, Sun, Moon } from 'lucide-react-native';
+import { Plus, Bell, Sparkles, SlidersHorizontal, Check, X, Sun, Moon, Coffee } from 'lucide-react-native';
 
 const SCOPE_TABS: Array<{
   key: 'ALL' | 'COLLEGE' | 'FOLLOWING' | 'SAVED' | 'MEDIA' | 'RESOURCES';
@@ -61,7 +61,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
 }) => {
   const { width } = useWindowDimensions();
   const isCompactViewport = width < 410;
-  const { colors, isDark, toggleTheme } = useTheme();
+  const { colors, isDark, resolvedTheme, toggleTheme } = useTheme();
   const [posts, setPosts] = useState<Post[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [selectedCommunityId, setSelectedCommunityId] = useState<number | undefined>(undefined);
@@ -389,11 +389,11 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       <View style={[styles.navBar, isCompactViewport && { paddingHorizontal: 12 }]}>
         <View style={styles.brandRow}>
           <Text style={[styles.brandTitle, { color: colors.textPrimary }, isCompactViewport && { fontSize: 16 }]}>Campus</Text>
-          <Text style={[styles.brandAccent, { color: isDark ? '#2997ff' : colors.primary }, isCompactViewport && { fontSize: 16 }]}>Connect</Text>
+          <Text style={[styles.brandAccent, { color: colors.brandAccent }, isCompactViewport && { fontSize: 16 }]}>Connect</Text>
         </View>
 
         <View style={[styles.navActions, isCompactViewport && { gap: 6 }]}>
-          {/* Quick 1-Tap Theme Toggle */}
+          {/* Quick 1-Tap 3-Mode Theme Switcher: Black -> Mocha -> White */}
           <TouchableOpacity
             style={[
               styles.iconBtn,
@@ -402,12 +402,20 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             ]}
             onPress={toggleTheme}
             activeOpacity={0.7}
-            accessibilityLabel={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+            accessibilityLabel={
+              resolvedTheme === 'dark'
+                ? 'Switch to Mocha Cream Theme'
+                : resolvedTheme === 'espresso'
+                ? 'Switch to Light Theme'
+                : 'Switch to Dark Theme'
+            }
           >
-            {isDark ? (
-              <Sun size={isCompactViewport ? 15 : 17} color="#fbbf24" />
+            {resolvedTheme === 'dark' ? (
+              <Coffee size={isCompactViewport ? 15 : 17} color="#e5d2b5" />
+            ) : resolvedTheme === 'espresso' ? (
+              <Sun size={isCompactViewport ? 15 : 17} color="#d9a760" />
             ) : (
-              <Moon size={isCompactViewport ? 15 : 17} color="#0066cc" />
+              <Moon size={isCompactViewport ? 15 : 17} color={colors.primary} />
             )}
           </TouchableOpacity>
 
@@ -482,13 +490,14 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           <TouchableOpacity
             style={[
               styles.createPostBtn,
+              { backgroundColor: colors.primary },
               isCompactViewport && { paddingHorizontal: 10, paddingVertical: 7, gap: 4 },
             ]}
             onPress={handleOpenComposer}
             activeOpacity={0.8}
           >
-            <Plus size={isCompactViewport ? 15 : 18} color="#fff" />
-            <Text style={[styles.createPostBtnText, isCompactViewport && { fontSize: 12 }]}>Post</Text>
+            <Plus size={isCompactViewport ? 15 : 18} color={colors.onPrimary} />
+            <Text style={[styles.createPostBtnText, { color: colors.onPrimary }, isCompactViewport && { fontSize: 12 }]}>Post</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -510,10 +519,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
               style={[
                 styles.scopeTabPill,
                 {
-                  backgroundColor: isActive
-                    ? (isDark ? 'rgba(0, 112, 243, 0.25)' : '#dbeafe')
-                    : (isDark ? 'rgba(255, 255, 255, 0.05)' : '#f1f5f9'),
-                  borderColor: isActive ? colors.primary : colors.cardBorder,
+                  backgroundColor: isActive ? colors.chipActiveBg : colors.surfaceLight,
+                  borderColor: isActive ? colors.chipActiveBorder : colors.cardBorder,
                 },
               ]}
               onPress={() => handleSelectScope(tab.key)}
@@ -524,9 +531,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
                 style={[
                   styles.scopeTabLabel,
                   {
-                    color: isActive
-                      ? (isDark ? '#c7d2fe' : '#4338ca')
-                      : colors.textSecondary,
+                    color: isActive ? colors.chipActiveText : colors.textSecondary,
                     fontWeight: isActive ? '700' : '500',
                   },
                 ]}
@@ -544,7 +549,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           style={[
             styles.readOnlyBanner,
             {
-              backgroundColor: isDark ? 'rgba(0, 112, 243, 0.1)' : 'rgba(0, 112, 243, 0.07)',
+              backgroundColor: colors.bannerBg,
               borderTopColor: colors.cardBorder,
             },
           ]}
@@ -567,7 +572,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             }}
             activeOpacity={0.85}
           >
-            <Text style={styles.readOnlyCtaText}>{!currentUser ? 'Sign In' : 'Verify ID'}</Text>
+            <Text style={[styles.readOnlyCtaText, { color: colors.onPrimary }]}>{!currentUser ? 'Sign In' : 'Verify ID'}</Text>
           </TouchableOpacity>
         </View>
       )}

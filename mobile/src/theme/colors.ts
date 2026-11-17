@@ -8,10 +8,20 @@ export interface ThemeColors {
   hairline: string;
   hairlineStrong: string;
 
-  // Single Chromatic Accent (Linear-style Refined Indigo)
+  // Primary Action & Brand Accent
   primary: string;
+  onPrimary: string;
   primaryHover: string;
   primaryFocus: string;
+  brandAccent: string;
+
+  // Component Surfaces
+  avatarBg: string;
+  avatarText: string;
+  chipActiveBg: string;
+  chipActiveBorder: string;
+  chipActiveText: string;
+  bannerBg: string;
 
   // Semantics
   accent: string;
@@ -44,19 +54,29 @@ export interface ThemeColors {
 }
 
 export const darkColors: ThemeColors = {
-  // True OLED Black Canvas & Neutral Dark Surfaces (Apple + Vercel awesome-design-md)
+  // Instagram True Black — Pure Monochrome White Ink (ONLY CampusConnect wordmark is bluish)
   background: '#000000',
   surface: '#0a0a0a',
-  surfaceLight: '#141416',
-  card: '#0d0d0f',
-  cardBorder: '#222226',
-  hairline: '#222226',
-  hairlineStrong: '#333338',
+  surfaceLight: '#18181b',
+  card: '#0d0d0d',
+  cardBorder: '#262626',
+  hairline: '#262626',
+  hairlineStrong: '#3f3f46',
 
-  // Single Chromatic Accent — Crisp Action Blue (Zero Purple/Indigo AI Slop)
-  primary: '#0070f3',
-  primaryHover: '#2997ff',
-  primaryFocus: '#0060df',
+  // Crisp Monochrome White Actions + Single Brand Blue Accent
+  primary: '#ffffff',
+  onPrimary: '#000000',
+  primaryHover: '#e4e4e7',
+  primaryFocus: '#d4d4d8',
+  brandAccent: '#2997ff',
+
+  // Monochrome Component Surfaces (Zero Repetitive Blue Blobs)
+  avatarBg: '#262626',
+  avatarText: '#ffffff',
+  chipActiveBg: '#1f1f22',
+  chipActiveBorder: '#ffffff',
+  chipActiveText: '#ffffff',
+  bannerBg: '#111113',
 
   // Semantics
   accent: '#22c55e',
@@ -64,28 +84,84 @@ export const darkColors: ThemeColors = {
   warning: '#f59e0b',
   danger: '#ef4444',
 
-  // Pure White Ink & High-Contrast Neutral Typography
+  // Pure White Ink & Crisp Neutral Typography
   textPrimary: '#ffffff',
   textSecondary: '#e4e4e7',
   textMuted: '#a1a1aa',
   textTertiary: '#71717a',
 
-  // Chat Bubbles (Crisp Action Blue + Neutral Dark)
-  bubbleMe: '#0070f3',
+  // Chat Bubbles (Clean Instagram Monochrome Dark)
+  bubbleMe: '#262626',
   bubbleMeText: '#ffffff',
   bubbleThem: '#141416',
-  bubbleThemBorder: '#222226',
+  bubbleThemBorder: '#262626',
   bubbleThemText: '#ffffff',
 
-  // Mascots / Anonymous (Aligned Action Blue — No Purple Slop)
-  anonPurple: '#2997ff',
-  anonBadge: '#0a192f',
+  // Mascots / Anonymous (Monochrome White on Graphite)
+  anonPurple: '#ffffff',
+  anonBadge: '#1c1c1e',
 
   // Ephemeral Group
   ephemeralFire: '#f97316',
 
   // Modals & Overlays
   modalOverlay: 'rgba(0, 0, 0, 0.85)',
+};
+
+export const espressoColors: ThemeColors = {
+  // Gen-Z Quiet-Luxury Mocha / Espresso Cloth Brown + Creamy Ivory Typography + Olive Sage
+  // Inspired by Oura & Claude DESIGN.md warm organic palettes
+  background: '#19120e',
+  surface: '#231a14',
+  surfaceLight: '#30241c',
+  card: '#271d17',
+  cardBorder: '#443429',
+  hairline: '#443429',
+  hairlineStrong: '#5c4739',
+
+  // Creamy Linen Primary CTAs + Warm Caramel Brand Accent
+  primary: '#e5d2b5',
+  onPrimary: '#19120e',
+  primaryHover: '#f2e4ce',
+  primaryFocus: '#d4bc9a',
+  brandAccent: '#c9a67e',
+
+  // Warm Suede & Linen Surfaces
+  avatarBg: '#3e2e24',
+  avatarText: '#f6efe2',
+  chipActiveBg: '#382a21',
+  chipActiveBorder: '#e5d2b5',
+  chipActiveText: '#f6efe2',
+  bannerBg: '#2b2019',
+
+  // Organic Earth Semantics (Olive Sage Verified!)
+  accent: '#8fa382',
+  success: '#8fa382',
+  warning: '#d9a760',
+  danger: '#d96b59',
+
+  // Warm Creamy Ivory Ink
+  textPrimary: '#f6efe2',
+  textSecondary: '#e4d5bf',
+  textMuted: '#b8a58e',
+  textTertiary: '#877460',
+
+  // Chat Bubbles (Warm Espresso & Cocoa)
+  bubbleMe: '#3e2e24',
+  bubbleMeText: '#f6efe2',
+  bubbleThem: '#2a1f18',
+  bubbleThemBorder: '#443429',
+  bubbleThemText: '#f6efe2',
+
+  // Mascots / Anonymous (Warm Sand/Caramel)
+  anonPurple: '#c9a67e',
+  anonBadge: '#30241c',
+
+  // Ephemeral Group
+  ephemeralFire: '#d98245',
+
+  // Modals & Overlays
+  modalOverlay: 'rgba(18, 12, 8, 0.86)',
 };
 
 export const lightColors: ThemeColors = {
@@ -100,8 +176,18 @@ export const lightColors: ThemeColors = {
 
   // Apple / Vercel Action Blue for Light Mode
   primary: '#0066cc',
+  onPrimary: '#ffffff',
   primaryHover: '#0070f3',
   primaryFocus: '#0052cc',
+  brandAccent: '#0066cc',
+
+  // Studio Daylight Component Surfaces
+  avatarBg: '#0066cc',
+  avatarText: '#ffffff',
+  chipActiveBg: '#eff6ff',
+  chipActiveBorder: '#0066cc',
+  chipActiveText: '#0066cc',
+  bannerBg: '#eff6ff',
 
   // Semantics
   accent: '#16a34a',

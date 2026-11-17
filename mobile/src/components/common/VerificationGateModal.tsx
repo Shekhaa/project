@@ -333,9 +333,9 @@ export const VerificationGateModal: React.FC<VerificationGateModalProps> = ({
                 style={[
                   styles.iconWrap,
                   {
-                    backgroundColor: isDark
-                      ? 'rgba(94, 106, 210, 0.16)'
-                      : 'rgba(79, 70, 229, 0.12)',
+                    backgroundColor: colors.surfaceLight,
+                    borderWidth: 1,
+                    borderColor: colors.cardBorder,
                   },
                 ]}
               >
@@ -461,9 +461,9 @@ export const VerificationGateModal: React.FC<VerificationGateModalProps> = ({
                   activeOpacity={0.85}
                 >
                   {inviteLoading ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
+                    <ActivityIndicator size="small" color={colors.onPrimary} />
                   ) : (
-                    <Text style={styles.primaryBtnText}>Unlock</Text>
+                    <Text style={[styles.primaryBtnText, { color: colors.onPrimary }]}>Unlock</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -501,11 +501,11 @@ export const VerificationGateModal: React.FC<VerificationGateModalProps> = ({
                 activeOpacity={0.85}
               >
                 {msLoading ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
                 ) : (
                   <View style={styles.msActionContent}>
-                    <Text style={styles.msActionText}>Link College Microsoft ID</Text>
-                    <ArrowRight size={15} color="#ffffff" />
+                    <Text style={[styles.msActionText, { color: colors.onPrimary }]}>Link College Microsoft ID</Text>
+                    <ArrowRight size={15} color={colors.onPrimary} />
                   </View>
                 )}
               </TouchableOpacity>

@@ -873,7 +873,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               style={{ backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 }}
               onPress={() => onRequireVerify?.('Verify your campus ID or enter an invite code to send messages.')}
             >
-              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Verify ID</Text>
+              <Text style={{ color: colors.onPrimary, fontSize: 12, fontWeight: '700' }}>Verify ID</Text>
             </TouchableOpacity>
           </View>
         ) : voiceRecorder.isRecording ? (
@@ -1001,9 +1001,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               disabled={isRequestPending || !(inputMessage.trim() || draftVoiceNote) || sending}
             >
               {sending ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color={colors.onPrimary} />
               ) : (
-                <Send size={16} color="#fff" />
+                <Send size={16} color={colors.onPrimary} />
               )}
             </TouchableOpacity>
           </View>
@@ -1198,7 +1198,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             activeOpacity={0.8}
             accessibilityLabel="New message"
           >
-            <Plus size={17} color="#ffffff" />
+            <Plus size={17} color={colors.onPrimary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -1319,7 +1319,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               setDirectoryModalVisible(true);
             }}
           >
-            <Text style={styles.startChatCtaText}>Find Classmates</Text>
+            <Text style={[styles.startChatCtaText, { color: colors.onPrimary }]}>Find Classmates</Text>
           </TouchableOpacity>
         </View>
       ) : (

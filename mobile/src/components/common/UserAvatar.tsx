@@ -88,7 +88,7 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
           width: size,
           height: size,
           borderRadius: radius,
-          backgroundColor: backgroundColor || colors.primary,
+          backgroundColor: backgroundColor || colors.avatarBg,
           borderColor: borderColor || 'transparent',
           borderWidth,
         },
@@ -111,7 +111,7 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
           style={[
             styles.initials,
             {
-              color: textColor || '#ffffff',
+              color: textColor || colors.avatarText,
               fontSize: Math.max(11, Math.round(size * 0.38)),
             },
             textStyle,

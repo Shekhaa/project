@@ -263,9 +263,17 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                 {post.author_name}
               </Text>
               {!post.is_anonymous && post.author_verification_tier === 'FULLY_VERIFIED' && (
-                <View style={styles.verifiedBadgePill}>
-                  <ShieldCheck size={12} color="#10b981" />
-                  <Text style={styles.verifiedBadgeText}>VERIFIED</Text>
+                <View
+                  style={[
+                    styles.verifiedBadgePill,
+                    {
+                      backgroundColor: `${colors.success}1a`,
+                      borderColor: `${colors.success}44`,
+                    },
+                  ]}
+                >
+                  <ShieldCheck size={12} color={colors.success} />
+                  <Text style={[styles.verifiedBadgeText, { color: colors.success }]}>VERIFIED</Text>
                 </View>
               )}
               {!post.is_anonymous && post.author_verification_tier === 'INVITE_VERIFIED' && (
@@ -295,16 +303,12 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                 style={[
                   styles.communityBadge,
                   {
-                    backgroundColor: isDark
-                      ? 'rgba(94, 106, 210, 0.12)'
-                      : 'rgba(79, 70, 229, 0.08)',
-                    borderColor: isDark
-                      ? 'rgba(94, 106, 210, 0.24)'
-                      : 'rgba(79, 70, 229, 0.15)',
+                    backgroundColor: colors.surfaceLight,
+                    borderColor: colors.cardBorder,
                   },
                 ]}
               >
-                <Text style={[styles.communityBadgeText, { color: colors.primary }]}>
+                <Text style={[styles.communityBadgeText, { color: isDark ? colors.textSecondary : colors.primary }]}>
                   {post.community_name || post.author_college_name || 'Campus Feed'}
                 </Text>
               </View>

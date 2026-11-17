@@ -29,6 +29,7 @@ import {
   ArrowLeft,
   Sun,
   Moon,
+  Coffee,
   ChevronDown,
   Search,
   X,
@@ -176,7 +177,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   onBack,
   onUserUpdated,
 }) => {
-  const { colors, isDark, toggleTheme } = useTheme();
+  const { colors, isDark, resolvedTheme, toggleTheme } = useTheme();
   const [loadingInitial, setLoadingInitial] = useState(true);
 
   const isInstitutionalEmail = /\.(ac|edu)\.in$/i.test(currentUser.email || '');
@@ -471,9 +472,15 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
           onPress={toggleTheme}
           activeOpacity={0.8}
         >
-          {isDark ? <Sun size={15} color="#fbbf24" /> : <Moon size={15} color={colors.textPrimary} />}
+          {resolvedTheme === 'dark' ? (
+            <Coffee size={15} color="#e5d2b5" />
+          ) : resolvedTheme === 'espresso' ? (
+            <Sun size={15} color="#d9a760" />
+          ) : (
+            <Moon size={15} color={colors.textPrimary} />
+          )}
           <Text style={[styles.themeToggleText, { color: colors.textSecondary }]}>
-            {isDark ? 'Light' : 'Dark'}
+            {resolvedTheme === 'dark' ? 'Mocha' : resolvedTheme === 'espresso' ? 'Light' : 'Black'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -481,8 +488,10 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
       {/* Header Banner */}
       <View style={styles.header}>
         <View style={styles.logoRow}>
-          <GraduationCap size={26} color={colors.primary} />
-          <Text style={[styles.appTitle, { color: colors.primary }]}>Campus Connect</Text>
+          <GraduationCap size={26} color={colors.brandAccent} />
+          <Text style={[styles.appTitle, { color: colors.textPrimary }]}>
+            Campus<Text style={{ color: colors.brandAccent }}>Connect</Text>
+          </Text>
         </View>
         <Text style={[styles.title, { color: colors.textPrimary }]}>Claim Your Campus Identity</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
@@ -764,7 +773,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                   style={[
                     styles.genderPillText,
                     { color: colors.textSecondary },
-                    gender === g && { color: '#ffffff', fontWeight: '700' },
+                    gender === g && { color: colors.onPrimary, fontWeight: '700' },
                   ]}
                 >
                   {g === 'Male' ? '👨 Male' : g === 'Female' ? '👩 Female' : '✨ Other'}
@@ -970,9 +979,9 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                   disabled={linkingMs}
                 >
                   {linkingMs ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
+                    <ActivityIndicator size="small" color={colors.onPrimary} />
                   ) : (
-                    <Text style={styles.msTokenConfirmBtnText}>Link</Text>
+                    <Text style={[styles.msTokenConfirmBtnText, { color: colors.onPrimary }]}>Link</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -982,17 +991,17 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
 
         {/* Finish Button */}
         <TouchableOpacity
-          style={styles.submitBtn}
+          style={[styles.submitBtn, { backgroundColor: colors.primary, shadowColor: 'transparent' }]}
           onPress={handleFinishSetup}
           disabled={saving}
           activeOpacity={0.88}
         >
           {saving ? (
-            <ActivityIndicator color="#ffffff" size="small" />
+            <ActivityIndicator color={colors.onPrimary} size="small" />
           ) : (
             <View style={styles.submitBtnContent}>
-              <Check size={18} color="#ffffff" />
-              <Text style={styles.submitBtnText}>Finish Setup & Enter Campus Feed 🚀</Text>
+              <Check size={18} color={colors.onPrimary} />
+              <Text style={[styles.submitBtnText, { color: colors.onPrimary }]}>Finish Setup & Enter Campus Feed</Text>
             </View>
           )}
         </TouchableOpacity>

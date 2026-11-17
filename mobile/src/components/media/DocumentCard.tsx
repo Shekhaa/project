@@ -174,7 +174,7 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
           activeOpacity={0.7}
           accessibilityLabel="Download Document"
         >
-          <Download size={16} color="#ffffff" />
+          <Download size={16} color={colors.onPrimary} />
         </TouchableOpacity>
       </View>
     </View>
