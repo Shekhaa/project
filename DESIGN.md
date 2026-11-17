@@ -1,63 +1,61 @@
-# Campus Connect Design System — Linear Specification
-> Inspired by `linear.app/DESIGN.md` from `awesome-design-md` & `design-taste-frontend` anti-slop framework.
+# Campus Connect Design System — True Black & Action Blue Specification
+> Inspired by `apple/DESIGN.md`, `vercel/DESIGN.md`, and `x.ai/DESIGN.md` from `awesome-design-md`.
 
 ---
 
 ## 1. Design Philosophy & Atmosphere
 
-- **Aesthetic**: Ultra-minimal, precise, technical, and quietly luxurious software-craft.
-- **Canvas-First**: Built on a deep, near-black canvas (`#08090a`). Depth is constructed through **layered luminance** (`#0f1011`, `#141516`, `#18191a`) rather than blur shadows or heavy saturated fills.
-- **Single Chromatic Accent**: Linear's signature lavender-blue (`#5e6ad2`) is used exclusively for key intentional CTAs, active tab indicators, and verified focus states. Never used as a multi-color decorative gradient.
-- **Hairline Precision**: Structural panels, cards, and modal dividers utilize crisp 1px hairline borders (`#23252a` / `#34343a`) for clean data separation.
+- **Aesthetic**: Stark, editorial, high-contrast monochrome craft — zero AI-template purple/indigo gradients or decorative badges.
+- **True Black Canvas**: Built on pure OLED black (`#000000`) with neutral dark surfaces (`#0a0a0a`, `#0d0d0f`, `#141416`) separated strictly by 1px neutral hairlines (`#222226` / `#333338`).
+- **Pure White Ink**: All primary text (`CampusConnect`, headings, posts, labels) uses pure `#ffffff` on dark mode for effortless legibility, paired with crisp `#e4e4e7` secondary text and `#a1a1aa` metadata.
+- **Single Action Blue Accent**: Authentic Vercel/Apple Action Blue (`#0070f3` / `#2997ff` on dark; `#0066cc` on light) used sparingly for intentional primary actions, active links, and focus indicators.
 
 ---
 
-## 2. Anti-Slop Discipline (`design-taste-frontend`)
+## 2. Anti-Slop Discipline
 
-To maintain high visual fidelity and prevent generic "AI template slop":
-1. **NO Decorative Gradient Blobs**: Ban random floating purple/pink neon blur circles that add no information value.
-2. **NO Low-Contrast Gray Text**: Ensure all text strictly adheres to WCAG AA contrast standards. Use `#f7f8f8` for primary text and `#d0d6e0` for secondary text.
-3. **NO Excessive Border Radius**: Restrict cards and panels to `8px`–`12px` radius. Avoid oversized 32px pill bubbles for content containers.
-4. **NO Glowing Neons**: Glow is replaced with crisp, razor-sharp 1px hairline borders (`#23252a`).
-5. **High Information Density**: UI is compact, informative, and organized like high-craft developer and productivity software.
+To prevent generic AI-generated template aesthetics:
+1. **NO Purple/Indigo AI Accents**: Ban `#5e6ad2` / `#7170ff` lavender-purple glows and multi-color decorative gradients.
+2. **NO Fake Social-Proof Pills**: Ban pulsing `"10,000+ Active"` fake status chips and decorative `#hashtag` spam on authentication screens.
+3. **NO Murky Low-Contrast Text**: Use `#ffffff` primary text and `#e4e4e7` secondary text on `#000000`/`#0a0a0a`.
+4. **Crisp Geometry**: Keep cards to `12px`–`14px` radius with `1px` solid `#222226` hairlines instead of heavy drop shadows.
+5. **High Information Density**: UI is direct, calm, and utility-first.
 
 ---
 
 ## 3. Core Color Tokens
 
-### Surfaces & Backgrounds
+### Surfaces & Backgrounds (Dark Mode)
 | Token | Hex Value | Usage |
 |---|---|---|
-| `canvas` / `background` | `#08090a` | Deepest dark root canvas for screens |
-| `surface-1` / `surface` | `#0f1011` | Primary cards, inbox rows, list items |
-| `surface-2` / `surfaceLight` | `#141516` | Raised containers, inputs, top bars |
-| `surface-3` / `card` | `#18191a` | Active items, modals, popovers |
-| `surface-hover` | `#1f2022` | Interactive touch / hover states |
+| `canvas` / `background` | `#000000` | Pure true-black root canvas for screens |
+| `surface` | `#0a0a0a` | Primary cards, auth container, bottom bar |
+| `card` | `#0d0d0f` | Post cards, list items |
+| `surfaceLight` | `#141416` | Inputs, segmented tracks, secondary buttons |
 
 ### Hairlines & Borders
 | Token | Hex Value | Usage |
 |---|---|---|
-| `hairline` / `cardBorder` | `#23252a` | Standard 1px divider and card perimeter |
-| `hairline-strong` | `#34343a` | Focus outlines, active selections |
-| `hairline-subtle` | `rgba(255, 255, 255, 0.05)` | Secondary inner dividers |
+| `hairline` / `cardBorder` | `#222226` | Standard 1px divider and card perimeter |
+| `hairlineStrong` | `#333338` | Focus outlines, active borders |
 
 ### Ink & Typography
 | Token | Hex Value | Usage |
 |---|---|---|
-| `ink` / `textPrimary` | `#f7f8f8` | Primary headlines, titles, post content |
-| `ink-muted` / `textSecondary` | `#d0d6e0` | Subtitles, authors, action counters |
-| `ink-subtle` / `textMuted` | `#8a8f98` | Timestamps, secondary metadata |
-| `ink-tertiary` | `#62666d` | Placeholder text, disabled labels |
+| `textPrimary` | `#ffffff` | Brand wordmark, headlines, post content, primary labels |
+| `textSecondary` | `#e4e4e7` | Subtitles, authors, action counters |
+| `textMuted` | `#a1a1aa` | Timestamps, secondary metadata |
+| `textTertiary` | `#71717a` | Placeholder text, disabled labels |
 
 ### Brand & Chromatic Accents
 | Token | Hex Value | Usage |
 |---|---|---|
-| `primary` | `#5e6ad2` | Linear signature lavender-blue accent |
-| `primary-hover` | `#828fff` | Active press state |
-| `primary-focus` | `#5e69d1` | Focus rings & primary buttons |
-| `semantic-success` | `#27a644` | Accepted solutions, verified badges |
-| `semantic-warning` | `#f59e0b` | Solved tags, bookmarks, pinned badges |
-| `semantic-danger` | `#ef4444` | Destructive deletes, unlikes |
+| `primary` | `#0070f3` (dark) / `#0066cc` (light) | Action Blue primary CTAs & active indicators |
+| `primaryHover` | `#2997ff` | High-contrast Apple dark-mode blue for links & highlights |
+| `primaryFocus` | `#0060df` | Focus rings & pressed states |
+| `success` | `#22c55e` | Verified badges, accepted solutions |
+| `warning` | `#f59e0b` | Pending ID review, warnings |
+| `danger` | `#ef4444` | Destructive deletes, errors |
 
 ---
 

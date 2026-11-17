@@ -44,48 +44,48 @@ export interface ThemeColors {
 }
 
 export const darkColors: ThemeColors = {
-  // Linear Canvas & Surfaces (Layered Dark Luminance)
-  background: '#08090a',
-  surface: '#0f1011',
-  surfaceLight: '#141516',
-  card: '#121315',
-  cardBorder: '#23252a',
-  hairline: '#23252a',
-  hairlineStrong: '#34343a',
+  // True OLED Black Canvas & Neutral Dark Surfaces (Apple + Vercel awesome-design-md)
+  background: '#000000',
+  surface: '#0a0a0a',
+  surfaceLight: '#141416',
+  card: '#0d0d0f',
+  cardBorder: '#222226',
+  hairline: '#222226',
+  hairlineStrong: '#333338',
 
-  // Linear Single Chromatic Accent (Lavender-Blue / Electric Indigo)
-  primary: '#5e6ad2',
-  primaryHover: '#828fff',
-  primaryFocus: '#5e69d1',
+  // Single Chromatic Accent — Crisp Action Blue (Zero Purple/Indigo AI Slop)
+  primary: '#0070f3',
+  primaryHover: '#2997ff',
+  primaryFocus: '#0060df',
 
   // Semantics
-  accent: '#27a644',
-  success: '#27a644',
+  accent: '#22c55e',
+  success: '#22c55e',
   warning: '#f59e0b',
   danger: '#ef4444',
 
-  // Linear Ink & Typography (Crisp Light Contrast)
-  textPrimary: '#f7f8f8',
-  textSecondary: '#d0d6e0',
-  textMuted: '#8a8f98',
-  textTertiary: '#62666d',
+  // Pure White Ink & High-Contrast Neutral Typography
+  textPrimary: '#ffffff',
+  textSecondary: '#e4e4e7',
+  textMuted: '#a1a1aa',
+  textTertiary: '#71717a',
 
-  // Chat Bubbles (Linear Craft)
-  bubbleMe: '#282d46',
-  bubbleMeText: '#f7f8f8',
-  bubbleThem: '#141516',
-  bubbleThemBorder: '#23252a',
-  bubbleThemText: '#f7f8f8',
+  // Chat Bubbles (Crisp Action Blue + Neutral Dark)
+  bubbleMe: '#0070f3',
+  bubbleMeText: '#ffffff',
+  bubbleThem: '#141416',
+  bubbleThemBorder: '#222226',
+  bubbleThemText: '#ffffff',
 
-  // Mascots / Anonymous
-  anonPurple: '#7170ff',
-  anonBadge: '#1a1936',
+  // Mascots / Anonymous (Aligned Action Blue — No Purple Slop)
+  anonPurple: '#2997ff',
+  anonBadge: '#0a192f',
 
   // Ephemeral Group
   ephemeralFire: '#f97316',
 
   // Modals & Overlays
-  modalOverlay: 'rgba(0, 0, 0, 0.75)',
+  modalOverlay: 'rgba(0, 0, 0, 0.85)',
 };
 
 export const lightColors: ThemeColors = {
@@ -98,10 +98,10 @@ export const lightColors: ThemeColors = {
   hairline: '#e5e7eb',
   hairlineStrong: '#d1d5db',
 
-  // Refined Indigo for Light Mode
-  primary: '#4f46e5',
-  primaryHover: '#6366f1',
-  primaryFocus: '#4338ca',
+  // Apple / Vercel Action Blue for Light Mode
+  primary: '#0066cc',
+  primaryHover: '#0070f3',
+  primaryFocus: '#0052cc',
 
   // Semantics
   accent: '#16a34a',
@@ -110,27 +110,27 @@ export const lightColors: ThemeColors = {
   danger: '#dc2626',
 
   // Deep High-Contrast Ink
-  textPrimary: '#0f172a',
+  textPrimary: '#0a0a0a',
   textSecondary: '#334155',
   textMuted: '#64748b',
   textTertiary: '#94a3b8',
 
   // Chat Bubbles (Light Mode Craft)
-  bubbleMe: '#4f46e5',
+  bubbleMe: '#0066cc',
   bubbleMeText: '#ffffff',
   bubbleThem: '#f1f5f9',
   bubbleThemBorder: '#e2e8f0',
-  bubbleThemText: '#0f172a',
+  bubbleThemText: '#0a0a0a',
 
   // Mascots / Anonymous
-  anonPurple: '#6366f1',
-  anonBadge: '#eef2ff',
+  anonPurple: '#0066cc',
+  anonBadge: '#e8f2ff',
 
   // Ephemeral Group
   ephemeralFire: '#ea580c',
 
   // Modals & Overlays
-  modalOverlay: 'rgba(15, 23, 42, 0.45)',
+  modalOverlay: 'rgba(0, 0, 0, 0.45)',
 };
 
 // Default export for backward compatibility with existing static references

@@ -976,8 +976,8 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                         ? 'rgba(239, 68, 68, 0.14)'
                         : '#fef2f2'
                       : isDark
-                      ? 'rgba(94, 106, 210, 0.14)'
-                      : '#eef2ff',
+                      ? 'rgba(0, 112, 243, 0.14)'
+                      : '#eff6ff',
                     borderTopColor: hubChatError ? 'rgba(239, 68, 68, 0.35)' : colors.cardBorder,
                   },
                 ]}
@@ -1243,8 +1243,8 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                           ? 'rgba(239, 68, 68, 0.14)'
                           : '#fef2f2'
                         : isDark
-                        ? 'rgba(94, 106, 210, 0.14)'
-                        : '#eef2ff',
+                        ? 'rgba(0, 112, 243, 0.14)'
+                        : '#eff6ff',
                       borderColor: membersFeedback.kind === 'error' ? 'rgba(239, 68, 68, 0.35)' : colors.cardBorder,
                     },
                   ]}
@@ -1360,7 +1360,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                           uri={item.user.avatar || item.user.profile_picture}
                           name={item.user.full_name}
                           size={36}
-                          backgroundColor={isDark ? 'rgba(94, 106, 210, 0.2)' : '#e0e7ff'}
+                          backgroundColor={isDark ? 'rgba(0, 112, 243, 0.2)' : '#dbeafe'}
                           textColor={colors.primary}
                         />
                         <View style={{ flex: 1 }}>
@@ -1375,7 +1375,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                           style={[
                             styles.roleBadge,
                             {
-                              backgroundColor: isDark ? 'rgba(94, 106, 210, 0.16)' : '#eef2ff',
+                              backgroundColor: isDark ? 'rgba(0, 112, 243, 0.16)' : '#eff6ff',
                             },
                           ]}
                         >

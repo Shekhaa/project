@@ -535,60 +535,28 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
 
         {/* Main Card Container */}
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
-          {/* Hero Branding */}
+          {/* Editorial Hero Wordmark — Zero Decorative Blobs or Fake Counters */}
           <View style={styles.brandHero}>
-            <View
-              style={[
-                styles.logoShield,
-                {
-                  backgroundColor: isDark ? 'rgba(94, 106, 210, 0.15)' : 'rgba(94, 106, 210, 0.1)',
-                  borderColor: isDark ? 'rgba(94, 106, 210, 0.35)' : 'rgba(94, 106, 210, 0.25)',
-                },
-              ]}
-            >
-              <GraduationCap size={32} color={colors.primary} />
-            </View>
-            <Text style={[styles.title, { color: colors.textPrimary }]}>CampusConnect</Text>
-            <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-              The Exclusive Social & Academic Hub for Graphic Era Students
+            <Text style={[styles.title, { color: colors.textPrimary }]}>
+              Campus
+              <Text style={{ color: isDark ? '#2997ff' : '#0066cc' }}>Connect</Text>
             </Text>
-
-            {/* Campus Pulse Indicator */}
-            <View
-              style={[
-                styles.pulsePill,
-                {
-                  backgroundColor: isDark ? 'rgba(39, 166, 68, 0.1)' : 'rgba(39, 166, 68, 0.08)',
-                  borderColor: isDark ? 'rgba(39, 166, 68, 0.3)' : 'rgba(39, 166, 68, 0.2)',
-                },
-              ]}
-            >
-              <View style={styles.pulseDot} />
-              <Text style={styles.pulseText}>10,000+ Verified Students Active</Text>
-            </View>
-          </View>
-
-          {/* Social Proof Tags */}
-          <View style={styles.tagChipsRow}>
-            <View style={[styles.tagChip, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
-              <Text style={[styles.tagChipText, { color: colors.textSecondary }]}>#CampusConfessions</Text>
-            </View>
-            <View style={[styles.tagChip, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
-              <Text style={[styles.tagChipText, { color: colors.textSecondary }]}>#Placements2026</Text>
-            </View>
-            <View style={[styles.tagChip, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
-              <Text style={[styles.tagChipText, { color: colors.textSecondary }]}>#Grafest</Text>
-            </View>
+            <Text style={[styles.subtitle, { color: colors.textMuted }]}>
+              Verified campus network for Graphic Era students.
+            </Text>
           </View>
 
           {/* ========================================================= */}
-          {/* SLIDE / SEGMENTED CONTROL: [ LOG IN ]  |  [ SIGN IN / VERIFY ] */}
+          {/* SEGMENTED CONTROL: [ LOG IN ]  |  [ SIGN IN / VERIFY ]    */}
           {/* ========================================================= */}
           <View style={[styles.tabSelectorRow, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
             <TouchableOpacity
               style={[
                 styles.tabBtn,
-                activeTab === 'LOGIN' && [styles.tabBtnActive, { backgroundColor: colors.primary }],
+                activeTab === 'LOGIN' && [
+                  styles.tabBtnActive,
+                  { backgroundColor: isDark ? '#ffffff' : '#0a0a0a' },
+                ],
               ]}
               onPress={() => {
                 setActiveTab('LOGIN');
@@ -596,11 +564,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
               }}
               activeOpacity={0.82}
             >
-              <Lock size={14} color={activeTab === 'LOGIN' ? '#ffffff' : colors.textSecondary} />
+              <Lock
+                size={14}
+                color={activeTab === 'LOGIN' ? (isDark ? '#000000' : '#ffffff') : colors.textMuted}
+              />
               <Text
                 style={[
                   styles.tabBtnText,
-                  { color: activeTab === 'LOGIN' ? '#ffffff' : colors.textSecondary },
+                  {
+                    color:
+                      activeTab === 'LOGIN'
+                        ? isDark
+                          ? '#000000'
+                          : '#ffffff'
+                        : colors.textMuted,
+                  },
                   activeTab === 'LOGIN' && styles.tabBtnTextActive,
                 ]}
               >
@@ -611,7 +589,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
             <TouchableOpacity
               style={[
                 styles.tabBtn,
-                activeTab === 'SIGN_IN' && [styles.tabBtnActive, { backgroundColor: colors.primary }],
+                activeTab === 'SIGN_IN' && [
+                  styles.tabBtnActive,
+                  { backgroundColor: isDark ? '#ffffff' : '#0a0a0a' },
+                ],
               ]}
               onPress={() => {
                 setActiveTab('SIGN_IN');
@@ -619,11 +600,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
               }}
               activeOpacity={0.82}
             >
-              <ShieldCheck size={14} color={activeTab === 'SIGN_IN' ? '#ffffff' : colors.textSecondary} />
+              <ShieldCheck
+                size={14}
+                color={activeTab === 'SIGN_IN' ? (isDark ? '#000000' : '#ffffff') : colors.textMuted}
+              />
               <Text
                 style={[
                   styles.tabBtnText,
-                  { color: activeTab === 'SIGN_IN' ? '#ffffff' : colors.textSecondary },
+                  {
+                    color:
+                      activeTab === 'SIGN_IN'
+                        ? isDark
+                          ? '#000000'
+                          : '#ffffff'
+                        : colors.textMuted,
+                  },
                   activeTab === 'SIGN_IN' && styles.tabBtnTextActive,
                 ]}
               >
@@ -638,9 +629,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
           {activeTab === 'LOGIN' ? (
             <View style={styles.loginFormBox}>
               <View style={styles.formHeader}>
-                <Text style={[styles.formTitle, { color: colors.textPrimary }]}>Welcome Back! 👋</Text>
-                <Text style={[styles.formSub, { color: colors.textSecondary }]}>
-                  Log in with your Username, Roll Number, or College ID.
+                <Text style={[styles.formTitle, { color: colors.textPrimary }]}>Sign in to your account</Text>
+                <Text style={[styles.formSub, { color: colors.textMuted }]}>
+                  Use your campus handle, roll number, or verified email.
                 </Text>
               </View>
 
@@ -660,14 +651,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                 <View
                   style={[
                     styles.inputFieldRow,
-                    { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                    { backgroundColor: isDark ? '#000000' : colors.surfaceLight, borderColor: colors.cardBorder },
                   ]}
                 >
-                  <User size={16} color={colors.textSecondary} />
+                  <User size={16} color={colors.textMuted} />
                   <TextInput
                     style={[styles.fieldTextInput, { color: colors.textPrimary }]}
                     placeholder="e.g. 2313812137, shekhar_rana, or email"
-                    placeholderTextColor={colors.textMuted}
+                    placeholderTextColor={colors.textTertiary}
                     value={loginIdentifier}
                     onChangeText={(val) => {
                       setLoginIdentifier(val);
@@ -682,7 +673,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
               {/* Password Input */}
               <View style={styles.fieldGroup}>
                 <View style={styles.fieldLabelRow}>
-                  <Text style={[styles.fieldLabel, { color: colors.textPrimary }]}>Account Password</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textPrimary }]}>Password</Text>
                   <TouchableOpacity
                     onPress={() => {
                       setForgotModalVisible(true);
@@ -692,21 +683,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                     }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={[styles.forgotLink, { color: colors.primary }]}>Forgot?</Text>
+                    <Text style={[styles.forgotLink, { color: isDark ? '#2997ff' : colors.primary }]}>Forgot password?</Text>
                   </TouchableOpacity>
                 </View>
 
                 <View
                   style={[
                     styles.inputFieldRow,
-                    { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                    { backgroundColor: isDark ? '#000000' : colors.surfaceLight, borderColor: colors.cardBorder },
                   ]}
                 >
-                  <Lock size={16} color={colors.textSecondary} />
+                  <Lock size={16} color={colors.textMuted} />
                   <TextInput
                     style={[styles.fieldTextInput, { color: colors.textPrimary }]}
                     placeholder="Enter your password"
-                    placeholderTextColor={colors.textMuted}
+                    placeholderTextColor={colors.textTertiary}
                     value={loginPassword}
                     onChangeText={(val) => {
                       setLoginPassword(val);
@@ -722,9 +713,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     {showLoginPassword ? (
-                      <EyeOff size={17} color={colors.textSecondary} />
+                      <EyeOff size={17} color={colors.textMuted} />
                     ) : (
-                      <Eye size={17} color={colors.textSecondary} />
+                      <Eye size={17} color={colors.textMuted} />
                     )}
                   </TouchableOpacity>
                 </View>
@@ -741,7 +732,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                   <ActivityIndicator color="#ffffff" size="small" />
                 ) : (
                   <View style={styles.primaryActionContent}>
-                    <LogIn size={17} color="#ffffff" />
+                    <LogIn size={16} color="#ffffff" />
                     <Text style={styles.primaryActionText}>Log In to CampusConnect</Text>
                   </View>
                 )}
@@ -750,19 +741,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
               {/* Divider */}
               <View style={styles.dividerRow}>
                 <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
-                <Text style={[styles.dividerLabel, { color: colors.textTertiary }]}>OR 1-TAP LOGIN WITH</Text>
+                <Text style={[styles.dividerLabel, { color: colors.textTertiary }]}>OR CONTINUE WITH</Text>
                 <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
               </View>
 
-              {/* 1-Tap Microsoft Login Button */}
+              {/* 1-Tap Microsoft Login Button (Clean Neutral Surface) */}
               <TouchableOpacity
-                style={styles.msButton}
+                style={[
+                  styles.msButtonSecondary,
+                  {
+                    backgroundColor: isDark ? '#141416' : '#ffffff',
+                    borderColor: colors.hairlineStrong,
+                  },
+                ]}
                 onPress={() => handleMicrosoftSSO()}
                 disabled={ssoLoading}
                 activeOpacity={0.88}
               >
                 {ssoLoading ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
+                  <ActivityIndicator color={colors.textPrimary} size="small" />
                 ) : (
                   <View style={styles.msButtonContent}>
                     <View style={styles.msLogoGrid}>
@@ -771,30 +768,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                       <View style={[styles.msLogoCell, { backgroundColor: '#00A4EF' }]} />
                       <View style={[styles.msLogoCell, { backgroundColor: '#FFB900' }]} />
                     </View>
-                    <Text style={styles.msButtonText}>Continue with College ID (@geu.ac.in)</Text>
-                    <ArrowRight size={16} color="#ffffff" />
+                    <Text style={[styles.msButtonText, { color: colors.textPrimary }]}>
+                      Continue with College ID (@geu.ac.in)
+                    </Text>
+                    <ArrowRight size={15} color={colors.textMuted} />
                   </View>
                 )}
               </TouchableOpacity>
-
-              {/* Quick Dev Autofill Pill */}
-              <View style={styles.quickDevFillRow}>
-                <Text style={[styles.quickDevFillLabel, { color: colors.textMuted }]}>
-                  Test Profile:
-                </Text>
-                <TouchableOpacity
-                  style={[styles.quickDevChip, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                  onPress={() => {
-                    setLoginIdentifier('2313812137');
-                    setLoginPassword('password123');
-                    setLoginError(null);
-                  }}
-                >
-                  <Text style={[styles.quickDevChipText, { color: colors.textPrimary }]}>
-                    ⚡ Fill Chandra (Roll: 2313812137)
-                  </Text>
-                </TouchableOpacity>
-              </View>
             </View>
           ) : (
             /* ========================================================= */
@@ -806,10 +786,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                 <View style={styles.ssoCardHeader}>
                   <View style={styles.badgeRow}>
                     <View style={styles.verifiedGreenBadge}>
-                      <ShieldCheck size={13} color="#27a644" />
-                      <Text style={styles.verifiedGreenBadgeText}>OFFICIAL GEU / GEHU SSO</Text>
+                      <ShieldCheck size={12} color="#22c55e" />
+                      <Text style={styles.verifiedGreenBadgeText}>OFFICIAL SSO</Text>
                     </View>
-                    <Text style={[styles.zeroOtpLabel, { color: colors.textMuted }]}>Zero OTP • 100% Real Students</Text>
+                    <Text style={[styles.zeroOtpLabel, { color: colors.textMuted }]}>Instant Verification</Text>
                   </View>
 
                   <Text style={[styles.ssoTitle, { color: colors.textPrimary }]}>Sign in with College Account</Text>
@@ -862,15 +842,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                 {/* Benefit Bullets */}
                 <View style={styles.featurePillsRow}>
                   <View style={styles.featurePill}>
-                    <CheckCircle2 size={12} color="#27a644" />
-                    <Text style={[styles.featurePillText, { color: colors.textSecondary }]}>Instant Green Badge</Text>
+                    <CheckCircle2 size={12} color="#22c55e" />
+                    <Text style={[styles.featurePillText, { color: colors.textSecondary }]}>Verified Badge</Text>
                   </View>
                   <View style={styles.featurePill}>
-                    <CheckCircle2 size={12} color="#27a644" />
+                    <CheckCircle2 size={12} color="#22c55e" />
                     <Text style={[styles.featurePillText, { color: colors.textSecondary }]}>Auto Roll No.</Text>
                   </View>
                   <TouchableOpacity onPress={() => setSsoTokenModal(true)} style={styles.devLinkPill}>
-                    <Text style={styles.devLinkText}>⚡ Token Login</Text>
+                    <Text style={styles.devLinkText}>Paste Token</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -897,7 +877,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                     Continue with Gmail or College Email
                   </Text>
                   <Text style={[styles.ssoDesc, { color: colors.textSecondary }]}>
-                    Forgot Outlook credentials? Enter your `@gmail.com` or college email. Browse the feed immediately, then unlock posting with a batch invite code or ID upload.
+                    Forgot Outlook credentials? Enter your Gmail or college email. Browse the feed immediately, then unlock posting with a campus invite code or ID upload.
                   </Text>
                 </View>
 
@@ -955,8 +935,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                         style={[
                           styles.emailOtpInfoBox,
                           {
-                            backgroundColor: isDark ? 'rgba(94, 106, 210, 0.12)' : 'rgba(94, 106, 210, 0.08)',
-                            borderColor: 'rgba(94, 106, 210, 0.3)',
+                            backgroundColor: isDark ? 'rgba(0, 112, 243, 0.12)' : 'rgba(0, 102, 204, 0.08)',
+                            borderColor: isDark ? 'rgba(41, 151, 255, 0.32)' : 'rgba(0, 102, 204, 0.25)',
                           },
                         ]}
                       >
@@ -1522,9 +1502,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: 'rgba(94, 106, 210, 0.12)',
+    backgroundColor: 'rgba(0, 112, 243, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(94, 106, 210, 0.35)',
+    borderColor: 'rgba(41, 151, 255, 0.35)',
     borderRadius: 6,
     paddingHorizontal: 7,
     paddingVertical: 3,
@@ -1578,41 +1558,35 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   card: {
-    borderRadius: 22,
-    padding: 22,
+    borderRadius: 14,
+    padding: 24,
     borderWidth: 1,
-    maxWidth: 480,
+    maxWidth: 460,
     width: '100%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    elevation: 8,
   },
   brandHero: {
-    alignItems: 'center',
-    marginBottom: 14,
+    alignItems: 'flex-start',
+    marginBottom: 20,
   },
   logoShield: {
-    width: 60,
-    height: 60,
-    borderRadius: 18,
-    borderWidth: 1.5,
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
   },
   title: {
-    fontSize: 25,
+    fontSize: 28,
     fontWeight: '800',
-    letterSpacing: -0.6,
+    letterSpacing: -0.9,
   },
   subtitle: {
-    fontSize: 12,
-    marginTop: 4,
-    textAlign: 'center',
-    lineHeight: 17,
-    paddingHorizontal: 12,
+    fontSize: 13,
+    marginTop: 5,
+    textAlign: 'left',
+    lineHeight: 19,
   },
   pulsePill: {
     flexDirection: 'row',
@@ -1758,16 +1732,11 @@ const styles = StyleSheet.create({
     padding: 6,
   },
   primaryActionBtn: {
-    borderRadius: 12,
+    borderRadius: 10,
     paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 4,
-    shadowColor: '#5e6ad2',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 3,
   },
   primaryActionContent: {
     flexDirection: 'row',
@@ -1850,17 +1819,20 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   msButton: {
-    backgroundColor: '#5e6ad2',
-    borderRadius: 11,
+    backgroundColor: '#0070f3',
+    borderRadius: 10,
     paddingVertical: 13,
     paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#5e6ad2',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28,
-    shadowRadius: 8,
-    elevation: 4,
+  },
+  msButtonSecondary: {
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   msButtonContent: {
     flexDirection: 'row',
@@ -1892,12 +1864,14 @@ const styles = StyleSheet.create({
   },
   featurePillsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
     marginTop: 12,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
   },
   featurePill: {
     flexDirection: 'row',
@@ -1913,7 +1887,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   devLinkText: {
-    color: '#828fff',
+    color: '#2997ff',
     fontSize: 11,
     fontWeight: '600',
   },
@@ -2191,7 +2165,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   modalPrimaryBtn: {
-    backgroundColor: '#5e6ad2',
+    backgroundColor: '#0070f3',
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: 'center',

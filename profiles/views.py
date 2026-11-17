@@ -52,8 +52,8 @@ class CompleteProfileView(APIView):
                     {"invite_code": "Invalid, expired, or exhausted Campus Invite Code.", "error": "Invalid, expired, or exhausted Campus Invite Code."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            if not data.get("college"):
-                data["college"] = invite_obj.college_id
+            # Lock student strictly to the invite code's issuing college (prevents cross-college spoofing)
+            data["college"] = invite_obj.college_id
 
         # 1. Resolve College
         if not data.get("college"):

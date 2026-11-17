@@ -577,4 +577,63 @@ class VerificationGateAndAuthFlowsTests(TestCase):
         self.assertEqual(body["to"], [{"email": "ranashekher857@gmail.com"}])
         self.assertEqual(body["textContent"], "Your code is 123456")
 
+    def test_invite_code_locks_student_to_inviter_college(self):
+        # Create a second college (DIT) with its own course/branch/year
+        dit = College.objects.create(name="DIT University", short_name="DIT")
+        dit_course = Course.objects.create(name="B.Tech", code="BT_DIT", college=dit, duration=4)
+        dit_branch = Branch.objects.create(name="CSE", code="CSE_DIT", course=dit_course)
+        dit_year = AcademicYear.objects.create(year_number=1, display_name="1st Year", course=dit_course)
+
+        geu_code = CampusInviteCode.objects.create(
+            code="GEULOCK26",
+            college=self.geu,
+            created_by=self.admin,
+            batch_label="GEU Lock Test",
+            max_uses=5,
+        )
+
+        # Case 1: Completed profile in DIT redeems GEU code -> forcefully locked to GEU + DIT core hubs removed
+        u1 = User.objects.create_user(email="switcher@gmail.com", password="password123", full_name="Switcher", is_email_verified=True)
+        p1 = StudentProfile.objects.create(
+            user=u1,
+            username="switcher_u1",
+            college=dit,
+            course=dit_course,
+            branch=dit_branch,
+            academic_year=dit_year,
+            profile_completed=True,
+        )
+        self.assertTrue(CommunityMember.objects.filter(user=u1, community__name__icontains="DIT").exists())
+
+        c1 = APIClient()
+        c1.force_authenticate(user=u1)
+        res = c1.post("/api/authentication/invite/redeem/", {"code": "GEULOCK26"}, format="json")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        p1.refresh_from_db()
+        self.assertEqual(p1.college_id, self.geu.id)
+        self.assertFalse(CommunityMember.objects.filter(user=u1, community__name__icontains="DIT").exists())
+        self.assertTrue(CommunityMember.objects.filter(user=u1, community__name__icontains="Graphic Era").exists())
+
+        # Case 2: Onboarding with college=DIT + GEU invite_code -> locked to GEU
+        u2 = User.objects.create_user(email="onboard_lock@gmail.com", password="password123", full_name="Onboard Lock", is_email_verified=True)
+        c2 = APIClient()
+        c2.force_authenticate(user=u2)
+        comp_res = c2.post(
+            "/api/profile/complete/",
+            {
+                "username": "onboard_lock_u2",
+                "full_name": "Onboard Lock",
+                "gender": "Other",
+                "college": dit.id,
+                "course_name": "B.Tech",
+                "branch_name": "CSE",
+                "invite_code": "GEULOCK26",
+            },
+            format="json",
+        )
+        self.assertEqual(comp_res.status_code, status.HTTP_201_CREATED)
+        u2.refresh_from_db()
+        self.assertEqual(u2.profile.college_id, self.geu.id)
+
+
 

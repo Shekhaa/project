@@ -884,17 +884,40 @@ class RedeemInviteCodeView(APIView):
                 existing_profile.verified = True
                 existing_profile.invited_by = invite.created_by
                 existing_profile.invite_code_used = invite
-                if not existing_profile.profile_completed and existing_profile.college_id != invite.college_id:
-                    course = Course.objects.filter(college=invite.college).first()
-                    branch = Branch.objects.filter(course=course).first() if course else None
+                college_changed = existing_profile.college_id != invite.college_id
+                if college_changed:
+                    prev_course_name = existing_profile.course.name if existing_profile.course_id else None
+                    prev_branch_name = existing_profile.branch.name if existing_profile.branch_id else None
+                    course = (
+                        Course.objects.filter(college=invite.college, name__iexact=prev_course_name).first()
+                        if prev_course_name
+                        else None
+                    ) or Course.objects.filter(college=invite.college).first()
+                    branch = (
+                        Branch.objects.filter(course=course, name__iexact=prev_branch_name).first()
+                        if (course and prev_branch_name)
+                        else None
+                    ) or (Branch.objects.filter(course=course).first() if course else None)
                     academic_year = AcademicYear.objects.filter(course=course).first() if course else None
-                    if course and branch and academic_year:
-                        existing_profile.college = invite.college
+                    existing_profile.college = invite.college
+                    update_fields.append("college")
+                    if course:
                         existing_profile.course = course
+                        update_fields.append("course")
+                    if branch:
                         existing_profile.branch = branch
+                        update_fields.append("branch")
+                    if academic_year:
                         existing_profile.academic_year = academic_year
-                        existing_profile.section = None
-                        update_fields.extend(["college", "course", "branch", "academic_year", "section"])
+                        update_fields.append("academic_year")
+                    existing_profile.section = None
+                    update_fields.append("section")
+                if college_changed:
+                    from communities.models import CommunityMember
+                    CommunityMember.objects.filter(
+                        user=user,
+                        community__community_type__in=["COLLEGE", "COURSE"],
+                    ).delete()
                 existing_profile.save(update_fields=update_fields)
                 profile = existing_profile
             else:

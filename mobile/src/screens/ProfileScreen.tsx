@@ -886,7 +886,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </View>
               ) : verificationTier === 'INVITE_VERIFIED' ? (
                 <View style={styles.inviteVerifiedTag}>
-                  <Ticket size={11} color="#828fff" />
+                  <Ticket size={11} color="#2997ff" />
                   <Text style={styles.inviteVerifiedTagText}>INVITE VERIFIED</Text>
                 </View>
               ) : verificationTier === 'SEMI_VERIFIED' ? (
@@ -1028,7 +1028,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         {/* Quick Switch Button in Hero - Dev or Staff Only */}
         {(Boolean(__DEV__) || currentUser.is_staff || currentUser.is_superuser) && (
           <TouchableOpacity
-            style={[styles.switchButton, { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(79, 70, 229, 0.1)', borderColor: isDark ? 'rgba(99, 102, 241, 0.35)' : 'rgba(79, 70, 229, 0.25)' }]}
+            style={[styles.switchButton, { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(0, 102, 204, 0.1)', borderColor: isDark ? 'rgba(99, 102, 241, 0.35)' : 'rgba(0, 102, 204, 0.25)' }]}
             onPress={() => setSwitcherModalVisible(true)}
           >
             <Text style={styles.switchButtonIcon}>🔄</Text>
@@ -1065,11 +1065,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   backgroundColor:
                     inviteFeedback.kind === 'error'
                       ? 'rgba(239, 68, 68, 0.12)'
-                      : 'rgba(94, 106, 210, 0.12)',
+                      : 'rgba(0, 112, 243, 0.12)',
                   borderColor:
                     inviteFeedback.kind === 'error'
                       ? 'rgba(239, 68, 68, 0.35)'
-                      : 'rgba(94, 106, 210, 0.35)',
+                      : 'rgba(0, 112, 243, 0.35)',
                 },
               ]}
             >
@@ -1432,7 +1432,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       borderColor: isCurrent ? colors.primary : colors.cardBorder,
                     },
                     isCurrent && {
-                      backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(79, 70, 229, 0.08)',
+                      backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(0, 102, 204, 0.08)',
                     },
                   ]}
                   onPress={() => handleSwitchAccount(user.email)}
@@ -1900,7 +1900,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                             styles.themeOptionCard,
                             isSelected && styles.themeOptionCardActive,
                             {
-                              backgroundColor: isSelected ? (isDark ? '#1a1c23' : '#eef2ff') : colors.surfaceLight,
+                              backgroundColor: isSelected ? (isDark ? '#1a1c23' : '#eff6ff') : colors.surfaceLight,
                               borderColor: isSelected ? colors.primary : colors.cardBorder,
                             },
                           ]}
@@ -1978,7 +1978,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                           styles.prefOptionCard,
                           {
                             backgroundColor: messagingPreference === opt.key
-                              ? (isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(79, 70, 229, 0.08)')
+                              ? (isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(0, 102, 204, 0.08)')
                               : colors.surfaceLight,
                             borderColor: messagingPreference === opt.key ? colors.primary : colors.cardBorder,
                           },
@@ -2391,7 +2391,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     style={[
                       styles.modalUserRow,
                       { borderBottomColor: colors.cardBorder },
-                      isCurrent && [styles.modalUserRowCurrent, { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.14)' : 'rgba(79, 70, 229, 0.08)' }],
+                      isCurrent && [styles.modalUserRowCurrent, { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.14)' : 'rgba(0, 102, 204, 0.08)' }],
                     ]}
                     onPress={() => handleSwitchAccount(user.email)}
                     disabled={switchingUser !== null}
@@ -2658,7 +2658,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         verificationTier === 'FULLY_VERIFIED'
                           ? '#10b981'
                           : verificationTier === 'INVITE_VERIFIED'
-                          ? '#828fff'
+                          ? '#2997ff'
                           : verificationTier === 'SEMI_VERIFIED'
                           ? '#f59e0b'
                           : colors.textMuted
@@ -3356,18 +3356,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   inviteVerifiedTag: {
-    backgroundColor: 'rgba(94, 106, 210, 0.14)',
+    backgroundColor: 'rgba(0, 112, 243, 0.14)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(94, 106, 210, 0.35)',
+    borderColor: 'rgba(0, 112, 243, 0.35)',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
   inviteVerifiedTagText: {
-    color: '#828fff',
+    color: '#2997ff',
     fontSize: 10,
     fontWeight: '700',
   },
@@ -3405,16 +3405,16 @@ const styles = StyleSheet.create({
   inviteUpgradeBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(94, 106, 210, 0.08)',
+    backgroundColor: 'rgba(0, 112, 243, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(94, 106, 210, 0.25)',
+    borderColor: 'rgba(0, 112, 243, 0.25)',
     borderRadius: 10,
     padding: 12,
     marginTop: 14,
     gap: 10,
   },
   inviteUpgradeBannerTitle: {
-    color: '#828fff',
+    color: '#2997ff',
     fontSize: 13,
     fontWeight: '700',
   },

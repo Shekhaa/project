@@ -169,7 +169,7 @@ export const LostFoundScreen: React.FC<LostFoundScreenProps> = ({
             gap: 10,
             paddingHorizontal: 14,
             paddingVertical: 10,
-            backgroundColor: isDark ? 'rgba(94, 106, 210, 0.14)' : '#eef2ff',
+            backgroundColor: isDark ? 'rgba(0, 112, 243, 0.14)' : '#eff6ff',
             borderBottomWidth: 1,
             borderBottomColor: colors.cardBorder,
           }}
@@ -317,8 +317,8 @@ export const LostFoundScreen: React.FC<LostFoundScreenProps> = ({
                   style={[
                     styles.contactBtn,
                     {
-                      backgroundColor: isDark ? 'rgba(94, 106, 210, 0.16)' : 'rgba(79, 70, 229, 0.08)',
-                      borderColor: isDark ? 'rgba(94, 106, 210, 0.4)' : 'rgba(79, 70, 229, 0.28)',
+                      backgroundColor: isDark ? 'rgba(0, 112, 243, 0.16)' : 'rgba(0, 102, 204, 0.08)',
+                      borderColor: isDark ? 'rgba(0, 112, 243, 0.4)' : 'rgba(0, 102, 204, 0.28)',
                     },
                   ]}
                   onPress={() => handleContact(item)}

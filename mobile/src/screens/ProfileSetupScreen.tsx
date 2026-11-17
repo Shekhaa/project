@@ -504,8 +504,8 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
           </View>
         </View>
       ) : isInviteVerified ? (
-        <View style={[styles.greenBanner, { borderColor: 'rgba(94, 106, 210, 0.45)', backgroundColor: isDark ? 'rgba(94, 106, 210, 0.14)' : 'rgba(94, 106, 210, 0.08)' }]}>
-          <View style={[styles.bannerIconCircleGreen, { backgroundColor: 'rgba(94, 106, 210, 0.2)' }]}>
+        <View style={[styles.greenBanner, { borderColor: 'rgba(0, 112, 243, 0.45)', backgroundColor: isDark ? 'rgba(0, 112, 243, 0.14)' : 'rgba(0, 112, 243, 0.08)' }]}>
+          <View style={[styles.bannerIconCircleGreen, { backgroundColor: 'rgba(0, 112, 243, 0.2)' }]}>
             <Ticket size={20} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
@@ -532,12 +532,12 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
           style={[
             styles.infoBanner,
             {
-              backgroundColor: isDark ? 'rgba(94, 106, 210, 0.1)' : 'rgba(94, 106, 210, 0.06)',
+              backgroundColor: isDark ? 'rgba(0, 112, 243, 0.1)' : 'rgba(0, 112, 243, 0.06)',
               borderColor: colors.cardBorder,
             },
           ]}
         >
-          <View style={[styles.bannerIconCircleGreen, { backgroundColor: 'rgba(94, 106, 210, 0.15)' }]}>
+          <View style={[styles.bannerIconCircleGreen, { backgroundColor: 'rgba(0, 112, 243, 0.15)' }]}>
             <Sparkles size={18} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
@@ -621,8 +621,8 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                           {
                             backgroundColor: active
                               ? isDark
-                                ? 'rgba(94, 106, 210, 0.22)'
-                                : '#e0e7ff'
+                                ? 'rgba(0, 112, 243, 0.22)'
+                                : '#dbeafe'
                               : colors.surfaceLight,
                             borderColor: active ? colors.primary : colors.cardBorder,
                           },
@@ -696,6 +696,9 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
             </View>
             <ChevronDown size={18} color={colors.textSecondary} />
           </TouchableOpacity>
+          <Text style={[styles.inputSubtext, { color: colors.warning, marginTop: 6, marginBottom: 0, fontWeight: '600' }]}>
+            Course can't be changed once saved • Ek baar select karne ke baad course change nahi hoga.
+          </Text>
         </View>
 
         {/* INTERACTIVE BRANCH SELECTION */}
@@ -920,8 +923,8 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
               style={[
                 styles.msLinkBtn,
                 {
-                  backgroundColor: isDark ? 'rgba(94, 106, 210, 0.14)' : '#eef2ff',
-                  borderColor: 'rgba(94, 106, 210, 0.35)',
+                  backgroundColor: isDark ? 'rgba(0, 112, 243, 0.14)' : '#eff6ff',
+                  borderColor: 'rgba(0, 112, 243, 0.35)',
                 },
               ]}
               onPress={handleLinkMsBrowser}
@@ -1027,7 +1030,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                   style={[
                     styles.courseOptionCard,
                     { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
-                    courseName === c.name && { borderColor: colors.primary, backgroundColor: isDark ? 'rgba(94, 106, 210, 0.15)' : 'rgba(94, 106, 210, 0.08)' },
+                    courseName === c.name && { borderColor: colors.primary, backgroundColor: isDark ? 'rgba(0, 112, 243, 0.15)' : 'rgba(0, 112, 243, 0.08)' },
                   ]}
                   onPress={() => handleSelectCourse(c)}
                 >
@@ -1065,7 +1068,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                   style={[
                     styles.courseOptionCard,
                     { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
-                    branchName === b && { borderColor: colors.primary, backgroundColor: isDark ? 'rgba(94, 106, 210, 0.15)' : 'rgba(94, 106, 210, 0.08)' },
+                    branchName === b && { borderColor: colors.primary, backgroundColor: isDark ? 'rgba(0, 112, 243, 0.15)' : 'rgba(0, 112, 243, 0.08)' },
                   ]}
                   onPress={() => {
                     setBranchName(b);
@@ -1366,12 +1369,12 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
   submitBtn: {
-    backgroundColor: '#5e6ad2',
+    backgroundColor: '#0070f3',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
     marginTop: 8,
-    shadowColor: '#5e6ad2',
+    shadowColor: '#0070f3',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

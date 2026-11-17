@@ -389,7 +389,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       <View style={[styles.navBar, isCompactViewport && { paddingHorizontal: 12 }]}>
         <View style={styles.brandRow}>
           <Text style={[styles.brandTitle, { color: colors.textPrimary }, isCompactViewport && { fontSize: 16 }]}>Campus</Text>
-          <Text style={[styles.brandAccent, { color: colors.primary }, isCompactViewport && { fontSize: 16 }]}>Connect</Text>
+          <Text style={[styles.brandAccent, { color: isDark ? '#2997ff' : colors.primary }, isCompactViewport && { fontSize: 16 }]}>Connect</Text>
         </View>
 
         <View style={[styles.navActions, isCompactViewport && { gap: 6 }]}>
@@ -407,7 +407,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             {isDark ? (
               <Sun size={isCompactViewport ? 15 : 17} color="#fbbf24" />
             ) : (
-              <Moon size={isCompactViewport ? 15 : 17} color="#4f46e5" />
+              <Moon size={isCompactViewport ? 15 : 17} color="#0066cc" />
             )}
           </TouchableOpacity>
 
@@ -511,7 +511,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
                 styles.scopeTabPill,
                 {
                   backgroundColor: isActive
-                    ? (isDark ? 'rgba(94, 106, 210, 0.25)' : '#e0e7ff')
+                    ? (isDark ? 'rgba(0, 112, 243, 0.25)' : '#dbeafe')
                     : (isDark ? 'rgba(255, 255, 255, 0.05)' : '#f1f5f9'),
                   borderColor: isActive ? colors.primary : colors.cardBorder,
                 },
@@ -544,7 +544,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           style={[
             styles.readOnlyBanner,
             {
-              backgroundColor: isDark ? 'rgba(94, 106, 210, 0.1)' : 'rgba(94, 106, 210, 0.07)',
+              backgroundColor: isDark ? 'rgba(0, 112, 243, 0.1)' : 'rgba(0, 112, 243, 0.07)',
               borderTopColor: colors.cardBorder,
             },
           ]}
@@ -745,7 +745,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
                       styles.filterOptionRow,
                       { backgroundColor: colors.surfaceLight },
                       isActive && {
-                        backgroundColor: isDark ? 'rgba(94, 106, 210, 0.2)' : 'rgba(79, 70, 229, 0.1)',
+                        backgroundColor: isDark ? 'rgba(0, 112, 243, 0.2)' : 'rgba(0, 102, 204, 0.1)',
                         borderWidth: 1,
                         borderColor: colors.primary,
                       },
@@ -785,7 +785,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
                           styles.filterOptionRow,
                           { backgroundColor: colors.surfaceLight },
                           isActive && {
-                            backgroundColor: isDark ? 'rgba(94, 106, 210, 0.2)' : 'rgba(79, 70, 229, 0.1)',
+                            backgroundColor: isDark ? 'rgba(0, 112, 243, 0.2)' : 'rgba(0, 102, 204, 0.1)',
                             borderWidth: 1,
                             borderColor: colors.primary,
                           },
@@ -977,7 +977,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   iconBtnActive: {
-    backgroundColor: 'rgba(94, 106, 210, 0.15)',
+    backgroundColor: 'rgba(0, 112, 243, 0.15)',
     borderWidth: 1,
     borderColor: colors.primary,
   },

@@ -650,7 +650,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               borderWidth={1}
               borderColor={colors.cardBorder}
               backgroundColor={
-                isDark ? 'rgba(94, 106, 210, 0.22)' : 'rgba(79, 70, 229, 0.12)'
+                isDark ? 'rgba(0, 112, 243, 0.22)' : 'rgba(0, 102, 204, 0.12)'
               }
               textColor={colors.primary}
               style={{ marginRight: 10 }}
