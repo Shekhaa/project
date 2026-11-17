@@ -31,6 +31,7 @@ import { PostCard } from '../components/feed/PostCard';
 import { StudentProfileModal } from '../components/profile/StudentProfileModal';
 import { SocialListModal, SocialModalType } from '../components/profile/SocialListModal';
 import { UserAvatar } from '../components/common/UserAvatar';
+import { CollegeCatalogItem, CollegePickerModal } from '../components/common/CollegePickerModal';
 import { processWebImageForUpload, showCrossPlatformAlert } from '../utils/mediaUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -63,6 +64,9 @@ import {
   Ticket,
   Clock,
   Share2,
+  Building2,
+  ChevronDown,
+  Mail,
 } from 'lucide-react-native';
 
 interface ProfileData {
@@ -151,9 +155,80 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [batchCodeInput, setBatchCodeInput] = useState('');
   const [batchLabelInput, setBatchLabelInput] = useState('Campus Batch Drop');
   const [batchMaxUsesInput, setBatchMaxUsesInput] = useState('50');
-  const [batchColleges, setBatchColleges] = useState<Array<{ id: number; name: string; short_name: string }>>([]);
+  const [batchColleges, setBatchColleges] = useState<CollegeCatalogItem[]>([]);
   const [batchCollegeId, setBatchCollegeId] = useState<number | undefined>(undefined);
+  const [batchCollegePickerVisible, setBatchCollegePickerVisible] = useState(false);
   const [creatingBatchCode, setCreatingBatchCode] = useState(false);
+
+  // Accessible Contact Email Verification ("Verify Later" -> Verify Anytime on Profile)
+  const isPlaceholderEmail =
+    !currentUser.email || currentUser.email.toLowerCase().endsWith('.local');
+  const needsEmailVerification = !currentUser.is_email_verified || isPlaceholderEmail;
+  const [verifyEmailOpen, setVerifyEmailOpen] = useState(false);
+  const [verifyEmailInput, setVerifyEmailInput] = useState(
+    isPlaceholderEmail ? '' : currentUser.email
+  );
+  const [verifyEmailStep, setVerifyEmailStep] = useState<'EMAIL' | 'OTP'>('EMAIL');
+  const [verifyEmailOtp, setVerifyEmailOtp] = useState('');
+  const [verifyEmailLoading, setVerifyEmailLoading] = useState(false);
+  const [verifyEmailError, setVerifyEmailError] = useState<string | null>(null);
+  const [verifyEmailInfo, setVerifyEmailInfo] = useState<string | null>(null);
+  const [verifyEmailDevCode, setVerifyEmailDevCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    const placeholder = !currentUser.email || currentUser.email.toLowerCase().endsWith('.local');
+    setVerifyEmailInput(placeholder ? '' : currentUser.email);
+  }, [currentUser.email]);
+
+  const handleSendProfileEmailOtp = async () => {
+    const clean = verifyEmailInput.trim().toLowerCase();
+    if (!clean || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean) || clean.endsWith('.local')) {
+      setVerifyEmailError('Please enter a valid email address (e.g. you@gmail.com).');
+      return;
+    }
+    setVerifyEmailLoading(true);
+    setVerifyEmailError(null);
+    try {
+      const res = await authService.bindContactEmail('send', clean);
+      setVerifyEmailStep('OTP');
+      setVerifyEmailInfo(res.message || `6-digit verification code sent to ${clean}.`);
+      setVerifyEmailDevCode(res.dev_otp || null);
+      if (res.user) {
+        onUserSwitched(res.user);
+      }
+    } catch (err: any) {
+      setVerifyEmailError(err.response?.data?.error || 'Could not send verification code.');
+    } finally {
+      setVerifyEmailLoading(false);
+    }
+  };
+
+  const handleConfirmProfileEmailOtp = async () => {
+    const clean = verifyEmailInput.trim().toLowerCase();
+    const cleanOtp = verifyEmailOtp.replace(/[^0-9]/g, '');
+    if (cleanOtp.length !== 6) {
+      setVerifyEmailError('Enter the 6-digit code sent to your email.');
+      return;
+    }
+    setVerifyEmailLoading(true);
+    setVerifyEmailError(null);
+    try {
+      const res = await authService.bindContactEmail('verify', clean, cleanOtp);
+      if (res.user) {
+        onUserSwitched(res.user);
+      }
+      setVerifyEmailOpen(false);
+      setVerifyEmailStep('EMAIL');
+      setVerifyEmailOtp('');
+      setVerifyEmailDevCode(null);
+      setVerifyEmailInfo(null);
+      showCrossPlatformAlert('Email Verified', 'Your contact email is now verified.');
+    } catch (err: any) {
+      setVerifyEmailError(err.response?.data?.error || 'Invalid or expired 6-digit code.');
+    } finally {
+      setVerifyEmailLoading(false);
+    }
+  };
 
   // Student Invite Codes State
   const [inviteCodes, setInviteCodes] = useState<CampusInviteCodeItem[]>([]);
@@ -923,33 +998,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         </View>
 
-        {/* Campus Verification Upgrade Callout */}
-        {(verificationTier !== 'FULLY_VERIFIED' || !effectiveCanParticipate) && (
-          <View
-            style={[
-              verificationTier === 'INVITE_VERIFIED' ? styles.inviteUpgradeBanner : styles.semiVerifiedBanner,
-            ]}
-          >
+        {/* Campus Verification Upgrade Callout (only for Read-Only / ID Pending students) */}
+        {!effectiveCanParticipate && (
+          <View style={styles.semiVerifiedBanner}>
             <View style={{ flex: 1 }}>
-              <Text
-                style={[
-                  verificationTier === 'INVITE_VERIFIED'
-                    ? styles.inviteUpgradeBannerTitle
-                    : styles.semiVerifiedBannerTitle,
-                ]}
-              >
-                {verificationTier === 'INVITE_VERIFIED'
-                  ? 'Invite Verified — Upgrade to Official ID'
-                  : verificationTier === 'SEMI_VERIFIED'
+              <Text style={styles.semiVerifiedBannerTitle}>
+                {verificationTier === 'SEMI_VERIFIED'
                   ? 'Student ID Under Admin Review'
                   : 'Read-Only Access — Verify to Participate'}
               </Text>
               <Text style={[styles.semiVerifiedBannerSub, { color: colors.textSecondary }]}>
-                {verificationTier === 'INVITE_VERIFIED'
-                  ? 'Link your @geu/@gehu Microsoft account anytime to upgrade from Campus Invited to Official Verified Student.'
-                  : verificationTier === 'SEMI_VERIFIED'
-                  ? 'Your uploaded ID card is queued for admin approval. Enter a Batch Invite Code or link Microsoft SSO for instant access.'
-                  : 'Personal email accounts browse read-only. Enter a Batch Invite Code, upload your Student ID card, or link Microsoft SSO.'}
+                {verificationTier === 'SEMI_VERIFIED'
+                  ? 'Your uploaded ID card is queued for admin approval. Enter a Campus Invite Code for instant access.'
+                  : 'Browse freely now. Enter a Campus Invite Code or upload your Student ID card to unlock posting & chats.'}
               </Text>
             </View>
             {onRequireVerify && (
@@ -960,17 +1021,159 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 ]}
                 onPress={() =>
                   onRequireVerify(
-                    verificationTier === 'INVITE_VERIFIED'
-                      ? 'Link your @geu/@gehu Microsoft ID to upgrade to an Official Verified Student badge.'
-                      : 'Verify your Campus ID or redeem an invite code to unlock posting, commenting, and messaging.'
+                    'Enter a Campus Invite Code or upload your Student ID card to unlock posting, commenting, and messaging.'
                   )
                 }
                 activeOpacity={0.85}
               >
                 <Text style={[styles.verifyUpgradeBtnText, { color: colors.onPrimary }]}>
-                  {verificationTier === 'INVITE_VERIFIED' ? 'Upgrade' : 'Verify ID'}
+                  Verify Now
                 </Text>
               </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* Accessible Contact Email Verification Card (Verify Now / Verify Later) */}
+        {needsEmailVerification && (
+          <View
+            style={[
+              styles.emailVerifyCard,
+              { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+            ]}
+          >
+            <View style={styles.emailVerifyHeaderRow}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                  <Mail size={14} color={colors.primary} />
+                  <Text style={[styles.emailVerifyTitle, { color: colors.textPrimary }]}>
+                    {isPlaceholderEmail ? 'Add & Verify Contact Email' : 'Verify Your Email'}
+                  </Text>
+                </View>
+                <Text style={[styles.emailVerifySub, { color: colors.textSecondary }]}>
+                  {isPlaceholderEmail
+                    ? 'Add a real email address for account recovery and campus alerts.'
+                    : `${currentUser.email} is saved but not verified yet. Verify anytime with a 6-digit OTP.`}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.verifyUpgradeBtn, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  setVerifyEmailOpen((prev) => !prev);
+                  setVerifyEmailError(null);
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.verifyUpgradeBtnText, { color: colors.onPrimary }]}>
+                  {verifyEmailOpen ? 'Hide' : 'Verify Email'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {verifyEmailOpen && (
+              <View style={{ marginTop: 10 }}>
+                {verifyEmailError ? (
+                  <Text style={{ color: '#ef4444', fontSize: 12, marginBottom: 8 }}>
+                    {verifyEmailError}
+                  </Text>
+                ) : null}
+
+                {verifyEmailStep === 'EMAIL' ? (
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <TextInput
+                      style={[
+                        styles.settingsInput,
+                        {
+                          flex: 1,
+                          backgroundColor: colors.surface,
+                          color: colors.textPrimary,
+                          borderColor: colors.cardBorder,
+                          marginBottom: 0,
+                        },
+                      ]}
+                      placeholder="you@gmail.com"
+                      placeholderTextColor={colors.textMuted}
+                      value={verifyEmailInput}
+                      onChangeText={(val) => {
+                        setVerifyEmailInput(val);
+                        setVerifyEmailError(null);
+                      }}
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                    />
+                    <TouchableOpacity
+                      style={[styles.verifyUpgradeBtn, { backgroundColor: colors.primary, paddingVertical: 11 }]}
+                      onPress={handleSendProfileEmailOtp}
+                      disabled={verifyEmailLoading}
+                    >
+                      {verifyEmailLoading ? (
+                        <ActivityIndicator size="small" color={colors.onPrimary} />
+                      ) : (
+                        <Text style={[styles.verifyUpgradeBtnText, { color: colors.onPrimary }]}>Send OTP</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View>
+                    {verifyEmailInfo ? (
+                      <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 6 }}>
+                        {verifyEmailInfo}
+                      </Text>
+                    ) : null}
+                    {verifyEmailDevCode ? (
+                      <TouchableOpacity
+                        onPress={() => setVerifyEmailOtp(verifyEmailDevCode)}
+                        style={{ marginBottom: 8 }}
+                      >
+                        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
+                          Dev Code: {verifyEmailDevCode} (tap to fill)
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                      <TextInput
+                        style={[
+                          styles.settingsInput,
+                          {
+                            flex: 1,
+                            backgroundColor: colors.surface,
+                            color: colors.textPrimary,
+                            borderColor: colors.cardBorder,
+                            marginBottom: 0,
+                          },
+                        ]}
+                        placeholder="6-digit OTP"
+                        placeholderTextColor={colors.textMuted}
+                        value={verifyEmailOtp}
+                        onChangeText={(val) => setVerifyEmailOtp(val.replace(/[^0-9]/g, ''))}
+                        keyboardType="number-pad"
+                        maxLength={6}
+                      />
+                      <TouchableOpacity
+                        style={[styles.verifyUpgradeBtn, { backgroundColor: colors.primary, paddingVertical: 11 }]}
+                        onPress={handleConfirmProfileEmailOtp}
+                        disabled={verifyEmailLoading}
+                      >
+                        {verifyEmailLoading ? (
+                          <ActivityIndicator size="small" color={colors.onPrimary} />
+                        ) : (
+                          <Text style={[styles.verifyUpgradeBtnText, { color: colors.onPrimary }]}>Confirm</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setVerifyEmailStep('EMAIL');
+                        setVerifyEmailOtp('');
+                        setVerifyEmailError(null);
+                      }}
+                      style={{ marginTop: 8 }}
+                    >
+                      <Text style={{ color: colors.textMuted, fontSize: 12 }}>← Change email</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
             )}
           </View>
         )}
@@ -2157,36 +2360,42 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       Hand out a batch code during lectures or WhatsApp group launches so students can unlock full posting after Gmail OTP sign-in.
                     </Text>
 
-                    {batchColleges.length > 0 && (
-                      <View style={styles.batchCollegeRow}>
-                        {batchColleges.map((c) => {
-                          const selected = batchCollegeId === c.id;
-                          return (
-                            <TouchableOpacity
-                              key={c.id}
-                              style={[
-                                styles.batchCollegePill,
-                                {
-                                  backgroundColor: selected ? colors.primary : colors.surface,
-                                  borderColor: selected ? colors.primary : colors.cardBorder,
-                                },
-                              ]}
-                              onPress={() => setBatchCollegeId(c.id)}
-                            >
-                              <Text
-                                style={{
-                                  fontSize: 11,
-                                  fontWeight: '700',
-                                  color: selected ? '#ffffff' : colors.textSecondary,
-                                }}
-                              >
-                                {c.short_name}
+                    {batchColleges.length > 0 && (() => {
+                      const activeBatchCollege = batchColleges.find((c) => c.id === batchCollegeId) || batchColleges[0];
+                      return (
+                        <TouchableOpacity
+                          style={[
+                            styles.settingsInput,
+                            {
+                              backgroundColor: colors.surface,
+                              borderColor: colors.cardBorder,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 8,
+                              marginBottom: 10,
+                            },
+                          ]}
+                          onPress={() => setBatchCollegePickerVisible(true)}
+                          activeOpacity={0.8}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                            <Building2 size={15} color={colors.primary} />
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ color: colors.textPrimary, fontSize: 13, fontWeight: '700' }} numberOfLines={1}>
+                                {activeBatchCollege ? activeBatchCollege.name : 'Select Uttarakhand College'}
                               </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    )}
+                              {activeBatchCollege ? (
+                                <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+                                  {activeBatchCollege.short_name} • Tap to change ({batchColleges.length} colleges)
+                                </Text>
+                              ) : null}
+                            </View>
+                          </View>
+                          <ChevronDown size={16} color={colors.textMuted} />
+                        </TouchableOpacity>
+                      );
+                    })()}
 
                     <View style={styles.batchInputRow}>
                       <TextInput
@@ -3041,6 +3250,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         </View>
       </Modal>
+      <CollegePickerModal
+        visible={batchCollegePickerVisible}
+        colleges={batchColleges}
+        selectedCollegeId={batchCollegeId}
+        onSelect={(college) => setBatchCollegeId(college.id)}
+        onClose={() => setBatchCollegePickerVisible(false)}
+        title="Select College for Batch Invite Code"
+      />
     </ScrollView>
   );
 };
@@ -3049,6 +3266,25 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  emailVerifyCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 14,
+  },
+  emailVerifyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  emailVerifyTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  emailVerifySub: {
+    fontSize: 12,
+    lineHeight: 17,
   },
   statsRow: {
     flexDirection: 'row',

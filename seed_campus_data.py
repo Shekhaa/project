@@ -19,7 +19,7 @@ def seed():
     print("  Seeding Campus Connect Canonical College Data")
     print("==================================================")
 
-    # 1. Colleges & CollegeDomains
+    # 1. Uttarakhand Colleges Catalog (Dehradun, Haldwani/Kumaon & Major State Campuses)
     geu, _ = College.objects.get_or_create(
         name="Graphic Era University",
         defaults={"short_name": "GEU"}
@@ -47,8 +47,51 @@ def seed():
     CollegeDomain.objects.get_or_create(college=upes, domain="upes.ac.in")
     CollegeDomain.objects.get_or_create(college=upes, domain="ddn.upes.ac.in")
 
+    extra_uttarakhand_colleges = [
+        # Dehradun Campuses
+        ("Uttaranchal University, Dehradun", "UU", ["uumail.in", "uttaranchaluniversity.ac.in"]),
+        ("Doon University, Dehradun", "DU_DDN", ["doonuniversity.ac.in"]),
+        ("Tula's Institute, Dehradun", "TULAS", ["tulas.edu.in"]),
+        ("DBS Global University, Dehradun", "DBS", ["doonbusinessschool.com", "dbsglobaluniversity.ac.in"]),
+        ("IMS Unison University, Dehradun", "IUU", ["iuu.ac"]),
+        ("Shri Guru Ram Rai University, Dehradun", "SGRRU", ["sgrru.ac.in"]),
+        ("Dev Bhoomi Uttarakhand University, Dehradun", "DBUU", ["dbuu.ac.in"]),
+        ("Dolphin PG Institute, Dehradun", "DOLPHIN", ["dolphininstitute.in"]),
+        ("BFIT Group of Institutions, Dehradun", "BFIT", ["bfitdoon.com"]),
+        ("DAV (PG) College, Dehradun", "DAV_DDN", ["davpgcollege.in"]),
+        ("Maya Devi University, Dehradun", "MDU_DDN", ["maya.edu.in"]),
+        ("Jigyasa University (Himgiri Zee), Dehradun", "JIGYASA", ["hzu.edu.in"]),
+        # Haldwani & Kumaon Campuses
+        ("Graphic Era Hill University, Haldwani", "GEHU_HLD", ["hld.gehu.ac.in"]),
+        ("MBPG College, Haldwani", "MBPG", ["mbpgcollegehaldwani.org"]),
+        ("Amrapali University, Haldwani", "AMRAPALI", ["amrapali.ac.in"]),
+        ("MIET Kumaon, Haldwani", "MIET_K", ["mietkumaon.ac.in"]),
+        ("Pal College of Technology & Management, Haldwani", "PCTM", ["palcollege.ac.in"]),
+        ("Government Medical College, Haldwani", "GMC_HLD", ["gmchaldwani.org"]),
+        ("Uttarakhand Open University, Haldwani", "UOU", ["uou.ac.in"]),
+        ("Birla Institute of Applied Sciences, Bhimtal", "BIAS", ["birlainstitute.co.in"]),
+        ("Kumaun University, Nainital", "KU_NTL", ["kunainital.ac.in"]),
+        # Other Major Uttarakhand Campuses
+        ("IIT Roorkee", "IITR", ["iitr.ac.in"]),
+        ("NIT Uttarakhand, Srinagar", "NITUK", ["nituk.ac.in"]),
+        ("GBPUAT Pantnagar", "GBPUAT", ["gbpuat.ac.in"]),
+        ("COER University, Roorkee", "COER", ["coeruniversity.ac.in"]),
+        ("Quantum University, Roorkee", "QUANTUM", ["quantumuniversity.edu.in"]),
+        ("HNBGU Srinagar Garhwal", "HNBGU", ["hnbgu.ac.in"]),
+        ("AIIMS Rishikesh", "AIIMS_R", ["aiimsrishikesh.edu.in"]),
+    ]
+
     colleges = [geu, gehu, dit, upes]
-    print(" -> Seeded Colleges: GEU, GEHU, DIT, UPES with institutional domains")
+    for c_name, c_short, c_domains in extra_uttarakhand_colleges:
+        col_obj, _ = College.objects.get_or_create(
+            name=c_name,
+            defaults={"short_name": c_short},
+        )
+        for dom in c_domains:
+            CollegeDomain.objects.get_or_create(college=col_obj, domain=dom)
+        colleges.append(col_obj)
+
+    print(f" -> Seeded {len(colleges)} Uttarakhand Colleges (Dehradun, Haldwani & State Campuses)")
 
     # 1b. Create Canonical College Communities
     for col in colleges:
@@ -60,7 +103,7 @@ def seed():
                 "is_system_managed": True,
             }
         )
-    print(" -> Seeded Official Canonical Communities for GEU, GEHU, DIT, UPES")
+    print(f" -> Seeded Official Canonical Communities for all {len(colleges)} colleges")
 
     # 2. Comprehensive Courses
     courses_spec = [

@@ -38,6 +38,7 @@ import {
   LogIn,
   ArrowLeft,
   Coffee,
+  Building2,
 } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
 import {
@@ -45,6 +46,8 @@ import {
   buildMicrosoftAuthUrl,
   setMsOAuthMode,
 } from '../services/authService';
+import { profileService } from '../services/profileService';
+import { CollegeCatalogItem, CollegePickerModal } from '../components/common/CollegePickerModal';
 import { showCrossPlatformAlert } from '../utils/mediaUtils';
 
 interface AuthScreenProps {
@@ -95,9 +98,34 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
   const [emailOtpInfo, setEmailOtpInfo] = useState<string | null>(null);
   const [emailOtpDevCode, setEmailOtpDevCode] = useState<string | null>(null);
 
-  // ID Card Scan State
+  // ID Card Scan State + Uttarakhand College Catalog
   const [idScanLoading, setIdScanLoading] = useState(false);
   const [showDevPresets, setShowDevPresets] = useState(false);
+  const [colleges, setColleges] = useState<CollegeCatalogItem[]>([]);
+  const [selectedIdCollegeId, setSelectedIdCollegeId] = useState<number | undefined>(undefined);
+  const [idCollegePickerVisible, setIdCollegePickerVisible] = useState(false);
+  const [idContactEmail, setIdContactEmail] = useState('');
+  const [idScanError, setIdScanError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    profileService
+      .getColleges()
+      .then((list) => {
+        if (!active || !Array.isArray(list)) return;
+        setColleges(list);
+        if (list.length > 0) {
+          const geu = list.find((c) => c.short_name === 'GEU');
+          setSelectedIdCollegeId((prev) => prev ?? (geu ? geu.id : list[0].id));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selectedIdCollege = colleges.find((c) => c.id === selectedIdCollegeId) || null;
 
   // Safe Base64 encoding helper for cross-platform JWT simulation
   const createDevStudentToken = (email: string, name: string) => {
@@ -317,18 +345,42 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
   // ==========================================
   // PHYSICAL ID CARD SUBMISSION (PENDING ADMIN REVIEW)
   // ==========================================
-  const handleScanAndLogin = async (base64Data: string) => {
+  const validateIdCardInputs = (): string | null => {
+    const cleanEmail = idContactEmail.trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail) || cleanEmail.endsWith('.local')) {
+      return 'Please enter a valid contact email first (required for ID Card accounts).';
+    }
+    if (!selectedIdCollegeId && colleges.length > 0) {
+      return 'Please select your Uttarakhand college before uploading your Student ID.';
+    }
+    return null;
+  };
+
+  const handleScanAndLogin = async (base64Data: string, skipEmailGuard = false) => {
+    const cleanEmail = idContactEmail.trim().toLowerCase();
+    if (!skipEmailGuard) {
+      const validationError = validateIdCardInputs();
+      if (validationError) {
+        setIdScanError(validationError);
+        return;
+      }
+    }
+    setIdScanError(null);
     setIdScanLoading(true);
     try {
-      const res = await authService.loginWithIDCard(base64Data);
+      const res = await authService.loginWithIDCard(base64Data, {
+        college_id: selectedIdCollegeId,
+        email: skipEmailGuard ? undefined : cleanEmail,
+      });
       showCrossPlatformAlert(
         'ID Card Submitted for Review',
         res.message ||
-          'You can browse the campus feed in read-only mode now. Full posting unlocks once a campus admin approves your ID or you redeem a batch invite code.'
+          'You can browse the campus feed in read-only mode now. Full posting unlocks once a campus admin approves your ID or you redeem an invite code.'
       );
       onLoginSuccess(res.user);
     } catch (e: any) {
       const errMsg = e.response?.data?.error || e.message || 'Could not process ID card image. Please ensure photo is clear.';
+      setIdScanError(errMsg);
       showCrossPlatformAlert('ID Upload Notice', errMsg);
     } finally {
       setIdScanLoading(false);
@@ -406,6 +458,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
   };
 
   const handleScanWithCamera = async () => {
+    const validationError = validateIdCardInputs();
+    if (validationError) {
+      setIdScanError(validationError);
+      return;
+    }
+    setIdScanError(null);
     if (Platform.OS === 'web') {
       triggerWebFileInput(true);
     } else {
@@ -434,6 +492,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
   };
 
   const handlePickFromGallery = async () => {
+    const validationError = validateIdCardInputs();
+    if (validationError) {
+      setIdScanError(validationError);
+      return;
+    }
+    setIdScanError(null);
     if (Platform.OS === 'web') {
       triggerWebFileInput(false);
     } else {
@@ -545,7 +609,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
               <Text style={{ color: colors.brandAccent }}>Connect</Text>
             </Text>
             <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-              Verified campus network for Graphic Era students.
+              Verified campus network for Uttarakhand colleges.
             </Text>
           </View>
 
@@ -771,106 +835,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
             </View>
           ) : (
             /* ========================================================= */
-            /* TAB 2: NEW STUDENT SIGN IN & VERIFICATION (SSO + OCR)     */
+            /* TAB 2: SIMPLE NEW STUDENT SIGN IN & VERIFICATION          */
             /* ========================================================= */
             <View>
-              {/* PRIMARY HERO LOGIN: OFFICIAL 1-TAP MICROSOFT COLLEGE SSO */}
-              <View style={[styles.ssoCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
-                <View style={styles.ssoCardHeader}>
-                  <View style={styles.badgeRow}>
-                    <View style={styles.verifiedGreenBadge}>
-                      <ShieldCheck size={12} color="#22c55e" />
-                      <Text style={styles.verifiedGreenBadgeText}>OFFICIAL SSO</Text>
-                    </View>
-                    <Text style={[styles.zeroOtpLabel, { color: colors.textMuted }]}>Instant Verification</Text>
-                  </View>
-
-                  <Text style={[styles.ssoTitle, { color: colors.textPrimary }]}>Sign in with College Account</Text>
-                  <Text style={[styles.ssoDesc, { color: colors.textSecondary }]}>
-                    One tap connects your Graphic Era Outlook identity. Instantly verifies your course, branch, and roll number.
-                  </Text>
-                </View>
-
-                {/* Inline SSO Error Alert */}
-                {ssoError && (
-                  <View style={[styles.errorAlertBox, { marginHorizontal: 16, marginBottom: 14 }]}>
-                    <AlertCircle size={16} color="#ef4444" />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.errorAlertText}>{ssoError}</Text>
-                      <TouchableOpacity
-                        onPress={() => setSsoTokenModal(true)}
-                        style={{ marginTop: 4 }}
-                      >
-                        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
-                          ⚡ Click here to paste dev token or use direct simulation
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-
-                {/* Microsoft Action Button */}
-                <TouchableOpacity
-                  style={[styles.msButton, { backgroundColor: colors.primary }]}
-                  onPress={() => handleMicrosoftSSO()}
-                  disabled={ssoLoading}
-                  activeOpacity={0.88}
-                >
-                  {ssoLoading ? (
-                    <ActivityIndicator color={colors.onPrimary} size="small" />
-                  ) : (
-                    <View style={styles.msButtonContent}>
-                      <View style={styles.msLogoGrid}>
-                        <View style={[styles.msLogoCell, { backgroundColor: '#F25022' }]} />
-                        <View style={[styles.msLogoCell, { backgroundColor: '#7FBA00' }]} />
-                        <View style={[styles.msLogoCell, { backgroundColor: '#00A4EF' }]} />
-                        <View style={[styles.msLogoCell, { backgroundColor: '#FFB900' }]} />
-                      </View>
-                      <Text style={[styles.msButtonText, { color: colors.onPrimary }]}>Continue with College ID (@geu.ac.in)</Text>
-                      <ArrowRight size={17} color={colors.onPrimary} />
-                    </View>
-                  )}
-                </TouchableOpacity>
-
-                {/* Benefit Bullets */}
-                <View style={styles.featurePillsRow}>
-                  <View style={styles.featurePill}>
-                    <CheckCircle2 size={12} color="#22c55e" />
-                    <Text style={[styles.featurePillText, { color: colors.textSecondary }]}>Verified Badge</Text>
-                  </View>
-                  <View style={styles.featurePill}>
-                    <CheckCircle2 size={12} color="#22c55e" />
-                    <Text style={[styles.featurePillText, { color: colors.textSecondary }]}>Auto Roll No.</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => setSsoTokenModal(true)} style={styles.devLinkPill}>
-                    <Text style={styles.devLinkText}>Paste Token</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Elegant Divider */}
-              <View style={styles.dividerRow}>
-                <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
-                <Text style={[styles.dividerLabel, { color: colors.textTertiary }]}>OR SIGN IN WITH GMAIL / EMAIL OTP</Text>
-                <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
-              </View>
-
-              {/* EMAIL / GMAIL 6-DIGIT OTP CARD */}
+              {/* #1 PRIMARY: SIMPLE EMAIL / GMAIL 6-DIGIT OTP */}
               <View style={[styles.ssoCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
                 <View style={styles.ssoCardHeader}>
                   <View style={styles.badgeRow}>
                     <View style={styles.emailOtpBadge}>
                       <Mail size={12} color={colors.primary} />
-                      <Text style={[styles.emailOtpBadgeText, { color: colors.primary }]}>GMAIL / EMAIL OTP</Text>
+                      <Text style={[styles.emailOtpBadgeText, { color: colors.primary }]}>FASTEST SIGN IN</Text>
                     </View>
-                    <Text style={[styles.zeroOtpLabel, { color: colors.textMuted }]}>6-Digit Code</Text>
+                    <Text style={[styles.zeroOtpLabel, { color: colors.textMuted }]}>6-Digit OTP</Text>
                   </View>
 
                   <Text style={[styles.ssoTitle, { color: colors.textPrimary }]}>
-                    Continue with Gmail or College Email
+                    Continue with Email
                   </Text>
                   <Text style={[styles.ssoDesc, { color: colors.textSecondary }]}>
-                    Forgot Outlook credentials? Enter your Gmail or college email. Browse the feed immediately, then unlock posting with a campus invite code or ID upload.
+                    Enter your Gmail or college email. Enter your Campus Invite Code on the next step for instant posting across your Uttarakhand campus.
                   </Text>
                 </View>
 
@@ -915,7 +898,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                         <ActivityIndicator color={colors.onPrimary} size="small" />
                       ) : (
                         <View style={styles.primaryActionContent}>
-                          <Text style={[styles.primaryActionText, { color: colors.onPrimary }]}>Send 6-Digit Verification Code</Text>
+                          <Text style={[styles.primaryActionText, { color: colors.onPrimary }]}>Send Verification Code</Text>
                           <ArrowRight size={15} color={colors.onPrimary} />
                         </View>
                       )}
@@ -1011,14 +994,64 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                 )}
               </View>
 
-              {/* Elegant Divider */}
+              {/* #2 COMPACT 1-TAP OFFICIAL COLLEGE MICROSOFT SSO */}
+              <View style={styles.dividerRow}>
+                <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
+                <Text style={[styles.dividerLabel, { color: colors.textTertiary }]}>OR OFFICIAL OUTLOOK ID</Text>
+                <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
+              </View>
+
+              {ssoError && (
+                <View style={[styles.errorAlertBox, { marginBottom: 10 }]}>
+                  <AlertCircle size={16} color="#ef4444" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.errorAlertText}>{ssoError}</Text>
+                    <TouchableOpacity onPress={() => setSsoTokenModal(true)} style={{ marginTop: 4 }}>
+                      <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
+                        Paste dev token instead
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.msButtonSecondary, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                onPress={() => handleMicrosoftSSO()}
+                disabled={ssoLoading}
+                activeOpacity={0.88}
+              >
+                {ssoLoading ? (
+                  <ActivityIndicator color={colors.textPrimary} size="small" />
+                ) : (
+                  <View style={styles.msButtonContent}>
+                    <View style={styles.msLogoGrid}>
+                      <View style={[styles.msLogoCell, { backgroundColor: '#F25022' }]} />
+                      <View style={[styles.msLogoCell, { backgroundColor: '#7FBA00' }]} />
+                      <View style={[styles.msLogoCell, { backgroundColor: '#00A4EF' }]} />
+                      <View style={[styles.msLogoCell, { backgroundColor: '#FFB900' }]} />
+                    </View>
+                    <Text style={[styles.msButtonText, { color: colors.textPrimary }]}>
+                      Continue with College ID (@geu.ac.in)
+                    </Text>
+                    <ArrowRight size={15} color={colors.textMuted} />
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <View style={{ alignItems: 'flex-end', marginTop: 6, marginBottom: 2 }}>
+                <TouchableOpacity onPress={() => setSsoTokenModal(true)} style={styles.devLinkPill}>
+                  <Text style={[styles.devLinkText, { color: colors.textMuted }]}>Have an Entra token? Paste Token</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* #3 PHYSICAL STUDENT ID CARD (ALL UTTARAKHAND COLLEGES + MANDATORY CONTACT EMAIL) */}
               <View style={styles.dividerRow}>
                 <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
                 <Text style={[styles.dividerLabel, { color: colors.textTertiary }]}>OR SUBMIT PHYSICAL ID CARD</Text>
                 <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
               </View>
 
-              {/* TERTIARY LOGIN: PHYSICAL ID CARD SUBMISSION (PENDING ADMIN REVIEW) */}
               <View style={[styles.idScanSection, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
                 <View style={styles.idScanHeader}>
                   <View style={styles.idScanBadgeRow}>
@@ -1026,16 +1059,83 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                       <View style={styles.semiBadgeDot} />
                       <Text style={styles.semiBadgeText}>ID CARD REVIEW</Text>
                     </View>
-                    <Text style={[styles.semiBadgeSub, { color: colors.textMuted }]}>Pending Admin Approval</Text>
+                    <Text style={[styles.semiBadgeSub, { color: colors.textMuted }]}>Dehradun • Haldwani • UK</Text>
                   </View>
 
                   <Text style={[styles.idScanTitle, { color: colors.textPrimary }]}>
                     Upload Physical Student ID Card
                   </Text>
                   <Text style={[styles.idScanDesc, { color: colors.textSecondary }]}>
-                    No batch invite code or Outlook login yet? Upload a clear photo of your Graphic Era ID card to create an account and queue it for campus admin review.
+                    Select your Uttarakhand college, enter your contact email (required), and upload a clear photo of your student ID card.
                   </Text>
                 </View>
+
+                {/* Uttarakhand College Catalog Picker */}
+                <Text style={[styles.fieldLabel, { color: colors.textPrimary, marginBottom: 6 }]}>
+                  Your College / Campus *
+                </Text>
+                <TouchableOpacity
+                  style={[
+                    styles.inputFieldRow,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.cardBorder,
+                      marginBottom: 10,
+                      paddingVertical: 11,
+                    },
+                  ]}
+                  onPress={() => setIdCollegePickerVisible(true)}
+                  activeOpacity={0.8}
+                >
+                  <Building2 size={16} color={colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{ color: selectedIdCollege ? colors.textPrimary : colors.textMuted, fontSize: 13, fontWeight: '600' }}
+                      numberOfLines={1}
+                    >
+                      {selectedIdCollege ? selectedIdCollege.name : 'Select Dehradun, Haldwani or UK College'}
+                    </Text>
+                    {selectedIdCollege ? (
+                      <Text style={{ color: colors.textMuted, fontSize: 11 }}>{selectedIdCollege.short_name}</Text>
+                    ) : null}
+                  </View>
+                  <ChevronDown size={16} color={colors.textMuted} />
+                </TouchableOpacity>
+
+                {/* Mandatory Contact Email Input for ID Card */}
+                <Text style={[styles.fieldLabel, { color: colors.textPrimary, marginBottom: 6 }]}>
+                  Contact Email (Required) *
+                </Text>
+                <View
+                  style={[
+                    styles.inputFieldRow,
+                    { backgroundColor: colors.surface, borderColor: colors.cardBorder, marginBottom: 6 },
+                  ]}
+                >
+                  <Mail size={16} color={colors.textSecondary} />
+                  <TextInput
+                    style={[styles.fieldTextInput, { color: colors.textPrimary }]}
+                    placeholder="you@gmail.com (verify now or later)"
+                    placeholderTextColor={colors.textMuted}
+                    value={idContactEmail}
+                    onChangeText={(val) => {
+                      setIdContactEmail(val);
+                      setIdScanError(null);
+                    }}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                </View>
+                <Text style={{ color: colors.textMuted, fontSize: 11, marginBottom: 10 }}>
+                  Required for account recovery & campus updates. You can verify it with OTP now or later from Profile.
+                </Text>
+
+                {idScanError && (
+                  <View style={[styles.errorAlertBox, { marginBottom: 10 }]}>
+                    <AlertCircle size={15} color="#ef4444" />
+                    <Text style={styles.errorAlertText}>{idScanError}</Text>
+                  </View>
+                )}
 
                 {/* Action Buttons: Camera vs File Upload */}
                 <View style={styles.idActionGrid}>
@@ -1163,7 +1263,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                         <TouchableOpacity
                           key={idx}
                           style={[styles.presetCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                          onPress={() => handleScanAndLogin('data:image/jpeg;base64,' + btoa(p.rawText))}
+                          onPress={() => handleScanAndLogin('data:image/jpeg;base64,' + btoa(p.rawText), true)}
                           disabled={idScanLoading}
                         >
                           <View style={styles.presetTop}>
@@ -1188,7 +1288,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
           <View style={styles.footerNote}>
             <Lock size={12} color={colors.textTertiary} />
             <Text style={[styles.footerText, { color: colors.textTertiary }]}>
-              Encrypted end-to-end. Official Graphic Era institutional verification.
+              Encrypted end-to-end. Verified Uttarakhand campus network.
             </Text>
           </View>
         </View>
@@ -1424,6 +1524,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
         </View>
       </Modal>
       )}
+      <CollegePickerModal
+        visible={idCollegePickerVisible}
+        colleges={colleges}
+        selectedCollegeId={selectedIdCollegeId}
+        onSelect={(college) => {
+          setSelectedIdCollegeId(college.id);
+          setIdScanError(null);
+        }}
+        onClose={() => setIdCollegePickerVisible(false)}
+        title="Select Your Uttarakhand College"
+      />
     </KeyboardAvoidingView>
   );
 };

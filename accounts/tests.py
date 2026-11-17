@@ -635,5 +635,108 @@ class VerificationGateAndAuthFlowsTests(TestCase):
         u2.refresh_from_db()
         self.assertEqual(u2.profile.college_id, self.geu.id)
 
+    def test_colleges_endpoint_returns_unpaginated_uttarakhand_catalog(self):
+        # Create 18 extra Uttarakhand colleges (Dehradun + Haldwani) to exceed DRF PAGE_SIZE=15
+        for idx in range(18):
+            city = "Haldwani" if idx % 2 == 0 else "Dehradun"
+            College.objects.create(
+                name=f"Uttarakhand Campus {idx} ({city})",
+                short_name=f"UKC{idx}",
+            )
+        anon = APIClient()
+        res = anon.get("/api/colleges/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(res.data, list)
+        self.assertGreaterEqual(len(res.data), 19)
+
+    def test_contact_email_bind_verify_and_mandatory_enforcement(self):
+        # 1. ID Card placeholder user cannot redeem an invite code without a real contact email
+        placeholder_user = User.objects.create_user(
+            email="idreview_abc123@idreview.campusconnect.local",
+            password="password123",
+            full_name="Haldwani Student",
+            is_email_verified=False,
+        )
+        StudentProfile.objects.create(
+            user=placeholder_user,
+            username="haldwani_u1",
+            college=self.geu,
+            course=self.course,
+            branch=self.branch,
+            academic_year=self.year,
+            verification_method="ID_CARD_OCR",
+            profile_completed=False,
+        )
+        code = CampusInviteCode.objects.create(
+            code="UKHLD26",
+            college=self.geu,
+            created_by=self.admin,
+            batch_label="Haldwani Batch",
+            max_uses=5,
+        )
+        client = APIClient()
+        client.force_authenticate(user=placeholder_user)
+
+        # CompleteProfileView rejects placeholder .local email for ID_CARD_OCR
+        bad_complete = client.post(
+            "/api/profile/complete/",
+            {
+                "username": "haldwani_u1",
+                "full_name": "Haldwani Student",
+                "gender": "Male",
+                "college": self.geu.id,
+                "course_name": "B.Tech",
+                "branch_name": "CSE",
+            },
+            format="json",
+        )
+        self.assertEqual(bad_complete.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # RedeemInviteCodeView rejects placeholder email unless real email is passed
+        bad_redeem = client.post(
+            "/api/authentication/invite/redeem/",
+            {"code": "UKHLD26"},
+            format="json",
+        )
+        self.assertEqual(bad_redeem.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Bind email with Verify Later ("save_unverified") succeeds & updates email
+        save_res = client.post(
+            "/api/authentication/email/bind/",
+            {"action": "save_unverified", "email": "haldwani.student@gmail.com"},
+            format="json",
+        )
+        self.assertEqual(save_res.status_code, status.HTTP_200_OK)
+        placeholder_user.refresh_from_db()
+        self.assertEqual(placeholder_user.email, "haldwani.student@gmail.com")
+        self.assertFalse(placeholder_user.is_email_verified)
+
+        # Now redeeming invite code works cleanly even before email OTP verification!
+        ok_redeem = client.post(
+            "/api/authentication/invite/redeem/",
+            {"code": "UKHLD26"},
+            format="json",
+        )
+        self.assertEqual(ok_redeem.status_code, status.HTTP_200_OK)
+        self.assertEqual(ok_redeem.data["user"]["verification_tier"], "INVITE_VERIFIED")
+
+        # Verify Email later via OTP ("send" -> "verify") sets is_email_verified=True
+        send_res = client.post(
+            "/api/authentication/email/bind/",
+            {"action": "send", "email": "haldwani.student@gmail.com"},
+            format="json",
+        )
+        self.assertEqual(send_res.status_code, status.HTTP_200_OK)
+        dev_otp = send_res.data["dev_otp"]
+        verify_res = client.post(
+            "/api/authentication/email/bind/",
+            {"action": "verify", "email": "haldwani.student@gmail.com", "otp": dev_otp},
+            format="json",
+        )
+        self.assertEqual(verify_res.status_code, status.HTTP_200_OK)
+        placeholder_user.refresh_from_db()
+        self.assertTrue(placeholder_user.is_email_verified)
+
+
 
 

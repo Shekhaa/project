@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -13,23 +12,20 @@ import {
 } from 'react-native';
 import {
   AlertCircle,
-  ArrowRight,
+  Building2,
   Camera,
   CheckCircle2,
-  KeyRound,
+  ChevronDown,
+  Mail,
   ShieldCheck,
   Ticket,
   UploadCloud,
   X,
 } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
-import {
-  User,
-  authService,
-  buildMicrosoftAuthUrl,
-  setMsOAuthMode,
-} from '../../services/authService';
+import { User, authService } from '../../services/authService';
 import { profileService } from '../../services/profileService';
+import { CollegeCatalogItem, CollegePickerModal } from './CollegePickerModal';
 
 interface VerificationGateModalProps {
   visible: boolean;
@@ -52,15 +48,18 @@ export const VerificationGateModal: React.FC<VerificationGateModalProps> = ({
   const [inviteCode, setInviteCode] = useState('');
   const [inviteLoading, setInviteLoading] = useState(false);
 
-  // Path B: Microsoft SSO Link
-  const [msLoading, setMsLoading] = useState(false);
-  const [showTokenPaste, setShowTokenPaste] = useState(false);
-  const [msTokenInput, setMsTokenInput] = useState('');
+  // Mandatory Contact Email (shown only if account still has placeholder .local email)
+  const needsRealEmail =
+    !currentUser?.email ||
+    currentUser.email.toLowerCase().endsWith('.local') ||
+    currentUser.email.toLowerCase().startsWith('student_');
+  const [contactEmail, setContactEmail] = useState(needsRealEmail ? '' : currentUser?.email || '');
 
-  // Path C: Physical ID Upload (Pending Admin Review)
+  // Path B: Physical ID Upload (Pending Admin Review) + Searchable Uttarakhand College Catalog
   const [rollNumberInput, setRollNumberInput] = useState('');
-  const [colleges, setColleges] = useState<Array<{ id: number; name: string; short_name: string }>>([]);
+  const [colleges, setColleges] = useState<CollegeCatalogItem[]>([]);
   const [selectedCollegeId, setSelectedCollegeId] = useState<number | undefined>(undefined);
+  const [collegePickerVisible, setCollegePickerVisible] = useState(false);
   const [idLoading, setIdLoading] = useState(false);
 
   // Feedback
@@ -99,11 +98,16 @@ export const VerificationGateModal: React.FC<VerificationGateModalProps> = ({
       setErrorMsg('Enter a campus invite code (e.g. GEU2026) or a friend’s code.');
       return;
     }
+    const cleanEmail = contactEmail.trim().toLowerCase();
+    if (needsRealEmail && (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.'))) {
+      setErrorMsg('Please enter your valid email address first (mandatory for invite code access).');
+      return;
+    }
     setErrorMsg(null);
     setSuccessMsg(null);
     setInviteLoading(true);
     try {
-      const res = await authService.redeemInviteCode(clean);
+      const res = await authService.redeemInviteCode(clean, needsRealEmail ? cleanEmail : undefined);
       setSuccessMsg(res.message || 'Campus access unlocked!');
       setInviteCode('');
       if (res.user) {
@@ -124,56 +128,19 @@ export const VerificationGateModal: React.FC<VerificationGateModalProps> = ({
     }
   };
 
-  const handleLinkMicrosoft = async (tokenOverride?: string) => {
-    const token = (tokenOverride ?? msTokenInput).trim();
-    if (token) {
-      setErrorMsg(null);
-      setSuccessMsg(null);
-      setMsLoading(true);
-      try {
-        const res = await authService.linkWithMicrosoft(token);
-        setSuccessMsg(res.message || 'College Microsoft ID verified!');
-        setMsTokenInput('');
-        setShowTokenPaste(false);
-        if (res.user) {
-          onVerified(res.user);
-        }
-        setTimeout(() => {
-          onClose();
-        }, 650);
-      } catch (err: any) {
-        setErrorMsg(
-          err?.response?.data?.error ||
-            err?.response?.data?.detail ||
-            err?.message ||
-            'Could not verify Microsoft ID token.'
-        );
-      } finally {
-        setMsLoading(false);
-      }
+  const submitIdCardBase64 = async (base64Data: string) => {
+    const cleanEmail = contactEmail.trim().toLowerCase();
+    if (needsRealEmail && (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.'))) {
+      setErrorMsg('Please enter your valid email address before uploading your ID card.');
       return;
     }
-
-    setErrorMsg(null);
-    await setMsOAuthMode('link');
-    const authUrl = buildMicrosoftAuthUrl();
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.location.href = authUrl;
-    } else {
-      try {
-        await Linking.openURL(authUrl);
-        setShowTokenPaste(true);
-      } catch {
-        setShowTokenPaste(true);
-      }
-    }
-  };
-
-  const submitIdCardBase64 = async (base64Data: string) => {
     setErrorMsg(null);
     setSuccessMsg(null);
     setIdLoading(true);
     try {
+      if (needsRealEmail && cleanEmail) {
+        await authService.bindContactEmail('save_unverified', cleanEmail);
+      }
       const res = await profileService.scanIdCard(base64Data, {
         admission_number: rollNumberInput.trim() || undefined,
         college_id: selectedCollegeId,
@@ -413,7 +380,43 @@ export const VerificationGateModal: React.FC<VerificationGateModalProps> = ({
               </View>
             )}
 
-            {/* PATH A: CAMPUS INVITE CODE */}
+            {needsRealEmail && (
+              <View
+                style={[
+                  styles.sectionCard,
+                  { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+                ]}
+              >
+                <View style={styles.sectionHeader}>
+                  <Mail size={15} color={colors.primary} />
+                  <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+                    Contact Email (Mandatory)
+                  </Text>
+                </View>
+                <Text style={[styles.sectionDesc, { color: colors.textMuted }]}>
+                  Required for Invite Code & ID Card accounts. You can verify it now or later from your Profile.
+                </Text>
+                <TextInput
+                  style={[
+                    styles.rollInput,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.cardBorder,
+                      color: colors.textPrimary,
+                      marginBottom: 0,
+                    },
+                  ]}
+                  placeholder="you@gmail.com"
+                  placeholderTextColor={colors.textTertiary}
+                  value={contactEmail}
+                  onChangeText={setContactEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+              </View>
+            )}
+
+            {/* PATH A (TOP): CAMPUS INVITE CODE */}
             <View
               style={[
                 styles.sectionCard,
@@ -430,7 +433,7 @@ export const VerificationGateModal: React.FC<VerificationGateModalProps> = ({
                 </View>
               </View>
               <Text style={[styles.sectionDesc, { color: colors.textMuted }]}>
-                Got a batch code (like GEU2026) or invite from a verified classmate? Enter it below.
+                Got a batch code (like GEU2026) or a verified classmate’s invite? Enter it below—your campus auto-locks to your inviter’s college.
               </Text>
               <View style={styles.inviteRow}>
                 <TextInput
@@ -469,97 +472,7 @@ export const VerificationGateModal: React.FC<VerificationGateModalProps> = ({
               </View>
             </View>
 
-            {/* PATH B: LINK MICROSOFT COLLEGE ID */}
-            <View
-              style={[
-                styles.sectionCard,
-                { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
-              ]}
-            >
-              <View style={styles.sectionHeader}>
-                <View style={styles.msGrid}>
-                  <View style={[styles.msCell, { backgroundColor: '#F25022' }]} />
-                  <View style={[styles.msCell, { backgroundColor: '#7FBA00' }]} />
-                  <View style={[styles.msCell, { backgroundColor: '#00A4EF' }]} />
-                  <View style={[styles.msCell, { backgroundColor: '#FFB900' }]} />
-                </View>
-                <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-                  2. Link Microsoft College ID
-                </Text>
-                <View style={styles.greenTag}>
-                  <Text style={styles.greenTagText}>Verified Badge</Text>
-                </View>
-              </View>
-              <Text style={[styles.sectionDesc, { color: colors.textMuted }]}>
-                Sign in with your @geu.ac.in / @gehu.ac.in Outlook account to upgrade this profile without creating a duplicate account.
-              </Text>
-
-              <TouchableOpacity
-                style={[styles.msActionBtn, { backgroundColor: colors.primary }]}
-                onPress={() => handleLinkMicrosoft()}
-                disabled={msLoading}
-                activeOpacity={0.85}
-              >
-                {msLoading ? (
-                  <ActivityIndicator size="small" color={colors.onPrimary} />
-                ) : (
-                  <View style={styles.msActionContent}>
-                    <Text style={[styles.msActionText, { color: colors.onPrimary }]}>Link College Microsoft ID</Text>
-                    <ArrowRight size={15} color={colors.onPrimary} />
-                  </View>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => setShowTokenPaste((prev) => !prev)}
-                style={styles.tokenToggleLink}
-              >
-                <KeyRound size={12} color={colors.primary} />
-                <Text style={[styles.tokenToggleText, { color: colors.primary }]}>
-                  {showTokenPaste ? 'Hide token paste box' : 'Have an ID token? Paste token'}
-                </Text>
-              </TouchableOpacity>
-
-              {showTokenPaste && (
-                <View style={styles.tokenPasteBox}>
-                  <TextInput
-                    style={[
-                      styles.tokenInput,
-                      {
-                        backgroundColor: colors.surface,
-                        borderColor: colors.cardBorder,
-                        color: colors.textPrimary,
-                      },
-                    ]}
-                    placeholder="Paste Microsoft id_token JWT..."
-                    placeholderTextColor={colors.textTertiary}
-                    value={msTokenInput}
-                    onChangeText={setMsTokenInput}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    multiline
-                    numberOfLines={2}
-                  />
-                  <TouchableOpacity
-                    style={[
-                      styles.secondaryBtn,
-                      {
-                        backgroundColor: colors.surface,
-                        borderColor: colors.primary,
-                      },
-                    ]}
-                    onPress={() => handleLinkMicrosoft(msTokenInput)}
-                    disabled={msLoading}
-                  >
-                    <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>
-                      Verify & Link Token
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-
-            {/* PATH C: PHYSICAL ID CARD UPLOAD (ADMIN REVIEW) */}
+            {/* PATH B: PHYSICAL ID CARD UPLOAD (ADMIN REVIEW) + UTTARAKHAND CATALOG */}
             <View
               style={[
                 styles.sectionCard,
@@ -569,48 +482,39 @@ export const VerificationGateModal: React.FC<VerificationGateModalProps> = ({
               <View style={styles.sectionHeader}>
                 <Camera size={15} color={colors.warning} />
                 <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-                  3. Upload Student ID Card
+                  2. Upload Student ID Card
                 </Text>
                 <View style={styles.amberTag}>
                   <Text style={styles.amberTagText}>Admin Review</Text>
                 </View>
               </View>
               <Text style={[styles.sectionDesc, { color: colors.textMuted }]}>
-                No invite code or Outlook login? Upload a clear photo of your ID card. Posting unlocks as soon as an admin approves it.
+                Select your Uttarakhand college (Dehradun, Haldwani & more) and upload a clear photo of your ID card. Posting unlocks once approved.
               </Text>
 
               {colleges.length > 0 && (
-                <View style={styles.collegeChipsRow}>
-                  {colleges.map((col) => {
-                    const active = selectedCollegeId === col.id;
-                    return (
-                      <TouchableOpacity
-                        key={col.id}
-                        style={[
-                          styles.collegeChip,
-                          {
-                            backgroundColor: active
-                              ? isDark
-                                ? 'rgba(94, 106, 210, 0.2)'
-                                : 'rgba(79, 70, 229, 0.1)'
-                              : colors.surface,
-                            borderColor: active ? colors.primary : colors.cardBorder,
-                          },
-                        ]}
-                        onPress={() => setSelectedCollegeId(col.id)}
-                      >
-                        <Text
-                          style={[
-                            styles.collegeChipText,
-                            { color: active ? colors.primary : colors.textSecondary },
-                          ]}
-                        >
-                          {col.short_name || col.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.rollInput,
+                    {
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      backgroundColor: colors.surface,
+                      borderColor: colors.cardBorder,
+                    },
+                  ]}
+                  onPress={() => setCollegePickerVisible(true)}
+                  activeOpacity={0.8}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                    <Building2 size={15} color={colors.primary} />
+                    <Text style={{ color: colors.textPrimary, fontSize: 13, fontWeight: '600', flex: 1 }} numberOfLines={1}>
+                      {colleges.find((c) => c.id === selectedCollegeId)?.name || 'Select Uttarakhand College...'}
+                    </Text>
+                  </View>
+                  <ChevronDown size={16} color={colors.textMuted} />
+                </TouchableOpacity>
               )}
 
               <TextInput
@@ -668,6 +572,15 @@ export const VerificationGateModal: React.FC<VerificationGateModalProps> = ({
           </ScrollView>
         </View>
       </View>
+
+      <CollegePickerModal
+        visible={collegePickerVisible}
+        colleges={colleges}
+        selectedCollegeId={selectedCollegeId}
+        title="Select Uttarakhand College"
+        onSelect={(col) => setSelectedCollegeId(col.id)}
+        onClose={() => setCollegePickerVisible(false)}
+      />
     </Modal>
   );
 };

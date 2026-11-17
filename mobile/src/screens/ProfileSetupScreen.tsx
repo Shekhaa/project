@@ -16,8 +16,6 @@ import { useTheme } from '../theme/ThemeContext';
 import { profileService } from '../services/profileService';
 import {
   authService,
-  buildMicrosoftAuthUrl,
-  setMsOAuthMode,
   User,
 } from '../services/authService';
 import {
@@ -38,9 +36,10 @@ import {
   EyeOff,
   KeyRound,
   Ticket,
-  Link2,
+  Mail,
   Building2,
 } from 'lucide-react-native';
+import { CollegeCatalogItem, CollegePickerModal } from '../components/common/CollegePickerModal';
 
 interface ProfileSetupScreenProps {
   currentUser: User;
@@ -182,15 +181,27 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
 
   const isInstitutionalEmail = /\.(ac|edu)\.in$/i.test(currentUser.email || '');
 
+  const isPlaceholderEmail =
+    !currentUser.email ||
+    currentUser.email.toLowerCase().endsWith('.local') ||
+    currentUser.email.toLowerCase().startsWith('student_');
+
   // Form State
   const [fullName, setFullName] = useState(currentUser.full_name || '');
   const [username, setUsername] = useState('');
   const [gender, setGender] = useState<'Male' | 'Female' | 'Other'>('Male');
   const [showGender, setShowGender] = useState(true);
-  const [phoneNumber, setPhoneNumber] = useState(currentUser.phone_number || '');
+  const [contactEmail, setContactEmail] = useState(isPlaceholderEmail ? '' : currentUser.email || '');
+  const [emailVerified, setEmailVerified] = useState<boolean>(
+    Boolean(currentUser.is_email_verified && !isPlaceholderEmail)
+  );
+  const [emailOtpSent, setEmailOtpSent] = useState(false);
+  const [emailOtpCode, setEmailOtpCode] = useState('');
+  const [emailDevCode, setEmailDevCode] = useState<string | null>(null);
+  const [emailActionLoading, setEmailActionLoading] = useState(false);
   const [bio, setBio] = useState('Excited for campus tech clubs, hackathons & fests!');
   const [admissionNumber, setAdmissionNumber] = useState('');
-  const [colleges, setColleges] = useState<Array<{ id: number; name: string; short_name: string }>>([]);
+  const [colleges, setColleges] = useState<CollegeCatalogItem[]>([]);
   const [selectedCollegeId, setSelectedCollegeId] = useState<number | undefined>(undefined);
   const [collegeName, setCollegeName] = useState('Graphic Era University');
   const [courseName, setCourseName] = useState('B.Tech');
@@ -199,13 +210,11 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
     currentUser.verification_tier || 'UNVERIFIED'
   );
 
-  // Campus Verification Upgrade inside Onboarding
+  // Campus Invite Code (Top of Onboarding)
   const [inviteCode, setInviteCode] = useState('');
-  const [showMsLinkToken, setShowMsLinkToken] = useState(false);
-  const [msLinkToken, setMsLinkToken] = useState('');
-  const [linkingMs, setLinkingMs] = useState(false);
 
-  // Course & Branch Selector Modals
+  // College, Course & Branch Selector Modals
+  const [collegeModalVisible, setCollegeModalVisible] = useState(false);
   const [courseModalVisible, setCourseModalVisible] = useState(false);
   const [branchModalVisible, setBranchModalVisible] = useState(false);
   const [courseSearch, setCourseSearch] = useState('');
@@ -302,49 +311,49 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
     setCourseSearch('');
   };
 
-  const handleLinkMsBrowser = async () => {
+  const handleSendContactEmailOtp = async () => {
+    const clean = contactEmail.trim().toLowerCase();
+    if (!clean || !clean.includes('@') || !clean.includes('.') || clean.endsWith('.local')) {
+      setErrorMsg('Please enter a valid email address first.');
+      return;
+    }
+    setEmailActionLoading(true);
     setErrorMsg(null);
-    await setMsOAuthMode('link');
-    const url = buildMicrosoftAuthUrl();
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.location.href = url;
-    } else {
-      const { Linking } = require('react-native');
-      await Linking.openURL(url);
-      setShowMsLinkToken(true);
+    setNoticeMsg(null);
+    setEmailDevCode(null);
+    try {
+      const res = await authService.bindContactEmail('send', clean);
+      setEmailOtpSent(true);
+      setNoticeMsg(res.message || `6-digit code sent to ${clean}.`);
+      if (res.dev_otp) setEmailDevCode(String(res.dev_otp));
+    } catch (e: any) {
+      setErrorMsg(e?.response?.data?.error || e?.message || 'Could not send email verification code.');
+    } finally {
+      setEmailActionLoading(false);
     }
   };
 
-  const handleLinkMsToken = async () => {
-    const clean = msLinkToken.trim();
-    if (!clean) {
-      setErrorMsg('Paste your Microsoft College ID token first.');
+  const handleVerifyContactEmailOtp = async () => {
+    const clean = contactEmail.trim().toLowerCase();
+    const code = emailOtpCode.trim();
+    if (!code || code.length < 4) {
+      setErrorMsg('Enter the 6-digit verification code sent to your email.');
       return;
     }
-    setLinkingMs(true);
+    setEmailActionLoading(true);
     setErrorMsg(null);
     try {
-      const res = await authService.linkWithMicrosoft(clean);
-      setVerificationTier(res.user.verification_tier || 'FULLY_VERIFIED');
-      if (res.detected_student?.college_name) {
-        setCollegeName(res.detected_student.college_name);
-      }
-      if (res.detected_student?.roll_number) {
-        setAdmissionNumber(res.detected_student.roll_number);
-      }
-      setShowMsLinkToken(false);
-      setMsLinkToken('');
-      setNoticeMsg(res.message || 'Microsoft College ID linked! You now have the Green Verified Badge.');
-      onUserUpdated?.(res.user);
+      const res = await authService.bindContactEmail('verify', clean, code);
+      setEmailVerified(true);
+      setEmailOtpSent(false);
+      setEmailOtpCode('');
+      setEmailDevCode(null);
+      setNoticeMsg(res.message || 'Email verified!');
+      if (res.user) onUserUpdated?.(res.user);
     } catch (e: any) {
-      const msg =
-        e?.response?.data?.error ||
-        e?.response?.data?.detail ||
-        e?.message ||
-        'Could not link Microsoft College ID.';
-      setErrorMsg(String(msg));
+      setErrorMsg(e?.response?.data?.error || e?.message || 'Invalid verification code.');
     } finally {
-      setLinkingMs(false);
+      setEmailActionLoading(false);
     }
   };
 
@@ -376,15 +385,24 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
       }
     }
 
+    const cleanInvite = inviteCode.trim().toUpperCase();
+    const cleanContactEmail = contactEmail.trim().toLowerCase();
+    const emailRequired = Boolean(cleanInvite) || isIdPending || isInviteVerified || isPlaceholderEmail;
+    if (emailRequired && (!cleanContactEmail || !cleanContactEmail.includes('@') || !cleanContactEmail.includes('.') || cleanContactEmail.endsWith('.local'))) {
+      const msg = 'Please enter a valid contact email (mandatory for Invite Code & ID Card accounts). You can verify now or later.';
+      setErrorMsg(msg);
+      if (Platform.OS !== 'web') Alert.alert('Email Required', msg);
+      return;
+    }
+
     setSaving(true);
     try {
-      const cleanInvite = inviteCode.trim().toUpperCase();
       const res = await profileService.completeProfile({
         full_name: fullName.trim() || currentUser.full_name,
         username: cleanUser,
         gender,
         show_gender: showGender,
-        phone_number: phoneNumber.trim() || undefined,
+        contact_email: cleanContactEmail || undefined,
         college: !isGreenVerified && selectedCollegeId ? selectedCollegeId : undefined,
         admission_number: !isGreenVerified && admissionNumber.trim() ? admissionNumber.trim() : undefined,
         course_name: courseName,
@@ -574,6 +592,47 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
         </View>
       )}
 
+      {/* TOP CARD: CAMPUS INVITE CODE (INSTANT UNLOCK) */}
+      {!isGreenVerified && !isInviteVerified && (
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.cardBorder,
+            },
+          ]}
+        >
+          <View style={styles.cardHeaderRow}>
+            <Ticket size={15} color={colors.primary} />
+            <Text style={[styles.cardSectionTitle, { color: colors.textPrimary }]}>
+              CAMPUS INVITE CODE (INSTANT UNLOCK)
+            </Text>
+          </View>
+          <Text style={[styles.cardHint, { color: colors.textMuted }]}>
+            Have a batch or verified classmate invite code (e.g. GEU2026)? Enter it here to unlock posting immediately—your college locks automatically to your inviter’s campus.
+          </Text>
+          <TextInput
+            style={[
+              styles.textInput,
+              {
+                backgroundColor: colors.surfaceLight,
+                borderColor: colors.cardBorder,
+                color: colors.textPrimary,
+                fontWeight: '700',
+                letterSpacing: 0.6,
+              },
+            ]}
+            value={inviteCode}
+            onChangeText={(txt) => setInviteCode(txt.toUpperCase())}
+            placeholder="e.g. GEU2026 (optional if uploading ID)"
+            placeholderTextColor={colors.textTertiary}
+            autoCapitalize="characters"
+            maxLength={24}
+          />
+        </View>
+      )}
+
       {/* ACADEMIC RECORD BOX */}
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
         <View style={styles.cardHeaderRow}>
@@ -613,46 +672,30 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
           </View>
         ) : (
           <View style={{ gap: 12 }}>
-            {/* Campus Selector Pills */}
+            {/* Searchable Uttarakhand College Catalog Picker */}
             {colleges.length > 0 && (
               <View>
-                <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 6 }]}>
-                  Your Campus *
+                <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 4 }]}>
+                  Uttarakhand College / Campus *
                 </Text>
-                <View style={styles.collegeChipsRow}>
-                  {colleges.map((c) => {
-                    const active = selectedCollegeId === c.id;
-                    return (
-                      <TouchableOpacity
-                        key={c.id}
-                        style={[
-                          styles.collegeChip,
-                          {
-                            backgroundColor: active
-                              ? isDark
-                                ? 'rgba(0, 112, 243, 0.22)'
-                                : '#dbeafe'
-                              : colors.surfaceLight,
-                            borderColor: active ? colors.primary : colors.cardBorder,
-                          },
-                        ]}
-                        onPress={() => {
-                          setSelectedCollegeId(c.id);
-                          setCollegeName(c.name);
-                        }}
-                      >
-                        <Text
-                          style={[
-                            styles.collegeChipText,
-                            { color: active ? colors.primary : colors.textPrimary },
-                          ]}
-                        >
-                          {c.short_name} · {c.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                <Text style={[styles.inputSubtext, { color: colors.textMuted }]}>
+                  Search all Dehradun, Haldwani & Uttarakhand colleges (auto-locked if using an invite code).
+                </Text>
+                <TouchableOpacity
+                  style={[styles.selectorBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                  onPress={() => setCollegeModalVisible(true)}
+                  activeOpacity={0.8}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.selectorBtnValue, { color: colors.textPrimary }]} numberOfLines={1}>
+                      {colleges.find((c) => c.id === selectedCollegeId)?.name || collegeName}
+                    </Text>
+                    <Text style={[styles.selectorBtnSub, { color: colors.textMuted }]}>
+                      {colleges.find((c) => c.id === selectedCollegeId)?.short_name || 'Tap to search Uttarakhand catalog'}
+                    </Text>
+                  </View>
+                  <ChevronDown size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
               </View>
             )}
 
@@ -799,21 +842,117 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
           </View>
         </View>
 
-        {/* 3. Optional Phone Number */}
+        {/* 3. Mandatory Contact Email (Verify Now or Verify Later) */}
         <View style={styles.inputGroup}>
-          <Text style={[styles.inputLabel, { color: colors.textPrimary }]}>Mobile Phone Number (Optional)</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 0 }]}>
+              Contact Email {inviteCode.trim() || isIdPending || isInviteVerified || isPlaceholderEmail ? '*' : ''}
+            </Text>
+            {emailVerified ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Check size={13} color={colors.success} />
+                <Text style={{ color: colors.success, fontSize: 11.5, fontWeight: '700' }}>Verified</Text>
+              </View>
+            ) : (
+              <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: '600' }}>Verify now or later</Text>
+            )}
+          </View>
           <Text style={[styles.inputSubtext, { color: colors.textMuted }]}>
-            Used for official campus notices & WhatsApp alerts (never shown publicly).
+            Required point of contact for Invite Code & ID Card accounts (never shown publicly).
           </Text>
-          <TextInput
-            style={[styles.textInput, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder, color: colors.textPrimary }]}
-            value={phoneNumber}
-            onChangeText={setPhoneNumber}
-            placeholder="e.g. 9876543210"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="phone-pad"
-            maxLength={15}
-          />
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <View
+              style={[
+                styles.usernameRow,
+                {
+                  flex: 1,
+                  backgroundColor: colors.surfaceLight,
+                  borderColor: colors.cardBorder,
+                  paddingHorizontal: 10,
+                },
+              ]}
+            >
+              <Mail size={15} color={colors.textMuted} style={{ marginRight: 6 }} />
+              <TextInput
+                style={[styles.usernameInput, { color: colors.textPrimary }]}
+                value={contactEmail}
+                onChangeText={(txt) => {
+                  setContactEmail(txt.trim());
+                  if (emailVerified && txt.trim().toLowerCase() !== (currentUser.email || '').toLowerCase()) {
+                    setEmailVerified(false);
+                  }
+                }}
+                editable={!emailVerified}
+                placeholder="you@gmail.com"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+            {!emailVerified && (
+              <TouchableOpacity
+                style={[
+                  styles.msTokenConfirmBtn,
+                  {
+                    backgroundColor: colors.primary,
+                    paddingHorizontal: 12,
+                    paddingVertical: 11,
+                    borderRadius: 10,
+                  },
+                ]}
+                onPress={handleSendContactEmailOtp}
+                disabled={emailActionLoading}
+              >
+                {emailActionLoading ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={{ color: colors.onPrimary, fontSize: 12, fontWeight: '700' }}>
+                    {emailOtpSent ? 'Resend' : 'Verify Now'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {!emailVerified && emailOtpSent && (
+            <View style={{ marginTop: 8, gap: 8 }}>
+              {emailDevCode && (
+                <Text style={{ color: colors.primary, fontSize: 11.5, fontWeight: '700' }}>
+                  Dev OTP: {emailDevCode}
+                </Text>
+              )}
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    {
+                      flex: 1,
+                      backgroundColor: colors.surfaceLight,
+                      borderColor: colors.cardBorder,
+                      color: colors.textPrimary,
+                    },
+                  ]}
+                  value={emailOtpCode}
+                  onChangeText={(t) => setEmailOtpCode(t.replace(/[^0-9]/g, ''))}
+                  placeholder="Enter 6-digit OTP"
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.msTokenConfirmBtn,
+                    { backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 10 },
+                  ]}
+                  onPress={handleVerifyContactEmailOtp}
+                  disabled={emailActionLoading}
+                >
+                  <Text style={{ color: colors.onPrimary, fontSize: 12, fontWeight: '700' }}>Confirm</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* 4. Campus Bio */}
@@ -881,114 +1020,6 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
           </View>
         </View>
 
-        {/* Optional Instant Campus Unlock / Microsoft Link */}
-        {!isGreenVerified && (
-          <View
-            style={[
-              styles.upgradeBox,
-              {
-                backgroundColor: isDark ? '#141516' : '#f8fafc',
-                borderColor: colors.cardBorder,
-              },
-            ]}
-          >
-            <View style={styles.upgradeHeaderRow}>
-              <Ticket size={15} color={colors.primary} />
-              <Text style={[styles.upgradeTitle, { color: colors.textPrimary }]}>
-                {isInviteVerified
-                  ? 'Upgrade to Official Green ID Badge (Optional)'
-                  : 'Unlock Campus Posting Now (Optional)'}
-              </Text>
-            </View>
-            <Text style={[styles.upgradeSub, { color: colors.textMuted }]}>
-              {isInviteVerified
-                ? 'Your invite code already unlocks posting! Link your @geu.ac.in Microsoft account anytime for the Official Green Badge.'
-                : 'Have a batch/classmate invite code or @geu.ac.in Microsoft ID? Enter it below—otherwise you can enter right away in Read-Only mode.'}
-            </Text>
-
-            {!isInviteVerified && (
-              <TextInput
-                style={[
-                  styles.textInput,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.cardBorder,
-                    color: colors.textPrimary,
-                    marginBottom: 10,
-                    fontWeight: '700',
-                    letterSpacing: 0.6,
-                  },
-                ]}
-                value={inviteCode}
-                onChangeText={(txt) => setInviteCode(txt.toUpperCase())}
-                placeholder="Batch Invite Code e.g. GEU2026 (optional)"
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="characters"
-                maxLength={24}
-              />
-            )}
-
-            <TouchableOpacity
-              style={[
-                styles.msLinkBtn,
-                {
-                  backgroundColor: isDark ? 'rgba(0, 112, 243, 0.14)' : '#eff6ff',
-                  borderColor: 'rgba(0, 112, 243, 0.35)',
-                },
-              ]}
-              onPress={handleLinkMsBrowser}
-              disabled={linkingMs}
-              activeOpacity={0.8}
-            >
-              <Link2 size={14} color={colors.primary} />
-              <Text style={[styles.msLinkBtnText, { color: colors.primary }]}>
-                Link @geu.ac.in / @gehu.ac.in Microsoft ID
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setShowMsLinkToken((prev) => !prev)}
-              style={{ alignSelf: 'flex-start', marginTop: 8 }}
-            >
-              <Text style={[styles.msTokenToggleText, { color: colors.textSecondary }]}>
-                {showMsLinkToken ? 'Hide manual token input' : 'Have a Microsoft ID token? Paste manually'}
-              </Text>
-            </TouchableOpacity>
-
-            {showMsLinkToken && (
-              <View style={styles.msTokenBox}>
-                <TextInput
-                  style={[
-                    styles.textInput,
-                    {
-                      flex: 1,
-                      backgroundColor: colors.surface,
-                      borderColor: colors.cardBorder,
-                      color: colors.textPrimary,
-                    },
-                  ]}
-                  value={msLinkToken}
-                  onChangeText={setMsLinkToken}
-                  placeholder="Paste Microsoft id_token or access_token"
-                  placeholderTextColor={colors.textMuted}
-                  autoCapitalize="none"
-                />
-                <TouchableOpacity
-                  style={[styles.msTokenConfirmBtn, { backgroundColor: colors.primary }]}
-                  onPress={handleLinkMsToken}
-                  disabled={linkingMs}
-                >
-                  {linkingMs ? (
-                    <ActivityIndicator size="small" color={colors.onPrimary} />
-                  ) : (
-                    <Text style={[styles.msTokenConfirmBtnText, { color: colors.onPrimary }]}>Link</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
-
         {/* Finish Button */}
         <TouchableOpacity
           style={[styles.submitBtn, { backgroundColor: colors.primary, shadowColor: 'transparent' }]}
@@ -1006,6 +1037,21 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
           )}
         </TouchableOpacity>
       </View>
+
+      {/* ========================================================= */}
+      {/* UTTARAKHAND COLLEGE CATALOG PICKER                        */}
+      {/* ========================================================= */}
+      <CollegePickerModal
+        visible={collegeModalVisible}
+        colleges={colleges}
+        selectedCollegeId={selectedCollegeId}
+        title="Select Uttarakhand College"
+        onSelect={(c) => {
+          setSelectedCollegeId(c.id);
+          setCollegeName(c.name);
+        }}
+        onClose={() => setCollegeModalVisible(false)}
+      />
 
       {/* ========================================================= */}
       {/* COURSE SELECTOR MODAL                                     */}

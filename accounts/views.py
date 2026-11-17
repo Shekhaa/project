@@ -158,6 +158,82 @@ class VerifyEmailOTPView(APIView):
         }, status=status.HTTP_200_OK)
 
 
+def _is_placeholder_email(email: str) -> bool:
+    e = (email or "").strip().lower()
+    return (
+        not e
+        or "@" not in e
+        or e.endswith(".local")
+        or e.startswith("student_")
+    )
+
+
+class BindEmailOTPView(APIView):
+    """
+    POST /api/authentication/email/bind/
+    Allows an authenticated student (e.g., ID Card signup or unverified contact email) to:
+    - action='save_unverified' -> Save mandatory contact email now & verify later
+    - action='send'            -> Send 6-digit OTP to verify email now
+    - action='verify'          -> Verify 6-digit OTP and mark user.is_email_verified=True
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        action = str(request.data.get("action", "send")).strip().lower()
+        email = str(request.data.get("email", "") or request.user.email or "").strip().lower()
+        otp_code = str(request.data.get("otp", "")).strip()
+
+        if not email or "@" not in email or "." not in email.split("@")[-1] or _is_placeholder_email(email):
+            return Response({"error": "Please enter a valid email address."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(email__iexact=email).exclude(id=request.user.id).exists():
+            return Response(
+                {"error": "This email is already linked to another Campus Connect account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = request.user
+        if action == "save_unverified":
+            changed = []
+            if user.email.lower() != email:
+                user.email = email
+                user.is_email_verified = False
+                changed.extend(["email", "is_email_verified"])
+            if changed:
+                user.save(update_fields=changed)
+            return Response({
+                "message": "Email saved. You can verify it anytime from your Profile.",
+                "user": _build_user_auth_payload(request, user),
+            }, status=status.HTTP_200_OK)
+
+        if action == "send":
+            success, msg, otp_record = OTPService.send_email_otp(email, purpose="EMAIL_BIND", return_record=True)
+            if not success:
+                return Response({"error": msg}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+            resp = {"message": msg, "email": email, "is_real_email": getattr(otp_record, "real_email_sent", False)}
+            if settings.DEBUG:
+                resp["dev_otp"] = otp_record.otp
+            return Response(resp, status=status.HTTP_200_OK)
+
+        if action == "verify":
+            if not otp_code:
+                return Response({"error": "Please enter the 6-digit OTP code."}, status=status.HTTP_400_BAD_REQUEST)
+            is_valid, err = OTPService.verify_otp(email, otp_code, purpose="EMAIL_BIND")
+            if not is_valid:
+                return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
+            user.email = email
+            user.is_email_verified = True
+            user.save(update_fields=["email", "is_email_verified"])
+            user.check_and_update_student_status()
+            user.refresh_from_db()
+            return Response({
+                "message": "Email verified and linked to your account!",
+                "user": _build_user_auth_payload(request, user),
+            }, status=status.HTTP_200_OK)
+
+        return Response({"error": "Invalid action. Use 'send', 'verify', or 'save_unverified'."}, status=status.HTTP_400_BAD_REQUEST)
+
+
 class SendPhoneOTPView(APIView):
     """
     POST /api/authentication/phone/send-otp/
@@ -826,6 +902,23 @@ class RedeemInviteCodeView(APIView):
             return Response({"error": "Please enter a campus invite code."}, status=status.HTTP_400_BAD_REQUEST)
 
         user = request.user
+        supplied_email = str(request.data.get("email", "") or "").strip().lower()
+        if supplied_email:
+            if "@" not in supplied_email or "." not in supplied_email.split("@")[-1] or _is_placeholder_email(supplied_email):
+                return Response({"error": "Please enter a valid contact email address."}, status=status.HTTP_400_BAD_REQUEST)
+            if User.objects.filter(email__iexact=supplied_email).exclude(id=user.id).exists():
+                return Response({"error": "This email is already registered to another account."}, status=status.HTTP_400_BAD_REQUEST)
+            if user.email.lower() != supplied_email:
+                user.email = supplied_email
+                user.is_email_verified = False
+                user.save(update_fields=["email", "is_email_verified"])
+
+        if _is_placeholder_email(user.email):
+            return Response(
+                {"error": "A valid email address is required before redeeming a Campus Invite Code."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         existing_profile = getattr(user, "profile", None)
         if existing_profile and existing_profile.is_flagged_fake:
             return Response(
@@ -1469,10 +1562,14 @@ class IDCardLoginView(APIView):
         img_hash = scan_res.get("image_hash", "")
         manual_name = str(request.data.get("full_name", "") or "").strip()
         manual_roll = str(request.data.get("admission_number", "") or "").strip()
+        manual_email = str(request.data.get("email", "") or "").strip().lower()
+        if manual_email and ("@" not in manual_email or "." not in manual_email.split("@")[-1] or _is_placeholder_email(manual_email)):
+            return Response({"error": "Please enter a valid contact email address."}, status=status.HTTP_400_BAD_REQUEST)
         full_name = ext.get("full_name") or manual_name or "Student (ID Pending)"
         admission_num = ext.get("admission_number") or manual_roll or f"PENDING-{img_hash[:8].upper()}"
         safe_roll = re.sub(r"[^A-Za-z0-9]", "", admission_num).lower() or img_hash[:8]
         placeholder_email = f"{safe_roll}@idreview.campusconnect.local"
+        target_email = manual_email or placeholder_email
 
         # Check if same photo or roll already exists on an account
         existing_profile = None
@@ -1487,10 +1584,15 @@ class IDCardLoginView(APIView):
             profile = existing_profile
             clean_user = profile.username
         else:
-            user = User.objects.filter(email__iexact=placeholder_email).first()
+            if manual_email and User.objects.filter(email__iexact=manual_email).exists():
+                return Response(
+                    {"error": "An account with this email already exists. Please log in with Email OTP or password first, then upload your ID card."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            user = User.objects.filter(email__iexact=target_email).first()
             if not user:
                 user = User.objects.create(
-                    email=placeholder_email,
+                    email=target_email,
                     full_name=full_name,
                     is_email_verified=False,
                     is_phone_verified=False,

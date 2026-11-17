@@ -5,6 +5,7 @@ export interface CompleteProfilePayload {
   username: string;
   gender: string;
   show_gender?: boolean;
+  contact_email?: string;
   phone_number?: string;
   college?: number;
   course?: number;

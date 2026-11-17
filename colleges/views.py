@@ -15,6 +15,7 @@ class CollegeListView(generics.ListAPIView):
     queryset = College.objects.filter(is_active=True)
     serializer_class = CollegeSerializer
     permission_classes = [AllowAny]
+    pagination_class = None
 
 
 class CourseListView(generics.ListAPIView):

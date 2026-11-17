@@ -3,6 +3,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     SendEmailOTPView,
     VerifyEmailOTPView,
+    BindEmailOTPView,
     MagicLoginView,
     MicrosoftSSOView,
     LinkMicrosoftSSOView,
@@ -33,6 +34,7 @@ urlpatterns = [
     # Primary Email OTP & Magic Link Authentication
     path("email/send-otp/", SendEmailOTPView.as_view(), name="auth-email-send-otp"),
     path("email/verify-otp/", VerifyEmailOTPView.as_view(), name="auth-email-verify-otp"),
+    path("email/bind/", BindEmailOTPView.as_view(), name="auth-email-bind"),
     path("email/magic-login/", MagicLoginView.as_view(), name="auth-email-magic-login"),
 
     # Campus Invite Code Verification & Generation

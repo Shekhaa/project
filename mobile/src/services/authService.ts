@@ -41,6 +41,7 @@ export interface User {
   phone_number?: string | null;
   avatar?: string | null;
   profile_picture?: string | null;
+  is_email_verified?: boolean;
   is_verified_student: boolean;
   profile_completed: boolean;
   verification_tier?: 'FULLY_VERIFIED' | 'INVITE_VERIFIED' | 'SEMI_VERIFIED' | 'UNVERIFIED';
@@ -125,8 +126,27 @@ export const authService = {
   },
 
   // Redeem Campus Invite Code to unlock full posting/confessing/chatting
-  async redeemInviteCode(code: string) {
-    const res = await api.post('/authentication/invite/redeem/', { code: code.trim().toUpperCase() });
+  async redeemInviteCode(code: string, email?: string) {
+    const payload: Record<string, any> = { code: code.trim().toUpperCase() };
+    if (email && email.trim()) payload.email = email.trim().toLowerCase();
+    const res = await api.post('/authentication/invite/redeem/', payload);
+    if (res.data?.user) {
+      await this.updateCurrentUser(res.data.user);
+    }
+    return res.data;
+  },
+
+  // Save or verify contact email for authenticated user (Verify Now / Verify Later)
+  async bindContactEmail(
+    action: 'send' | 'verify' | 'save_unverified',
+    email: string,
+    otp?: string
+  ) {
+    const res = await api.post('/authentication/email/bind/', {
+      action,
+      email: email.trim().toLowerCase(),
+      otp: otp?.trim(),
+    });
     if (res.data?.user) {
       await this.updateCurrentUser(res.data.user);
     }
@@ -204,9 +224,16 @@ export const authService = {
     return res.data;
   },
 
-  // Spotify-Style College ID Card Photo OCR Instant Onboarding & Login
-  async loginWithIDCard(imageBase64: string, password?: string) {
-    const res = await api.post('/authentication/id-card-login/', { image_base64: imageBase64, password });
+  // College ID Card Photo Upload Onboarding & Login
+  async loginWithIDCard(
+    imageBase64: string,
+    options?: string | { password?: string; college_id?: number; email?: string; full_name?: string; admission_number?: string }
+  ) {
+    const extra = typeof options === 'string' ? { password: options } : (options || {});
+    const res = await api.post('/authentication/id-card-login/', {
+      image_base64: imageBase64,
+      ...extra,
+    });
     await this.saveSession(res.data.access, res.data.refresh, res.data.user);
     return res.data;
   },

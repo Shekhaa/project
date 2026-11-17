@@ -146,6 +146,31 @@ class CompleteProfileView(APIView):
             user.full_name = str(full_name).strip()
             user_fields_to_update.append("full_name")
 
+        contact_email = str(data.get("contact_email") or data.get("email") or "").strip().lower()
+        if contact_email:
+            is_placeholder = contact_email.endswith(".local") or contact_email.startswith("student_")
+            if "@" not in contact_email or "." not in contact_email.split("@")[-1] or is_placeholder:
+                return Response({"error": "Please provide a valid email address."}, status=status.HTTP_400_BAD_REQUEST)
+            if User.objects.filter(email__iexact=contact_email).exclude(id=user.id).exists():
+                return Response(
+                    {"error": "This email is already registered to another Campus Connect account."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if user.email.lower() != contact_email:
+                user.email = contact_email
+                user.is_email_verified = False
+                user_fields_to_update.extend(["email", "is_email_verified"])
+
+        # Mandatory real contact email for Invite Code & ID Card accounts
+        effective_email = (contact_email or user.email or "").strip().lower()
+        if verification_method in ("INVITE_CODE", "ID_CARD_OCR") and (
+            not effective_email or "@" not in effective_email or effective_email.endswith(".local") or effective_email.startswith("student_")
+        ):
+            return Response(
+                {"error": "A valid email address is mandatory for Invite Code and ID Card accounts (you can verify now or later)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         phone_number = data.get("phone_number")
         if phone_number:
             clean_phone = "".join(filter(str.isdigit, str(phone_number)))[-10:]
