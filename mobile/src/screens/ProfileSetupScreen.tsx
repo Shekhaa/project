@@ -156,12 +156,24 @@ const AVAILABLE_COURSES = [
   {
     name: 'B.Pharma',
     duration: '4 Years',
-    branches: ['Pharmaceutical Sciences'],
+    branches: [
+      'Pharmaceutics & Drug Delivery',
+      'Pharmacology & Toxicology',
+      'Pharmaceutical Chemistry',
+      'Pharmacognosy & Natural Products',
+      'Clinical & Hospital Pharmacy',
+      'Pharmacy Practice Core',
+    ],
   },
   {
     name: 'D.Pharma',
     duration: '2 Years',
-    branches: ['Pharmacy Practice'],
+    branches: [
+      'Hospital & Clinical Pharmacy',
+      'Community Pharmacy Practice',
+      'Pharmaceutical Science & Dispensing',
+      'Pharmacy Practice Core',
+    ],
   },
   {
     name: 'MBA',

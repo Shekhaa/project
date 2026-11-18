@@ -199,6 +199,20 @@ def seed():
         ("Criminal & Constitutional Law", "LAW_CRIM"),
         ("General Legal Studies", "LAW_GEN"),
     ]
+    bpharm_branches = [
+        ("Pharmaceutics & Drug Delivery", "BPHARM_CEUT"),
+        ("Pharmacology & Toxicology", "BPHARM_COL"),
+        ("Pharmaceutical Chemistry", "BPHARM_CHEM"),
+        ("Pharmacognosy & Natural Products", "BPHARM_COG"),
+        ("Clinical & Hospital Pharmacy", "BPHARM_CLIN"),
+        ("Pharmacy Practice Core", "BPHARM_CORE"),
+    ]
+    dpharm_branches = [
+        ("Hospital & Clinical Pharmacy", "DPHARM_HOSP"),
+        ("Community Pharmacy Practice", "DPHARM_COMM"),
+        ("Pharmaceutical Science & Dispensing", "DPHARM_DISP"),
+        ("Pharmacy Practice Core", "DPHARM_CORE"),
+    ]
 
     for course in all_courses:
         if course.name == "B.Tech":
@@ -215,6 +229,12 @@ def seed():
                 Branch.objects.get_or_create(course=course, name=b_name, defaults={"code": b_code})
         elif course.name == "GNM":
             for b_name, b_code in gnm_branches:
+                Branch.objects.get_or_create(course=course, name=b_name, defaults={"code": b_code})
+        elif course.name == "B.Pharma":
+            for b_name, b_code in bpharm_branches:
+                Branch.objects.get_or_create(course=course, name=b_name, defaults={"code": b_code})
+        elif course.name == "D.Pharma":
+            for b_name, b_code in dpharm_branches:
                 Branch.objects.get_or_create(course=course, name=b_name, defaults={"code": b_code})
         elif "LLB" in course.name:
             for b_name, b_code in llb_branches:
@@ -245,22 +265,56 @@ def seed():
     # Note: Only 2 default communities (College & Course) are created by default.
     # All student clubs / societies are custom communities created by students with invite links.
 
-    # 6. Admin User
-    admin_user, admin_created = User.objects.get_or_create(
+    # 6. Admin User & Superusers (Guaranteed Credentials for Render Admin & ID Approvals)
+    admin_user, _ = User.objects.get_or_create(
         email="admin@campusconnect.local",
         defaults={
             "full_name": "Campus Admin",
             "is_staff": True,
             "is_superuser": True,
+            "is_active": True,
             "is_email_verified": True,
             "is_phone_verified": True,
             "is_verified_student": True,
         }
     )
-    if admin_created:
-        admin_user.set_password("admin123")
-        admin_user.save()
-        print(" -> Created Admin Superuser: admin@campusconnect.local / admin123")
+    admin_user.is_staff = True
+    admin_user.is_superuser = True
+    admin_user.is_active = True
+    admin_user.is_email_verified = True
+    admin_user.is_verified_student = True
+    admin_user.set_password("CampusConnect@2026")
+    admin_user.save()
+
+    # Also guarantee founder superuser accounts
+    for super_email, super_name in [
+        ("founder@campusconnect.in", "Founder Admin"),
+        ("ranashekher857@gmail.com", "Shekher Rana (Founder)"),
+    ]:
+        su, _ = User.objects.get_or_create(
+            email=super_email,
+            defaults={
+                "full_name": super_name,
+                "is_staff": True,
+                "is_superuser": True,
+                "is_active": True,
+                "is_email_verified": True,
+                "is_phone_verified": True,
+                "is_verified_student": True,
+            }
+        )
+        su.is_staff = True
+        su.is_superuser = True
+        su.is_active = True
+        su.is_email_verified = True
+        su.is_verified_student = True
+        su.set_password("CampusConnect@2026")
+        su.save()
+
+    print(" -> Guaranteed Active Superusers in Django Admin:")
+    print("    1) admin@campusconnect.local   (Password: CampusConnect@2026)")
+    print("    2) founder@campusconnect.in   (Password: CampusConnect@2026)")
+    print("    3) ranashekher857@gmail.com   (Password: CampusConnect@2026)")
 
     admin_course = Course.objects.filter(college=geu, name="B.Tech").first()
     admin_branch = Branch.objects.filter(course=admin_course, code="CSE").first() if admin_course else None
