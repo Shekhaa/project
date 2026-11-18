@@ -265,59 +265,69 @@ class VerificationGateAndAuthFlowsTests(TestCase):
 
     def test_gmail_otp_signup_starts_read_only_and_is_blocked_from_writing(self):
         anon = APIClient()
-        send_res = anon.post("/api/authentication/email/send-otp/", {"email": "rohit.geu@gmail.com"}, format="json")
-        self.assertEqual(send_res.status_code, status.HTTP_200_OK)
-        self.assertTrue(send_res.data["is_personal_email"])
-        otp = send_res.data["dev_otp"]
+        # 1. Personal Gmail sign-up is STRICTLY BLOCKED on /send-otp/ and /verify-otp/
+        blocked_send = anon.post("/api/authentication/email/send-otp/", {"email": "rohit.geu@gmail.com"}, format="json")
+        self.assertEqual(blocked_send.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(blocked_send.data.get("code"), "INSTITUTIONAL_EMAIL_REQUIRED")
 
-        verify_res = anon.post(
+        blocked_verify = anon.post(
             "/api/authentication/email/verify-otp/",
-            {"email": "rohit.geu@gmail.com", "otp": otp},
+            {"email": "rohit.geu@gmail.com", "otp": "123456"},
             format="json",
         )
-        self.assertEqual(verify_res.status_code, status.HTTP_200_OK)
-        self.assertFalse(verify_res.data["user"]["can_participate"])
-        self.assertEqual(verify_res.data["user"]["verification_tier"], "UNVERIFIED")
+        self.assertEqual(blocked_verify.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(blocked_verify.data.get("code"), "INSTITUTIONAL_EMAIL_REQUIRED")
 
-        gmail_client = APIClient()
-        gmail_client.credentials(HTTP_AUTHORIZATION=f"Bearer {verify_res.data['access']}")
-
-        # Onboarding without roll number or invite code leaves user in read-only UNVERIFIED
-        comp_res = gmail_client.post(
-            "/api/profile/complete/",
-            {
-                "full_name": "Rohit Kumar",
-                "username": "rohit_k",
-                "college": self.geu.id,
-                "course": self.course.id,
-                "branch": self.branch.id,
-                "academic_year": self.year.id,
-                "bio": "Joining GEU!",
-                "gender": "Male",
-            },
+        # 2. Institutional college email OTP works cleanly
+        inst_send = anon.post("/api/authentication/email/send-otp/", {"email": "24109911@geu.ac.in"}, format="json")
+        self.assertEqual(inst_send.status_code, status.HTTP_200_OK)
+        self.assertFalse(inst_send.data["is_personal_email"])
+        inst_verify = anon.post(
+            "/api/authentication/email/verify-otp/",
+            {"email": "24109911@geu.ac.in", "otp": inst_send.data["dev_otp"]},
             format="json",
         )
-        self.assertEqual(comp_res.status_code, status.HTTP_201_CREATED)
-        self.assertFalse(comp_res.data["user"]["can_participate"])
-        self.assertEqual(comp_res.data["user"]["verification_tier"], "UNVERIFIED")
+        self.assertEqual(inst_verify.status_code, status.HTTP_200_OK)
+        self.assertTrue(inst_verify.data["user"]["can_participate"])
 
-        # All mutating write actions return 403 CAMPUS_VERIFICATION_REQUIRED
+        # 3. Any pending/unverified user (e.g. pending ID review) remains strictly blocked from mutating writes
+        pending_user = User.objects.create_user(
+            email="pending.student@gmail.com",
+            password="password123",
+            full_name="Pending Student",
+            is_email_verified=False,
+        )
+        StudentProfile.objects.create(
+            user=pending_user,
+            username="pending_s",
+            college=self.geu,
+            course=self.course,
+            branch=self.branch,
+            academic_year=self.year,
+            verification_method="ID_CARD_OCR",
+            id_card_verified=False,
+            verified=False,
+            profile_completed=True,
+        )
+        pending_client = APIClient()
+        pending_client.force_authenticate(user=pending_user)
+
         write_checks = [
-            gmail_client.post("/api/posts/create/", {"content": "Hello", "visibility": "GLOBAL"}, format="json"),
-            gmail_client.post(f"/api/posts/{self.public_post.id}/like/", {}, format="json"),
-            gmail_client.post(f"/api/posts/{self.public_post.id}/comments/", {"text": "Nice!"}, format="json"),
-            gmail_client.post(
+            pending_client.post("/api/posts/create/", {"content": "Hello", "visibility": "GLOBAL"}, format="json"),
+            pending_client.post(f"/api/posts/{self.public_post.id}/like/", {}, format="json"),
+            pending_client.post(f"/api/posts/{self.public_post.id}/comments/", {"text": "Nice!"}, format="json"),
+            pending_client.post(
                 f"/api/communities/{self.community.slug}/discussions/",
                 {"title": "Test", "content": "Blocked", "discussion_type": "QUESTION"},
                 format="json",
             ),
-            gmail_client.post(
+            pending_client.post(
                 f"/api/communities/{self.community.slug}/discussions/{self.discussion.id}/replies/",
                 {"content": "Blocked reply"},
                 format="json",
             ),
-            gmail_client.post(f"/api/chat/start/{self.verified_peer.id}/", {}, format="json"),
-            gmail_client.post(
+            pending_client.post(f"/api/chat/start/{self.verified_peer.id}/", {}, format="json"),
+            pending_client.post(
                 "/api/lost-found/create/",
                 {"item_type": "LOST", "description": "Bottle", "location": "Library"},
                 format="json",

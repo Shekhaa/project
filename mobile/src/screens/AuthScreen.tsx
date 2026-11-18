@@ -82,21 +82,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
   const [forgotError, setForgotError] = useState('');
 
   // ==========================================
-  // 2. MICROSOFT SSO, EMAIL OTP & ONBOARDING STATE
+  // 2. MICROSOFT SSO & ID CARD VERIFICATION STATE
   // ==========================================
   const [ssoTokenModal, setSsoTokenModal] = useState(false);
   const [manualTokenInput, setManualTokenInput] = useState('');
   const [ssoLoading, setSsoLoading] = useState(false);
   const [ssoError, setSsoError] = useState<string | null>(null);
-
-  // Email / Gmail 6-digit OTP State
-  const [emailOtpInput, setEmailOtpInput] = useState('');
-  const [emailOtpCode, setEmailOtpCode] = useState('');
-  const [emailOtpStep, setEmailOtpStep] = useState<'EMAIL' | 'OTP'>('EMAIL');
-  const [emailOtpLoading, setEmailOtpLoading] = useState(false);
-  const [emailOtpError, setEmailOtpError] = useState<string | null>(null);
-  const [emailOtpInfo, setEmailOtpInfo] = useState<string | null>(null);
-  const [emailOtpDevCode, setEmailOtpDevCode] = useState<string | null>(null);
 
   // ID Card Scan State + Uttarakhand College Catalog
   const [idScanLoading, setIdScanLoading] = useState(false);
@@ -188,59 +179,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
       setLoginError(errMsg);
     } finally {
       setLoginLoading(false);
-    }
-  };
-
-  // ==========================================
-  // EMAIL / GMAIL 6-DIGIT OTP ACTION
-  // ==========================================
-  const handleSendEmailOtp = async () => {
-    const cleanEmail = emailOtpInput.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      setEmailOtpError('Please enter a valid @gmail.com or college email address.');
-      return;
-    }
-    setEmailOtpLoading(true);
-    setEmailOtpError(null);
-    setEmailOtpInfo(null);
-    setEmailOtpDevCode(null);
-    try {
-      const res = await authService.sendEmailOTP(cleanEmail);
-      setEmailOtpStep('OTP');
-      setEmailOtpInfo(res.message || `6-digit verification code sent to ${cleanEmail}`);
-      if (res.dev_otp) {
-        setEmailOtpDevCode(String(res.dev_otp));
-      }
-    } catch (err: any) {
-      const errMsg =
-        err?.response?.data?.error ||
-        err?.response?.data?.email?.[0] ||
-        err?.message ||
-        'Could not send OTP. Check email address and try again.';
-      setEmailOtpError(String(errMsg));
-    } finally {
-      setEmailOtpLoading(false);
-    }
-  };
-
-  const handleVerifyEmailOtp = async () => {
-    const cleanEmail = emailOtpInput.trim().toLowerCase();
-    const cleanCode = emailOtpCode.trim();
-    if (!cleanCode || cleanCode.length < 4) {
-      setEmailOtpError('Enter the 6-digit OTP code sent to your inbox.');
-      return;
-    }
-    setEmailOtpLoading(true);
-    setEmailOtpError(null);
-    try {
-      const res = await authService.verifyEmailOTP(cleanEmail, cleanCode);
-      onLoginSuccess(res.user);
-    } catch (err: any) {
-      const errMsg =
-        err?.response?.data?.error || err?.message || 'Invalid or expired verification code.';
-      setEmailOtpError(String(errMsg));
-    } finally {
-      setEmailOtpLoading(false);
     }
   };
 
@@ -835,220 +773,77 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
             </View>
           ) : (
             /* ========================================================= */
-            /* TAB 2: SIMPLE NEW STUDENT SIGN IN & VERIFICATION          */
+            /* TAB 2: CAMPUS-VERIFIED SIGN IN (COLLEGE ID OR ID CARD)    */
             /* ========================================================= */
             <View>
-              {/* #1 PRIMARY: SIMPLE EMAIL / GMAIL 6-DIGIT OTP */}
+              {/* #1 PRIMARY GATE: OFFICIAL COLLEGE ID (MICROSOFT ENTRA SSO) */}
               <View style={[styles.ssoCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
                 <View style={styles.ssoCardHeader}>
                   <View style={styles.badgeRow}>
-                    <View style={styles.emailOtpBadge}>
-                      <Mail size={12} color={colors.primary} />
-                      <Text style={[styles.emailOtpBadgeText, { color: colors.primary }]}>FASTEST SIGN IN</Text>
+                    <View style={styles.verifiedGreenBadge}>
+                      <ShieldCheck size={12} color="#22c55e" />
+                      <Text style={styles.verifiedGreenBadgeText}>OFFICIAL COLLEGE ID</Text>
                     </View>
-                    <Text style={[styles.zeroOtpLabel, { color: colors.textMuted }]}>6-Digit OTP</Text>
+                    <Text style={[styles.zeroOtpLabel, { color: colors.textMuted }]}>Instant Verification</Text>
                   </View>
 
                   <Text style={[styles.ssoTitle, { color: colors.textPrimary }]}>
-                    Continue with Email
+                    Sign in with College Microsoft ID
                   </Text>
                   <Text style={[styles.ssoDesc, { color: colors.textSecondary }]}>
-                    Enter your Gmail or college email. Enter your Campus Invite Code on the next step for instant posting across your Uttarakhand campus.
+                    Use your official university Outlook account (@geu.ac.in / @gehu.ac.in). Instant verified badge & auto roll number — add your personal Gmail next for contact.
                   </Text>
                 </View>
 
-                {emailOtpError && (
-                  <View style={styles.errorAlertBox}>
+                {ssoError && (
+                  <View style={[styles.errorAlertBox, { marginBottom: 10 }]}>
                     <AlertCircle size={16} color="#ef4444" />
-                    <Text style={styles.errorAlertText}>{emailOtpError}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.errorAlertText}>{ssoError}</Text>
+                      <TouchableOpacity onPress={() => setSsoTokenModal(true)} style={{ marginTop: 4 }}>
+                        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
+                          Paste Entra token instead
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 )}
 
-                {emailOtpStep === 'EMAIL' ? (
-                  <View>
-                    <View
-                      style={[
-                        styles.inputFieldRow,
-                        { backgroundColor: colors.surface, borderColor: colors.cardBorder, marginBottom: 10 },
-                      ]}
-                    >
-                      <Mail size={16} color={colors.textSecondary} />
-                      <TextInput
-                        style={[styles.fieldTextInput, { color: colors.textPrimary }]}
-                        placeholder="you@gmail.com or 2313812137@geu.ac.in"
-                        placeholderTextColor={colors.textMuted}
-                        value={emailOtpInput}
-                        onChangeText={(val) => {
-                          setEmailOtpInput(val);
-                          setEmailOtpError(null);
-                        }}
-                        autoCapitalize="none"
-                        keyboardType="email-address"
-                        onSubmitEditing={handleSendEmailOtp}
-                      />
-                    </View>
-
-                    <TouchableOpacity
-                      style={[styles.primaryActionBtn, { backgroundColor: colors.primary }]}
-                      onPress={handleSendEmailOtp}
-                      disabled={emailOtpLoading}
-                      activeOpacity={0.88}
-                    >
-                      {emailOtpLoading ? (
-                        <ActivityIndicator color={colors.onPrimary} size="small" />
-                      ) : (
-                        <View style={styles.primaryActionContent}>
-                          <Text style={[styles.primaryActionText, { color: colors.onPrimary }]}>Send Verification Code</Text>
-                          <ArrowRight size={15} color={colors.onPrimary} />
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View>
-                    {emailOtpInfo && (
-                      <View
-                        style={[
-                          styles.emailOtpInfoBox,
-                          {
-                            backgroundColor: isDark ? 'rgba(0, 112, 243, 0.12)' : 'rgba(0, 102, 204, 0.08)',
-                            borderColor: isDark ? 'rgba(41, 151, 255, 0.32)' : 'rgba(0, 102, 204, 0.25)',
-                          },
-                        ]}
-                      >
-                        <Text style={[styles.emailOtpInfoText, { color: colors.textSecondary }]}>
-                          {emailOtpInfo}
-                        </Text>
-                        {emailOtpDevCode && (
-                          <View style={styles.devOtpRow}>
-                            <Text style={[styles.devOtpLabel, { color: colors.primary }]}>
-                              Dev Code: {emailOtpDevCode}
-                            </Text>
-                            <TouchableOpacity
-                              style={[styles.devOtpFillBtn, { borderColor: colors.primary }]}
-                              onPress={() => setEmailOtpCode(emailOtpDevCode)}
-                            >
-                              <Text style={[styles.devOtpFillText, { color: colors.primary }]}>Fill Code</Text>
-                            </TouchableOpacity>
-                          </View>
-                        )}
+                <TouchableOpacity
+                  style={[styles.msButton, { backgroundColor: colors.primary }]}
+                  onPress={() => handleMicrosoftSSO()}
+                  disabled={ssoLoading}
+                  activeOpacity={0.88}
+                >
+                  {ssoLoading ? (
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
+                  ) : (
+                    <View style={styles.msButtonContent}>
+                      <View style={styles.msLogoGrid}>
+                        <View style={[styles.msLogoCell, { backgroundColor: '#F25022' }]} />
+                        <View style={[styles.msLogoCell, { backgroundColor: '#7FBA00' }]} />
+                        <View style={[styles.msLogoCell, { backgroundColor: '#00A4EF' }]} />
+                        <View style={[styles.msLogoCell, { backgroundColor: '#FFB900' }]} />
                       </View>
-                    )}
-
-                    <View
-                      style={[
-                        styles.inputFieldRow,
-                        { backgroundColor: colors.surface, borderColor: colors.cardBorder, marginBottom: 10 },
-                      ]}
-                    >
-                      <KeyRound size={16} color={colors.textSecondary} />
-                      <TextInput
-                        style={[styles.fieldTextInput, { color: colors.textPrimary }]}
-                        placeholder="Enter 6-digit OTP code"
-                        placeholderTextColor={colors.textMuted}
-                        value={emailOtpCode}
-                        onChangeText={(val) => {
-                          setEmailOtpCode(val.replace(/[^0-9]/g, ''));
-                          setEmailOtpError(null);
-                        }}
-                        keyboardType="number-pad"
-                        maxLength={6}
-                        onSubmitEditing={handleVerifyEmailOtp}
-                      />
-                    </View>
-
-                    <TouchableOpacity
-                      style={[styles.primaryActionBtn, { backgroundColor: colors.primary }]}
-                      onPress={handleVerifyEmailOtp}
-                      disabled={emailOtpLoading}
-                      activeOpacity={0.88}
-                    >
-                      {emailOtpLoading ? (
-                        <ActivityIndicator color={colors.onPrimary} size="small" />
-                      ) : (
-                        <View style={styles.primaryActionContent}>
-                          <CheckCircle2 size={16} color={colors.onPrimary} />
-                          <Text style={[styles.primaryActionText, { color: colors.onPrimary }]}>Verify OTP & Continue</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-
-                    <View style={styles.otpSecondaryActions}>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setEmailOtpStep('EMAIL');
-                          setEmailOtpCode('');
-                          setEmailOtpError(null);
-                          setEmailOtpDevCode(null);
-                        }}
-                      >
-                        <Text style={[styles.otpSecondaryLink, { color: colors.textSecondary }]}>
-                          ← Change email
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={handleSendEmailOtp} disabled={emailOtpLoading}>
-                        <Text style={[styles.otpSecondaryLink, { color: colors.primary }]}>Resend code</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-              </View>
-
-              {/* #2 COMPACT 1-TAP OFFICIAL COLLEGE MICROSOFT SSO */}
-              <View style={styles.dividerRow}>
-                <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
-                <Text style={[styles.dividerLabel, { color: colors.textTertiary }]}>OR OFFICIAL OUTLOOK ID</Text>
-                <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
-              </View>
-
-              {ssoError && (
-                <View style={[styles.errorAlertBox, { marginBottom: 10 }]}>
-                  <AlertCircle size={16} color="#ef4444" />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.errorAlertText}>{ssoError}</Text>
-                    <TouchableOpacity onPress={() => setSsoTokenModal(true)} style={{ marginTop: 4 }}>
-                      <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
-                        Paste dev token instead
+                      <Text style={[styles.msButtonText, { color: colors.onPrimary }]}>
+                        Continue with College ID (@geu.ac.in)
                       </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              <TouchableOpacity
-                style={[styles.msButtonSecondary, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                onPress={() => handleMicrosoftSSO()}
-                disabled={ssoLoading}
-                activeOpacity={0.88}
-              >
-                {ssoLoading ? (
-                  <ActivityIndicator color={colors.textPrimary} size="small" />
-                ) : (
-                  <View style={styles.msButtonContent}>
-                    <View style={styles.msLogoGrid}>
-                      <View style={[styles.msLogoCell, { backgroundColor: '#F25022' }]} />
-                      <View style={[styles.msLogoCell, { backgroundColor: '#7FBA00' }]} />
-                      <View style={[styles.msLogoCell, { backgroundColor: '#00A4EF' }]} />
-                      <View style={[styles.msLogoCell, { backgroundColor: '#FFB900' }]} />
+                      <ArrowRight size={16} color={colors.onPrimary} />
                     </View>
-                    <Text style={[styles.msButtonText, { color: colors.textPrimary }]}>
-                      Continue with College ID (@geu.ac.in)
-                    </Text>
-                    <ArrowRight size={15} color={colors.textMuted} />
-                  </View>
-                )}
-              </TouchableOpacity>
-
-              <View style={{ alignItems: 'flex-end', marginTop: 6, marginBottom: 2 }}>
-                <TouchableOpacity onPress={() => setSsoTokenModal(true)} style={styles.devLinkPill}>
-                  <Text style={[styles.devLinkText, { color: colors.textMuted }]}>Have an Entra token? Paste Token</Text>
+                  )}
                 </TouchableOpacity>
+
+                <View style={{ alignItems: 'flex-end', marginTop: 8 }}>
+                  <TouchableOpacity onPress={() => setSsoTokenModal(true)} style={styles.devLinkPill}>
+                    <Text style={[styles.devLinkText, { color: colors.textMuted }]}>Have an Entra token? Paste Token</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
-              {/* #3 PHYSICAL STUDENT ID CARD (ALL UTTARAKHAND COLLEGES + MANDATORY CONTACT EMAIL) */}
+              {/* #2 PHYSICAL STUDENT ID CARD (ALL 32 UTTARAKHAND COLLEGES + CONTACT EMAIL) */}
               <View style={styles.dividerRow}>
                 <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
-                <Text style={[styles.dividerLabel, { color: colors.textTertiary }]}>OR SUBMIT PHYSICAL ID CARD</Text>
+                <Text style={[styles.dividerLabel, { color: colors.textTertiary }]}>OR VERIFY WITH STUDENT ID CARD</Text>
                 <View style={[styles.dividerLine, { backgroundColor: colors.hairline }]} />
               </View>
 

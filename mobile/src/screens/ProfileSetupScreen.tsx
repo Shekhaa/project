@@ -842,23 +842,34 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
           </View>
         </View>
 
-        {/* 3. Mandatory Contact Email (Verify Now or Verify Later) */}
+        {/* 3. Contact Email / Gmail (Asked AFTER Microsoft ID or ID Card — Verify Now or Later) */}
         <View style={styles.inputGroup}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
             <Text style={[styles.inputLabel, { color: colors.textPrimary, marginBottom: 0 }]}>
-              Contact Email {inviteCode.trim() || isIdPending || isInviteVerified || isPlaceholderEmail ? '*' : ''}
+              Contact Email / Gmail {inviteCode.trim() || isIdPending || isInviteVerified || isPlaceholderEmail ? '*' : ''}
             </Text>
             {emailVerified ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Check size={13} color={colors.success} />
-                <Text style={{ color: colors.success, fontSize: 11.5, fontWeight: '700' }}>Verified</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Check size={13} color={colors.success} />
+                  <Text style={{ color: colors.success, fontSize: 11.5, fontWeight: '700' }}>Verified</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    setEmailVerified(false);
+                    setEmailOtpSent(false);
+                    setEmailOtpCode('');
+                  }}
+                >
+                  <Text style={{ color: colors.primary, fontSize: 11.5, fontWeight: '700' }}>Change / Use Gmail</Text>
+                </TouchableOpacity>
               </View>
             ) : (
               <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: '600' }}>Verify now or later</Text>
             )}
           </View>
           <Text style={[styles.inputSubtext, { color: colors.textMuted }]}>
-            Required point of contact for Invite Code & ID Card accounts (never shown publicly).
+            Your point of contact for recovery & alerts (never shown publicly). Add your personal Gmail and verify now or later from Profile.
           </Text>
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
             <View

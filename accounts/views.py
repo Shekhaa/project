@@ -57,8 +57,10 @@ def _build_user_auth_payload(request, user):
 class SendEmailOTPView(APIView):
     """
     POST /api/authentication/email/send-otp/
-    Supports both university domains (@geu.ac.in / @gehu.ac.in) and personal emails (@gmail.com).
-    Dispatches 6-digit OTP and 1-Click Magic Link.
+    Restricted to verified university domains (@geu.ac.in / @gehu.ac.in, etc.).
+    Personal email sign-up (e.g. @gmail.com) is blocked — students must enter via
+    Official College ID (Microsoft SSO) or Physical Student ID Card upload first,
+    then bind a contact Gmail via /api/authentication/email/bind/.
     """
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -67,13 +69,21 @@ class SendEmailOTPView(APIView):
     def post(self, request):
         serializer = SendEmailOTPSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        email = serializer.validated_data["email"]
+        email = serializer.validated_data["email"].strip().lower()
+
+        if not is_institutional_email(email):
+            return Response(
+                {
+                    "error": "Personal email sign-up (e.g. Gmail) is disabled. Please sign in with your Official College ID (Microsoft SSO) or upload your Physical Student ID Card.",
+                    "code": "INSTITUTIONAL_EMAIL_REQUIRED",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         success, msg, otp_record = OTPService.send_email_otp(email, purpose="EMAIL_LOGIN", return_record=True)
         if not success:
             return Response({"error": msg}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
-        # Detect associated college (None for personal Gmail)
         domain_match = CollegeDomain.find_by_email(email)
         college_info = {
             "id": domain_match.college.id,
@@ -90,7 +100,7 @@ class SendEmailOTPView(APIView):
             "message": msg,
             "email": email,
             "detected_college": college_info,
-            "is_personal_email": domain_match is None,
+            "is_personal_email": False,
             "is_real_email": getattr(otp_record, "real_email_sent", False),
         }
         if settings.DEBUG:
@@ -104,7 +114,7 @@ class SendEmailOTPView(APIView):
 class VerifyEmailOTPView(APIView):
     """
     POST /api/authentication/email/verify-otp/
-    Verifies email OTP, creates/retrieves User, and issues JWT tokens.
+    Verifies institutional university email OTP, creates/retrieves User, and issues JWT tokens.
     """
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -116,6 +126,15 @@ class VerifyEmailOTPView(APIView):
 
         email = serializer.validated_data["email"].strip().lower()
         code = serializer.validated_data["otp"].strip()
+
+        if not is_institutional_email(email):
+            return Response(
+                {
+                    "error": "Personal email sign-up (e.g. Gmail) is disabled. Please sign in with your Official College ID (Microsoft SSO) or upload your Physical Student ID Card.",
+                    "code": "INSTITUTIONAL_EMAIL_REQUIRED",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         is_valid, err = OTPService.verify_otp(email, code, purpose="EMAIL_LOGIN")
         if not is_valid:
@@ -457,6 +476,15 @@ class MagicLoginView(APIView):
                 """
                 return HttpResponse(html_err, status=400, content_type="text/html")
             return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not is_institutional_email(email):
+            return Response(
+                {
+                    "error": "Personal email sign-up (e.g. Gmail) is disabled. Please verify via Official College ID or Student ID Card.",
+                    "code": "INSTITUTIONAL_EMAIL_REQUIRED",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         # Token is valid! Find or create user
         user, is_new_user = User.objects.get_or_create(
@@ -1586,7 +1614,7 @@ class IDCardLoginView(APIView):
         else:
             if manual_email and User.objects.filter(email__iexact=manual_email).exists():
                 return Response(
-                    {"error": "An account with this email already exists. Please log in with Email OTP or password first, then upload your ID card."},
+                    {"error": "An account with this email already exists. Please log in with your password or College ID instead."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             user = User.objects.filter(email__iexact=target_email).first()
