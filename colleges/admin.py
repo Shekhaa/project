@@ -7,9 +7,9 @@ class CollegeDomainInline(admin.TabularInline):
 
 @admin.register(College)
 class CollegeAdmin(admin.ModelAdmin):
-    list_display = ("short_name", "name", "is_active", "created_at")
-    search_fields = ("name", "short_name")
-    list_filter = ("is_active",)
+    list_display = ("short_name", "name", "city", "is_active", "created_at")
+    search_fields = ("name", "short_name", "city")
+    list_filter = ("city", "is_active")
     inlines = [CollegeDomainInline]
 
 @admin.register(CollegeDomain)

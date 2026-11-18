@@ -19,79 +19,96 @@ def seed():
     print("  Seeding Campus Connect Canonical College Data")
     print("==================================================")
 
-    # 1. Uttarakhand Colleges Catalog (Dehradun, Haldwani/Kumaon & Major State Campuses)
+    # 1. Uttarakhand Colleges Catalog (Dehradun, Haldwani/Kumaon, Rudrapur & Major State Campuses)
     geu, _ = College.objects.get_or_create(
         name="Graphic Era University",
-        defaults={"short_name": "GEU"}
+        defaults={"short_name": "GEU", "city": "Dehradun"}
     )
+    if not geu.city:
+        geu.city = "Dehradun"
+        geu.save(update_fields=["city"])
     CollegeDomain.objects.get_or_create(college=geu, domain="geu.ac.in")
     CollegeDomain.objects.get_or_create(college=geu, domain="graphicera.ac.in")
 
     gehu, _ = College.objects.get_or_create(
         name="Graphic Era Hill University",
-        defaults={"short_name": "GEHU"}
+        defaults={"short_name": "GEHU", "city": "Dehradun"}
     )
+    if not gehu.city:
+        gehu.city = "Dehradun"
+        gehu.save(update_fields=["city"])
     CollegeDomain.objects.get_or_create(college=gehu, domain="gehu.ac.in")
 
     dit, _ = College.objects.get_or_create(
         name="DIT University",
-        defaults={"short_name": "DIT"}
+        defaults={"short_name": "DIT", "city": "Dehradun"}
     )
+    if not dit.city:
+        dit.city = "Dehradun"
+        dit.save(update_fields=["city"])
     CollegeDomain.objects.get_or_create(college=dit, domain="dit.edu.in")
     CollegeDomain.objects.get_or_create(college=dit, domain="dituniversity.edu.in")
 
     upes, _ = College.objects.get_or_create(
         name="UPES Dehradun",
-        defaults={"short_name": "UPES"}
+        defaults={"short_name": "UPES", "city": "Dehradun"}
     )
+    if not upes.city:
+        upes.city = "Dehradun"
+        upes.save(update_fields=["city"])
     CollegeDomain.objects.get_or_create(college=upes, domain="upes.ac.in")
     CollegeDomain.objects.get_or_create(college=upes, domain="ddn.upes.ac.in")
 
     extra_uttarakhand_colleges = [
         # Dehradun Campuses
-        ("Uttaranchal University, Dehradun", "UU", ["uumail.in", "uttaranchaluniversity.ac.in"]),
-        ("Doon University, Dehradun", "DU_DDN", ["doonuniversity.ac.in"]),
-        ("Tula's Institute, Dehradun", "TULAS", ["tulas.edu.in"]),
-        ("DBS Global University, Dehradun", "DBS", ["doonbusinessschool.com", "dbsglobaluniversity.ac.in"]),
-        ("IMS Unison University, Dehradun", "IUU", ["iuu.ac"]),
-        ("Shri Guru Ram Rai University, Dehradun", "SGRRU", ["sgrru.ac.in"]),
-        ("Dev Bhoomi Uttarakhand University, Dehradun", "DBUU", ["dbuu.ac.in"]),
-        ("Dolphin PG Institute, Dehradun", "DOLPHIN", ["dolphininstitute.in"]),
-        ("BFIT Group of Institutions, Dehradun", "BFIT", ["bfitdoon.com"]),
-        ("DAV (PG) College, Dehradun", "DAV_DDN", ["davpgcollege.in"]),
-        ("Maya Devi University, Dehradun", "MDU_DDN", ["maya.edu.in"]),
-        ("Jigyasa University (Himgiri Zee), Dehradun", "JIGYASA", ["hzu.edu.in"]),
+        ("Uttaranchal University, Dehradun", "UU", ["uumail.in", "uttaranchaluniversity.ac.in"], "Dehradun"),
+        ("Doon University, Dehradun", "DU_DDN", ["doonuniversity.ac.in"], "Dehradun"),
+        ("Tula's Institute, Dehradun", "TULAS", ["tulas.edu.in"], "Dehradun"),
+        ("DBS Global University, Dehradun", "DBS", ["doonbusinessschool.com", "dbsglobaluniversity.ac.in"], "Dehradun"),
+        ("IMS Unison University, Dehradun", "IUU", ["iuu.ac"], "Dehradun"),
+        ("Shri Guru Ram Rai University, Dehradun", "SGRRU", ["sgrru.ac.in"], "Dehradun"),
+        ("Dev Bhoomi Uttarakhand University, Dehradun", "DBUU", ["dbuu.ac.in"], "Dehradun"),
+        ("Dolphin PG Institute, Dehradun", "DOLPHIN", ["dolphininstitute.in"], "Dehradun"),
+        ("BFIT Group of Institutions, Dehradun", "BFIT", ["bfitdoon.com"], "Dehradun"),
+        ("DAV (PG) College, Dehradun", "DAV_DDN", ["davpgcollege.in"], "Dehradun"),
+        ("Maya Devi University, Dehradun", "MDU_DDN", ["maya.edu.in"], "Dehradun"),
+        ("Jigyasa University (Himgiri Zee), Dehradun", "JIGYASA", ["hzu.edu.in"], "Dehradun"),
         # Haldwani & Kumaon Campuses
-        ("Graphic Era Hill University, Haldwani", "GEHU_HLD", ["hld.gehu.ac.in"]),
-        ("MBPG College, Haldwani", "MBPG", ["mbpgcollegehaldwani.org"]),
-        ("Amrapali University, Haldwani", "AMRAPALI", ["amrapali.ac.in"]),
-        ("MIET Kumaon, Haldwani", "MIET_K", ["mietkumaon.ac.in"]),
-        ("Pal College of Technology & Management, Haldwani", "PCTM", ["palcollege.ac.in"]),
-        ("Government Medical College, Haldwani", "GMC_HLD", ["gmchaldwani.org"]),
-        ("Uttarakhand Open University, Haldwani", "UOU", ["uou.ac.in"]),
-        ("Birla Institute of Applied Sciences, Bhimtal", "BIAS", ["birlainstitute.co.in"]),
-        ("Kumaun University, Nainital", "KU_NTL", ["kunainital.ac.in"]),
+        ("Graphic Era Hill University, Haldwani", "GEHU_HLD", ["hld.gehu.ac.in"], "Haldwani"),
+        ("MBPG College, Haldwani", "MBPG", ["mbpgcollegehaldwani.org"], "Haldwani"),
+        ("Amrapali University, Haldwani", "AMRAPALI", ["amrapali.ac.in"], "Haldwani"),
+        ("MIET Kumaon, Haldwani", "MIET_K", ["mietkumaon.ac.in"], "Haldwani"),
+        ("Pal College of Technology & Management, Haldwani", "PCTM", ["palcollege.ac.in"], "Haldwani"),
+        ("Government Medical College, Haldwani", "GMC_HLD", ["gmchaldwani.org"], "Haldwani"),
+        ("Uttarakhand Open University, Haldwani", "UOU", ["uou.ac.in"], "Haldwani"),
+        ("Birla Institute of Applied Sciences, Bhimtal", "BIAS", ["birlainstitute.co.in"], "Bhimtal"),
+        ("Kumaun University, Nainital", "KU_NTL", ["kunainital.ac.in"], "Nainital"),
+        # Rudrapur & US Nagar Campuses
+        ("Devasthali Vidyapeeth, Rudrapur", "DVP_RDR", ["devasthali.edu.in", "devasthalividyapeeth.com", "devasthalividyapeeth.ac.in"], "Rudrapur"),
         # Other Major Uttarakhand Campuses
-        ("IIT Roorkee", "IITR", ["iitr.ac.in"]),
-        ("NIT Uttarakhand, Srinagar", "NITUK", ["nituk.ac.in"]),
-        ("GBPUAT Pantnagar", "GBPUAT", ["gbpuat.ac.in"]),
-        ("COER University, Roorkee", "COER", ["coeruniversity.ac.in"]),
-        ("Quantum University, Roorkee", "QUANTUM", ["quantumuniversity.edu.in"]),
-        ("HNBGU Srinagar Garhwal", "HNBGU", ["hnbgu.ac.in"]),
-        ("AIIMS Rishikesh", "AIIMS_R", ["aiimsrishikesh.edu.in"]),
+        ("IIT Roorkee", "IITR", ["iitr.ac.in"], "Roorkee"),
+        ("NIT Uttarakhand, Srinagar", "NITUK", ["nituk.ac.in"], "Srinagar Garhwal"),
+        ("GBPUAT Pantnagar", "GBPUAT", ["gbpuat.ac.in"], "Pantnagar"),
+        ("COER University, Roorkee", "COER", ["coeruniversity.ac.in"], "Roorkee"),
+        ("Quantum University, Roorkee", "QUANTUM", ["quantumuniversity.edu.in"], "Roorkee"),
+        ("HNBGU Srinagar Garhwal", "HNBGU", ["hnbgu.ac.in"], "Srinagar Garhwal"),
+        ("AIIMS Rishikesh", "AIIMS_R", ["aiimsrishikesh.edu.in"], "Rishikesh"),
     ]
 
     colleges = [geu, gehu, dit, upes]
-    for c_name, c_short, c_domains in extra_uttarakhand_colleges:
+    for c_name, c_short, c_domains, c_city in extra_uttarakhand_colleges:
         col_obj, _ = College.objects.get_or_create(
             name=c_name,
-            defaults={"short_name": c_short},
+            defaults={"short_name": c_short, "city": c_city},
         )
+        if not col_obj.city:
+            col_obj.city = c_city
+            col_obj.save(update_fields=["city"])
         for dom in c_domains:
             CollegeDomain.objects.get_or_create(college=col_obj, domain=dom)
         colleges.append(col_obj)
 
-    print(f" -> Seeded {len(colleges)} Uttarakhand Colleges (Dehradun, Haldwani & State Campuses)")
+    print(f" -> Seeded {len(colleges)} Uttarakhand Colleges (Dehradun, Haldwani, Rudrapur & State Campuses)")
 
     # 1b. Create Canonical College Communities
     for col in colleges:
@@ -105,13 +122,17 @@ def seed():
         )
     print(f" -> Seeded Official Canonical Communities for all {len(colleges)} colleges")
 
-    # 2. Comprehensive Courses
+    # 2. Comprehensive Courses (B.Tech, BCA, B.Com, BBA, GNM, LLB, etc.)
     courses_spec = [
         ("B.Tech", "BT", 4),
         ("BCA", "BCA", 3),
         ("B.Com (Hons)", "BCOM_H", 3),
         ("B.Com", "BCOM", 3),
         ("BBA", "BBA", 3),
+        ("GNM", "GNM", 3),
+        ("LLB", "LLB", 3),
+        ("BA LLB", "BALLB", 5),
+        ("BBA LLB", "BBALLB", 5),
         ("BA (Hons) English", "BA_ENG", 3),
         ("BA (Hons) Economics", "BA_ECO", 3),
         ("BA (Hons) Psychology", "BA_PSY", 3),
@@ -140,7 +161,7 @@ def seed():
             )
             all_courses.append(course)
 
-    print(" -> Seeded Complete Degree & Course Spectrum across colleges")
+    print(" -> Seeded Complete Degree & Course Spectrum across colleges (B.Tech, BCA, BBA, B.Com, GNM, LLB, etc.)")
 
     # 3. Branches
     btech_branches = [
@@ -169,6 +190,15 @@ def seed():
         ("Banking & Insurance", "BCOM_BI"),
         ("General Commerce", "BCOM_GEN"),
     ]
+    gnm_branches = [
+        ("General Nursing & Midwifery Core", "GNM_CORE"),
+        ("Clinical & Critical Care", "GNM_CC"),
+    ]
+    llb_branches = [
+        ("Corporate & Commercial Law", "LAW_CORP"),
+        ("Criminal & Constitutional Law", "LAW_CRIM"),
+        ("General Legal Studies", "LAW_GEN"),
+    ]
 
     for course in all_courses:
         if course.name == "B.Tech":
@@ -182,6 +212,12 @@ def seed():
                 Branch.objects.get_or_create(course=course, name=b_name, defaults={"code": b_code})
         elif "B.Com" in course.name:
             for b_name, b_code in bcom_branches:
+                Branch.objects.get_or_create(course=course, name=b_name, defaults={"code": b_code})
+        elif course.name == "GNM":
+            for b_name, b_code in gnm_branches:
+                Branch.objects.get_or_create(course=course, name=b_name, defaults={"code": b_code})
+        elif "LLB" in course.name:
+            for b_name, b_code in llb_branches:
                 Branch.objects.get_or_create(course=course, name=b_name, defaults={"code": b_code})
         else:
             Branch.objects.get_or_create(course=course, name=f"{course.name} Core", defaults={"code": "GEN"})

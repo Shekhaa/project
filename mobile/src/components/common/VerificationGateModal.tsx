@@ -25,7 +25,7 @@ import {
 import { useTheme } from '../../theme/ThemeContext';
 import { User, authService } from '../../services/authService';
 import { profileService } from '../../services/profileService';
-import { CollegeCatalogItem, CollegePickerModal } from './CollegePickerModal';
+import { CollegeCatalogItem, CollegePickerModal, getCollegeCity } from './CollegePickerModal';
 
 interface VerificationGateModalProps {
   visible: boolean;
@@ -509,9 +509,22 @@ export const VerificationGateModal: React.FC<VerificationGateModalProps> = ({
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
                     <Building2 size={15} color={colors.primary} />
-                    <Text style={{ color: colors.textPrimary, fontSize: 13, fontWeight: '600', flex: 1 }} numberOfLines={1}>
-                      {colleges.find((c) => c.id === selectedCollegeId)?.name || 'Select Uttarakhand College...'}
-                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: colors.textPrimary, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
+                        {(() => {
+                          const c = colleges.find((col) => col.id === selectedCollegeId);
+                          return c ? c.name : 'Select Uttarakhand College...';
+                        })()}
+                      </Text>
+                      {(() => {
+                        const c = colleges.find((col) => col.id === selectedCollegeId);
+                        return c ? (
+                          <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+                            {c.short_name} • {getCollegeCity(c)}
+                          </Text>
+                        ) : null;
+                      })()}
+                    </View>
                   </View>
                   <ChevronDown size={16} color={colors.textMuted} />
                 </TouchableOpacity>

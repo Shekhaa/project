@@ -9,14 +9,31 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Building2, Check, Search, X } from 'lucide-react-native';
+import { Building2, Check, MapPin, Search, X } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
 
 export interface CollegeCatalogItem {
   id: number;
   name: string;
   short_name: string;
+  city?: string;
 }
+
+export const getCollegeCity = (item: CollegeCatalogItem): string => {
+  if (item.city && item.city.trim()) return item.city.trim();
+  const nameL = (item.name || '').toLowerCase();
+  const codeL = (item.short_name || '').toLowerCase();
+  if (nameL.includes('rudrapur') || codeL.includes('rdr') || codeL.includes('dvp')) return 'Rudrapur';
+  if (nameL.includes('haldwani') || codeL.includes('hld')) return 'Haldwani';
+  if (nameL.includes('bhimtal')) return 'Bhimtal';
+  if (nameL.includes('nainital') || codeL.includes('ntl')) return 'Nainital';
+  if (nameL.includes('pantnagar')) return 'Pantnagar';
+  if (nameL.includes('roorkee') || codeL.includes('iitr') || codeL.includes('coer')) return 'Roorkee';
+  if (nameL.includes('rishikesh')) return 'Rishikesh';
+  if (nameL.includes('srinagar') || codeL.includes('nituk') || codeL.includes('hnbgu')) return 'Srinagar Garhwal';
+  if (nameL.includes('dehradun') || codeL.includes('ddn') || codeL.includes('geu') || codeL.includes('dit') || codeL.includes('upes')) return 'Dehradun';
+  return 'Uttarakhand';
+};
 
 interface CollegePickerModalProps {
   visible: boolean;
@@ -27,7 +44,7 @@ interface CollegePickerModalProps {
   onClose: () => void;
 }
 
-const CITY_FILTERS = ['All', 'Dehradun', 'Haldwani', 'Uttarakhand'] as const;
+const CITY_FILTERS = ['All', 'Dehradun', 'Haldwani', 'Rudrapur', 'Uttarakhand'] as const;
 type CityFilter = (typeof CITY_FILTERS)[number];
 
 const DEHRADUN_CODES = new Set([
@@ -56,14 +73,24 @@ export const CollegePickerModal: React.FC<CollegePickerModalProps> = ({
     return colleges.filter((c) => {
       const code = (c.short_name || '').toUpperCase();
       const nameL = (c.name || '').toLowerCase();
-      if (cityFilter === 'Dehradun' && !DEHRADUN_CODES.has(code) && !nameL.includes('dehradun') && !nameL.includes('graphic era')) {
-        return false;
+      const city = getCollegeCity(c).toLowerCase();
+
+      if (cityFilter === 'Dehradun') {
+        if (!DEHRADUN_CODES.has(code) && !city.includes('dehradun') && !nameL.includes('dehradun') && !nameL.includes('graphic era')) {
+          return false;
+        }
+      } else if (cityFilter === 'Haldwani') {
+        if (!HALDWANI_CODES.has(code) && !city.includes('haldwani') && !nameL.includes('haldwani') && !nameL.includes('bhimtal') && !nameL.includes('nainital')) {
+          return false;
+        }
+      } else if (cityFilter === 'Rudrapur') {
+        if (!city.includes('rudrapur') && !nameL.includes('rudrapur') && !code.includes('RDR') && !code.includes('DVP')) {
+          return false;
+        }
       }
-      if (cityFilter === 'Haldwani' && !HALDWANI_CODES.has(code) && !nameL.includes('haldwani') && !nameL.includes('bhimtal') && !nameL.includes('nainital')) {
-        return false;
-      }
+
       if (!q) return true;
-      return nameL.includes(q) || code.toLowerCase().includes(q);
+      return nameL.includes(q) || code.toLowerCase().includes(q) || city.includes(q);
     });
   }, [colleges, search, cityFilter]);
 
@@ -166,7 +193,14 @@ export const CollegePickerModal: React.FC<CollegePickerModalProps> = ({
                 >
                   <View style={{ flex: 1, paddingRight: 8 }}>
                     <Text style={[styles.itemName, { color: colors.textPrimary }]}>{item.name}</Text>
-                    <Text style={[styles.itemCode, { color: colors.textMuted }]}>{item.short_name}</Text>
+                    <View style={styles.itemMetaRow}>
+                      <Text style={[styles.itemCode, { color: colors.primary }]}>{item.short_name}</Text>
+                      <Text style={[styles.itemDot, { color: colors.textMuted }]}>•</Text>
+                      <View style={styles.cityBadge}>
+                        <MapPin size={11} color={colors.textSecondary} />
+                        <Text style={[styles.itemCity, { color: colors.textSecondary }]}>{getCollegeCity(item)}</Text>
+                      </View>
+                    </View>
                   </View>
                   {selected && <Check size={16} color={colors.primary} />}
                 </TouchableOpacity>
@@ -259,10 +293,27 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '600',
   },
+  itemMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 3,
+  },
+  itemDot: {
+    fontSize: 11,
+  },
+  cityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  itemCity: {
+    fontSize: 11.5,
+    fontWeight: '500',
+  },
   itemCode: {
     fontSize: 11,
-    marginTop: 2,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   emptyText: {
     textAlign: 'center',

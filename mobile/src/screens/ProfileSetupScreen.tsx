@@ -39,7 +39,7 @@ import {
   Mail,
   Building2,
 } from 'lucide-react-native';
-import { CollegeCatalogItem, CollegePickerModal } from '../components/common/CollegePickerModal';
+import { CollegeCatalogItem, CollegePickerModal, getCollegeCity } from '../components/common/CollegePickerModal';
 
 interface ProfileSetupScreenProps {
   currentUser: User;
@@ -87,6 +87,26 @@ const AVAILABLE_COURSES = [
       'Human Resource Management',
       'International Business',
     ],
+  },
+  {
+    name: 'GNM',
+    duration: '3 Years',
+    branches: ['General Nursing & Midwifery Core', 'Clinical & Critical Care'],
+  },
+  {
+    name: 'LLB',
+    duration: '3 Years',
+    branches: ['General Legal Studies', 'Corporate & Commercial Law', 'Criminal & Constitutional Law'],
+  },
+  {
+    name: 'BA LLB',
+    duration: '5 Years',
+    branches: ['Integrated Constitutional & Corporate Law', 'Criminal & Human Rights Law'],
+  },
+  {
+    name: 'BBA LLB',
+    duration: '5 Years',
+    branches: ['Corporate Law & Governance', 'Business & Commercial Law'],
   },
   {
     name: 'BA (Hons) English',
@@ -691,7 +711,10 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                       {colleges.find((c) => c.id === selectedCollegeId)?.name || collegeName}
                     </Text>
                     <Text style={[styles.selectorBtnSub, { color: colors.textMuted }]}>
-                      {colleges.find((c) => c.id === selectedCollegeId)?.short_name || 'Tap to search Uttarakhand catalog'}
+                      {(() => {
+                        const sel = colleges.find((c) => c.id === selectedCollegeId);
+                        return sel ? `${sel.short_name} • ${getCollegeCity(sel)}` : 'Tap to search Uttarakhand catalog';
+                      })()}
                     </Text>
                   </View>
                   <ChevronDown size={18} color={colors.textSecondary} />

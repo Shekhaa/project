@@ -316,3 +316,14 @@ class CredibilityEndorsement(models.Model):
     def __str__(self):
         return f"{self.endorser.email} endorsed {self.recipient.email} ({self.created_at:%Y-%m-%d})"
 
+
+class PendingIDCardApproval(StudentProfile):
+    """
+    Proxy model enabling 1-click ID Card approvals in Django Admin.
+    """
+    class Meta:
+        proxy = True
+        verbose_name = "Pending Student ID Card"
+        verbose_name_plural = "Pending Student ID Cards"
+
+

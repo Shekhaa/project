@@ -3,6 +3,7 @@ from django.db import models
 class College(models.Model):
     name = models.CharField(max_length=200, unique=True)
     short_name = models.CharField(max_length=20, unique=True)
+    city = models.CharField(max_length=100, blank=True, default="", help_text="Primary campus city / location")
     logo = models.ImageField(upload_to="college_logos/", blank=True, null=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

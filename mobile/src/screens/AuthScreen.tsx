@@ -47,7 +47,7 @@ import {
   setMsOAuthMode,
 } from '../services/authService';
 import { profileService } from '../services/profileService';
-import { CollegeCatalogItem, CollegePickerModal } from '../components/common/CollegePickerModal';
+import { CollegeCatalogItem, CollegePickerModal, getCollegeCity } from '../components/common/CollegePickerModal';
 import { showCrossPlatformAlert } from '../utils/mediaUtils';
 
 interface AuthScreenProps {
@@ -888,10 +888,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                       style={{ color: selectedIdCollege ? colors.textPrimary : colors.textMuted, fontSize: 13, fontWeight: '600' }}
                       numberOfLines={1}
                     >
-                      {selectedIdCollege ? selectedIdCollege.name : 'Select Dehradun, Haldwani or UK College'}
+                      {selectedIdCollege ? selectedIdCollege.name : 'Select Dehradun, Haldwani, Rudrapur or UK College'}
                     </Text>
                     {selectedIdCollege ? (
-                      <Text style={{ color: colors.textMuted, fontSize: 11 }}>{selectedIdCollege.short_name}</Text>
+                      <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+                        {selectedIdCollege.short_name} • {getCollegeCity(selectedIdCollege)}
+                      </Text>
                     ) : null}
                   </View>
                   <ChevronDown size={16} color={colors.textMuted} />

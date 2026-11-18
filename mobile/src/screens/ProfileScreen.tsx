@@ -31,7 +31,7 @@ import { PostCard } from '../components/feed/PostCard';
 import { StudentProfileModal } from '../components/profile/StudentProfileModal';
 import { SocialListModal, SocialModalType } from '../components/profile/SocialListModal';
 import { UserAvatar } from '../components/common/UserAvatar';
-import { CollegeCatalogItem, CollegePickerModal } from '../components/common/CollegePickerModal';
+import { CollegeCatalogItem, CollegePickerModal, getCollegeCity } from '../components/common/CollegePickerModal';
 import { processWebImageForUpload, showCrossPlatformAlert } from '../utils/mediaUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -2387,7 +2387,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                               </Text>
                               {activeBatchCollege ? (
                                 <Text style={{ color: colors.textMuted, fontSize: 11 }}>
-                                  {activeBatchCollege.short_name} • Tap to change ({batchColleges.length} colleges)
+                                  {activeBatchCollege.short_name} • {getCollegeCity(activeBatchCollege)} • Tap to change ({batchColleges.length} colleges)
                                 </Text>
                               ) : null}
                             </View>
