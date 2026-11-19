@@ -93,6 +93,23 @@ reject_or_flag_fake.short_description = "❌ Reject / Flag selected ID Cards as 
 delete_selected_profiles_and_users.short_description = "🗑️ Delete selected Profiles AND User accounts"
 
 
+def _resolve_id_card_url(obj):
+    if not obj:
+        return None
+    # 1. Database-persisted data URI (stored in PostgreSQL JSONField; immune to Render container restarts)
+    if obj.id_card_ocr_data and isinstance(obj.id_card_ocr_data, dict):
+        uri = obj.id_card_ocr_data.get("image_data_uri")
+        if uri:
+            return uri
+    # 2. Local/Storage media FileField
+    if obj.id_card_image:
+        try:
+            return obj.id_card_image.url
+        except Exception:
+            pass
+    return None
+
+
 @admin.register(PendingIDCardApproval)
 class PendingIDCardApprovalAdmin(admin.ModelAdmin):
     list_display = (
@@ -161,8 +178,8 @@ class PendingIDCardApprovalAdmin(admin.ModelAdmin):
     student_email.short_description = "Contact Email"
 
     def id_card_photo(self, obj):
-        if obj.id_card_image:
-            url = obj.id_card_image.url
+        url = _resolve_id_card_url(obj)
+        if url:
             return format_html(
                 '<a href="{}" target="_blank" title="Click to view full image in new tab">'
                 '<img src="{}" style="height: 60px; max-width: 100px; border-radius: 6px; border: 1px solid #ccc; object-fit: cover;" />'
@@ -173,14 +190,14 @@ class PendingIDCardApprovalAdmin(admin.ModelAdmin):
     id_card_photo.short_description = "ID Photo"
 
     def id_card_large_preview(self, obj):
-        if obj.id_card_image:
-            url = obj.id_card_image.url
+        url = _resolve_id_card_url(obj)
+        if url:
             return format_html(
                 '<div style="margin: 10px 0;">'
                 '<a href="{}" target="_blank">'
                 '<img src="{}" style="max-height: 380px; max-width: 100%; border-radius: 8px; border: 1px solid #999; box-shadow: 0 2px 8px rgba(0,0,0,0.15);" />'
                 '</a>'
-                '<p style="color: #666; font-size: 11px; margin-top: 4px;">Click image to open full resolution in new tab</p>'
+                '<p style="color: #666; font-size: 11px; margin-top: 4px;">Click image to open full resolution (persisted in DB)</p>'
                 '</div>',
                 url, url
             )
@@ -239,8 +256,8 @@ class StudentProfileAdmin(admin.ModelAdmin):
     student_full_name.short_description = "Full Name"
 
     def id_card_photo(self, obj):
-        if obj.id_card_image:
-            url = obj.id_card_image.url
+        url = _resolve_id_card_url(obj)
+        if url:
             return format_html(
                 '<a href="{}" target="_blank" title="Click to view full image in new tab">'
                 '<img src="{}" style="height: 50px; max-width: 85px; border-radius: 4px; border: 1px solid #ccc; object-fit: cover;" />'
@@ -251,14 +268,14 @@ class StudentProfileAdmin(admin.ModelAdmin):
     id_card_photo.short_description = "ID Photo"
 
     def id_card_large_preview(self, obj):
-        if obj.id_card_image:
-            url = obj.id_card_image.url
+        url = _resolve_id_card_url(obj)
+        if url:
             return format_html(
                 '<div style="margin: 10px 0;">'
                 '<a href="{}" target="_blank">'
                 '<img src="{}" style="max-height: 380px; max-width: 100%; border-radius: 8px; border: 1px solid #999; box-shadow: 0 2px 8px rgba(0,0,0,0.15);" />'
                 '</a>'
-                '<p style="color: #666; font-size: 11px; margin-top: 4px;">Click image to open full resolution in new tab</p>'
+                '<p style="color: #666; font-size: 11px; margin-top: 4px;">Click image to open full resolution (persisted in DB)</p>'
                 '</div>',
                 url, url
             )

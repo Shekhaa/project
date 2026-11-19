@@ -35,6 +35,39 @@ class IDCardOCRService:
         return hashlib.sha256(image_bytes).hexdigest()
 
     @classmethod
+    def generate_thumbnail_data_uri(cls, image_bytes: bytes, max_dim: int = 800, quality: int = 80) -> str:
+        """
+        Creates a compact, optimized JPEG base64 data URI (~40-70KB) that can be
+        persisted directly in PostgreSQL JSONField (id_card_ocr_data).
+        Guarantees that ID cards remain visible in Django Admin even across Render
+        ephemeral container redeploys where local disk media is wiped.
+        """
+        if not image_bytes or len(image_bytes) < 16:
+            return ""
+        try:
+            import base64
+            from PIL import Image as PILImage, ImageOps
+            img = PILImage.open(io.BytesIO(image_bytes))
+            try:
+                img = ImageOps.exif_transpose(img)
+            except Exception:
+                pass
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            img.thumbnail((max_dim, max_dim), PILImage.Resampling.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+            b64_str = base64.b64encode(buf.getvalue()).decode("ascii")
+            return f"data:image/jpeg;base64,{b64_str}"
+        except Exception:
+            try:
+                import base64
+                b64_str = base64.b64encode(image_bytes).decode("ascii")
+                return f"data:image/jpeg;base64,{b64_str}"
+            except Exception:
+                return ""
+
+    @classmethod
     def perform_ocr(cls, pil_image: Image.Image) -> str:
         """Runs native Windows OCR or pytesseract on the PIL Image."""
         if HAS_WINOCR:
@@ -389,6 +422,7 @@ class IDCardOCRService:
             "raw_text": raw_text.strip(),
             "image_hash": img_hash,
             "extracted_data": {
+                "image_data_uri": cls.generate_thumbnail_data_uri(image_bytes),
                 "full_name": full_name or None,
                 "admission_number": admission_num or None,
                 "college": {

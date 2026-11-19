@@ -160,6 +160,8 @@ class StudentProfileSerializer(serializers.ModelSerializer):
             data["profile_picture"] = None
         if instance.id_card_image:
             data["id_card_image"] = resolve_media_url(request, instance.id_card_image)
+        elif instance.id_card_ocr_data and isinstance(instance.id_card_ocr_data, dict):
+            data["id_card_image"] = instance.id_card_ocr_data.get("image_data_uri")
         return data
 
     def update(self, instance, validated_data):

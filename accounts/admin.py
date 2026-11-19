@@ -135,14 +135,22 @@ class UserAdmin(admin.ModelAdmin):
 
     def id_card_thumb(self, obj):
         prof = getattr(obj, "profile", None)
-        if prof and prof.id_card_image:
-            url = prof.id_card_image.url
-            return format_html(
-                '<a href="{}" target="_blank" title="Click to view full image in new tab">'
-                '<img src="{}" style="height: 45px; max-width: 75px; border-radius: 4px; border: 1px solid #ccc; object-fit: cover;" />'
-                '</a>',
-                url, url
-            )
+        if prof:
+            url = None
+            if prof.id_card_ocr_data and isinstance(prof.id_card_ocr_data, dict):
+                url = prof.id_card_ocr_data.get("image_data_uri")
+            if not url and prof.id_card_image:
+                try:
+                    url = prof.id_card_image.url
+                except Exception:
+                    pass
+            if url:
+                return format_html(
+                    '<a href="{}" target="_blank" title="Click to view full image in new tab">'
+                    '<img src="{}" style="height: 45px; max-width: 75px; border-radius: 4px; border: 1px solid #ccc; object-fit: cover;" />'
+                    '</a>',
+                    url, url
+                )
         return mark_safe('<span style="color:#bbb;">—</span>')
     id_card_thumb.short_description = "ID Photo"
 

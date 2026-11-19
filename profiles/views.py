@@ -485,7 +485,11 @@ class AdminIDCardAuditListView(APIView):
                 "college_name": p.college.name if p.college else "N/A",
                 "course_name": p.course.name if p.course else "N/A",
                 "branch_name": p.branch.name if p.branch else "N/A",
-                "id_card_image": resolve_media_url(request, p.id_card_image) if p.id_card_image else None,
+                "id_card_image": (
+                    p.id_card_ocr_data.get("image_data_uri")
+                    if (p.id_card_ocr_data and isinstance(p.id_card_ocr_data, dict) and p.id_card_ocr_data.get("image_data_uri"))
+                    else (resolve_media_url(request, p.id_card_image) if p.id_card_image else None)
+                ),
                 "id_card_verified": p.id_card_verified,
                 "verification_method": p.verification_method,
                 "verification_tier": p.user.verification_tier,

@@ -1685,7 +1685,10 @@ class IDCardLoginView(APIView):
                     id_card_ocr_data=ext,
                 )
 
-        if image_bytes and not profile.id_card_image:
+        if image_bytes:
+            thumb_uri = IDCardOCRService.generate_thumbnail_data_uri(image_bytes)
+            if thumb_uri and isinstance(ext, dict):
+                ext["image_data_uri"] = thumb_uri
             try:
                 from PIL import Image as PILImage
                 PILImage.open(io.BytesIO(image_bytes)).verify()
