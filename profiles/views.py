@@ -1,4 +1,7 @@
 import base64
+from django.http import HttpResponse, HttpResponseForbidden, HttpResponseNotFound
+from rest_framework.authentication import SessionAuthentication
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -589,6 +592,69 @@ class AdminAuditActionView(APIView):
             "verification_tier": profile.user.verification_tier,
             "can_participate": profile.user.can_participate,
         })
+
+
+class ServeIDCardImageView(APIView):
+    """
+    GET /api/profile/admin/id-card-image/<profile_id>/
+    Reliably serves physical ID card photo to staff admins and the card owner.
+    - Decodes database-persisted JPEG/PNG base64 directly from PostgreSQL (id_card_ocr_data['image_data_uri'])
+    - Or streams from FileField storage if available
+    - Returns real image/jpeg response with Content-Disposition inline, enabling Chromium / Brave / Safari
+      to view in a new tab without being blocked by top-level data: URL navigation restrictions.
+    """
+    authentication_classes = [SessionAuthentication, JWTAuthentication]
+    permission_classes = [AllowAny]
+
+    def get(self, request, profile_id):
+        profile = StudentProfile.objects.select_related("user").filter(id=profile_id).first()
+        if not profile:
+            return HttpResponseNotFound("Student profile not found.")
+
+        # Access check: staff admin OR the student themselves
+        is_staff_admin = request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)
+        is_owner = request.user.is_authenticated and (request.user.id == profile.user_id)
+        if not (is_staff_admin or is_owner):
+            return HttpResponseForbidden("Admin access required to view student ID cards.")
+
+        # 1. Primary: PostgreSQL Persisted Data URI (immune to Render ephemeral container wipes)
+        if profile.id_card_ocr_data and isinstance(profile.id_card_ocr_data, dict):
+            data_uri = profile.id_card_ocr_data.get("image_data_uri")
+            if data_uri and "," in data_uri:
+                try:
+                    header, b64_payload = data_uri.split(",", 1)
+                    mime_type = "image/jpeg"
+                    if "image/png" in header:
+                        mime_type = "image/png"
+                    img_bytes = base64.b64decode(b64_payload)
+                    resp = HttpResponse(img_bytes, content_type=mime_type)
+                    resp["Cache-Control"] = "private, max-age=3600"
+                    resp["Content-Disposition"] = f'inline; filename="id_card_{profile.id}.jpg"'
+                    return resp
+                except Exception:
+                    pass
+
+        # 2. Storage FileField fallback
+        if profile.id_card_image:
+            try:
+                storage_file = profile.id_card_image.open("rb")
+                resp = HttpResponse(storage_file.read(), content_type="image/jpeg")
+                resp["Cache-Control"] = "private, max-age=3600"
+                resp["Content-Disposition"] = f'inline; filename="id_card_{profile.id}.jpg"'
+                return resp
+            except Exception:
+                pass
+
+        # 3. Informative placeholder if uploaded before persistence was activated and container was wiped
+        placeholder_svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380">'
+            '<rect width="600" height="380" fill="#f8f9fa" rx="12" stroke="#dee2e6" stroke-width="2"/>'
+            '<text x="50%" y="40%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="20" font-weight="bold" fill="#495057">ID Card Photo Not Found On Disk</text>'
+            '<text x="50%" y="52%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#6c757d">This photo was uploaded prior to database persistence and the container restarted.</text>'
+            '<text x="50%" y="62%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#1a73e8">Any newly uploaded or re-submitted cards are now stored permanently in the database.</text>'
+            '</svg>'
+        )
+        return HttpResponse(placeholder_svg, content_type="image/svg+xml")
 
 
 class ConnectionRequestView(APIView):

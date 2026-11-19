@@ -179,27 +179,32 @@ class PendingIDCardApprovalAdmin(admin.ModelAdmin):
 
     def id_card_photo(self, obj):
         url = _resolve_id_card_url(obj)
+        serve_url = f"/api/profile/admin/id-card-image/{obj.id}/"
         if url:
             return format_html(
                 '<a href="{}" target="_blank" title="Click to view full image in new tab">'
                 '<img src="{}" style="height: 60px; max-width: 100px; border-radius: 6px; border: 1px solid #ccc; object-fit: cover;" />'
                 '</a>',
-                url, url
+                serve_url, url
             )
         return mark_safe('<span style="color: #999;">No Image</span>')
     id_card_photo.short_description = "ID Photo"
 
     def id_card_large_preview(self, obj):
         url = _resolve_id_card_url(obj)
+        serve_url = f"/api/profile/admin/id-card-image/{obj.id}/"
         if url:
             return format_html(
                 '<div style="margin: 10px 0;">'
                 '<a href="{}" target="_blank">'
-                '<img src="{}" style="max-height: 380px; max-width: 100%; border-radius: 8px; border: 1px solid #999; box-shadow: 0 2px 8px rgba(0,0,0,0.15);" />'
+                '<img src="{}" style="max-height: 420px; max-width: 100%; border-radius: 8px; border: 1px solid #999; box-shadow: 0 2px 8px rgba(0,0,0,0.15);" />'
                 '</a>'
-                '<p style="color: #666; font-size: 11px; margin-top: 4px;">Click image to open full resolution (persisted in DB)</p>'
+                '<p style="color: #666; font-size: 12px; margin-top: 6px;">'
+                '🔍 <a href="{}" target="_blank" style="font-weight:700; color:#1a73e8;">Open Full Image In New Tab</a>'
+                ' &nbsp;•&nbsp; 🛡️ Persisted in Database (Immune to Render Restarts)'
+                '</p>'
                 '</div>',
-                url, url
+                serve_url, url, serve_url
             )
         return "No image uploaded"
     id_card_large_preview.short_description = "ID Card Preview"
@@ -257,27 +262,32 @@ class StudentProfileAdmin(admin.ModelAdmin):
 
     def id_card_photo(self, obj):
         url = _resolve_id_card_url(obj)
+        serve_url = f"/api/profile/admin/id-card-image/{obj.id}/"
         if url:
             return format_html(
                 '<a href="{}" target="_blank" title="Click to view full image in new tab">'
                 '<img src="{}" style="height: 50px; max-width: 85px; border-radius: 4px; border: 1px solid #ccc; object-fit: cover;" />'
                 '</a>',
-                url, url
+                serve_url, url
             )
         return mark_safe('<span style="color: #bbb;">—</span>')
     id_card_photo.short_description = "ID Photo"
 
     def id_card_large_preview(self, obj):
         url = _resolve_id_card_url(obj)
+        serve_url = f"/api/profile/admin/id-card-image/{obj.id}/"
         if url:
             return format_html(
                 '<div style="margin: 10px 0;">'
                 '<a href="{}" target="_blank">'
-                '<img src="{}" style="max-height: 380px; max-width: 100%; border-radius: 8px; border: 1px solid #999; box-shadow: 0 2px 8px rgba(0,0,0,0.15);" />'
+                '<img src="{}" style="max-height: 420px; max-width: 100%; border-radius: 8px; border: 1px solid #999; box-shadow: 0 2px 8px rgba(0,0,0,0.15);" />'
                 '</a>'
-                '<p style="color: #666; font-size: 11px; margin-top: 4px;">Click image to open full resolution (persisted in DB)</p>'
+                '<p style="color: #666; font-size: 12px; margin-top: 6px;">'
+                '🔍 <a href="{}" target="_blank" style="font-weight:700; color:#1a73e8;">Open Full Image In New Tab</a>'
+                ' &nbsp;•&nbsp; 🛡️ Persisted in Database'
+                '</p>'
                 '</div>',
-                url, url
+                serve_url, url, serve_url
             )
         return "No image uploaded"
     id_card_large_preview.short_description = "ID Card Preview"

@@ -6,6 +6,7 @@ from .views import (
     ScanIDCardView,
     AdminIDCardAuditListView,
     AdminAuditActionView,
+    ServeIDCardImageView,
     ConnectionRequestView,
     RespondConnectionView,
     RemoveConnectionView,
@@ -31,6 +32,7 @@ urlpatterns = [
     path("scan-id-card/", ScanIDCardView.as_view(), name="profile-scan-id-card"),
     path("admin/id-cards/", AdminIDCardAuditListView.as_view(), name="admin-id-cards"),
     path("admin/audit-user/", AdminAuditActionView.as_view(), name="admin-audit-user"),
+    path("admin/id-card-image/<int:profile_id>/", ServeIDCardImageView.as_view(), name="admin-id-card-image"),
 
     # Social Connections (LinkedIn style)
     path("connections/", ListConnectionsView.as_view(), name="profile-connections-list"),

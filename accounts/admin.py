@@ -145,11 +145,12 @@ class UserAdmin(admin.ModelAdmin):
                 except Exception:
                     pass
             if url:
+                serve_url = f"/api/profile/admin/id-card-image/{prof.id}/"
                 return format_html(
                     '<a href="{}" target="_blank" title="Click to view full image in new tab">'
                     '<img src="{}" style="height: 45px; max-width: 75px; border-radius: 4px; border: 1px solid #ccc; object-fit: cover;" />'
                     '</a>',
-                    url, url
+                    serve_url, url
                 )
         return mark_safe('<span style="color:#bbb;">—</span>')
     id_card_thumb.short_description = "ID Photo"
