@@ -193,34 +193,58 @@ class StartDirectChatView(APIView):
                     ).update(is_hidden=False)
                     return Response(ConversationSerializer(existing_request.conversation, context={"request": request}).data)
 
-        # Create new Message Request
-        initial_text = request.data.get("message", "Sent you a message request.").strip() or "Sent you a message request."
         if not existing:
             existing = Conversation.objects.create(is_group=False)
             ConversationMember.objects.create(conversation=existing, user=request.user, is_admin=True)
             ConversationMember.objects.create(conversation=existing, user=target_user)
+        else:
+            ConversationMember.objects.filter(
+                conversation=existing,
+                user=request.user,
+                is_hidden=True
+            ).update(is_hidden=False)
+
+        # Check if caller passed an initial message text
+        initial_text = (request.data.get("message") or "").strip()
+        if not initial_text:
+            # User simply opened conversation to compose - do NOT send a premature message request or notification!
+            return Response(ConversationSerializer(existing, context={"request": request}).data, status=status.HTTP_200_OK)
+
+        is_anon = str(request.data.get("is_anonymous", False)).lower() in ["true", "1"]
+        anon_alias = str(request.data.get("anonymous_alias", "") or "").strip()
+        if is_anon and not anon_alias:
+            anon_alias = "🦉 Anonymous Classmate"
 
         msg_req = MessageRequest.objects.create(
             sender=request.user,
             recipient=target_user,
             initial_message=initial_text,
             conversation=existing,
-            status="PENDING"
+            status="PENDING",
+            is_anonymous=is_anon,
+            anonymous_alias=anon_alias if is_anon else "",
         )
 
         Message.objects.create(
             conversation=existing,
             sender=request.user,
-            text=initial_text
+            text=initial_text,
+            is_anonymous=is_anon,
+            anonymous_alias=anon_alias if is_anon else "",
         )
 
-        sender_name = request.user.full_name or (request.user.profile.username if hasattr(request.user, "profile") else request.user.email.split('@')[0])
+        if is_anon:
+            existing.is_anonymous = True
+            existing.anonymous_alias = anon_alias
+            existing.save(update_fields=["is_anonymous", "anonymous_alias"])
+
+        sender_label = anon_alias if is_anon else (request.user.full_name or (request.user.profile.username if hasattr(request.user, "profile") else request.user.email.split('@')[0]))
         create_notification(
             recipient=target_user,
-            sender=request.user,
+            sender=request.user if not is_anon else None,
             notification_type="MESSAGE_REQUEST",
-            title="Message Request ✉️",
-            message=f"{sender_name} sent you a message request.",
+            title="Anonymous Message Request 🎭" if is_anon else "Message Request ✉️",
+            message=f"{sender_label} sent you {'an anonymous ' if is_anon else 'a '}message request.",
             data={"conversation_id": str(existing.id), "message_request_id": str(msg_req.id)}
         )
 
@@ -329,12 +353,18 @@ class SendMessageView(APIView):
         if not text and not attachment and not attachments:
             return Response({"error": "Message text or attachment required."}, status=status.HTTP_400_BAD_REQUEST)
 
+        is_anon = str(request.data.get("is_anonymous", False)).lower() in ["true", "1"]
+        anon_alias = str(request.data.get("anonymous_alias", "") or "").strip()
+        if is_anon and not anon_alias:
+            anon_alias = "🦉 Anonymous Classmate"
+
         # Check blocking for direct chats
         if not conv.is_group:
             other_user = conv.get_other_member(request.user)
             if other_user and UserBlock.is_blocked(request.user, other_user):
                 return Response({"error": "Cannot send messages to this user."}, status=status.HTTP_403_FORBIDDEN)
 
+            are_connected = Connection.are_connected(request.user, other_user)
             # Check if there is an active pending message request for this conversation
             pending_req = MessageRequest.objects.filter(conversation=conv, status="PENDING").first()
             if pending_req:
@@ -347,6 +377,26 @@ class SendMessageView(APIView):
                     # Recipient replied! Auto-accept the message request!
                     pending_req.status = "ACCEPTED"
                     pending_req.save(update_fields=["status", "updated_at"])
+            elif not are_connected and other_user:
+                # First real message to a non-connected classmate -> create MessageRequest with actual typed message
+                target_prof = getattr(other_user, "profile", None)
+                pref = target_prof.messaging_preference if target_prof else "EVERYONE"
+                if pref == "NOBODY":
+                    return Response({"error": "This student does not accept direct messages."}, status=status.HTTP_403_FORBIDDEN)
+                if pref == "CONNECTIONS_ONLY":
+                    return Response({"error": "This student only accepts messages from mutual connections. Please send a connection request first."}, status=status.HTTP_403_FORBIDDEN)
+                if pref == "FOLLOWING" and not Follow.is_following(other_user, request.user):
+                    return Response({"error": "This student only accepts messages from people they follow."}, status=status.HTTP_403_FORBIDDEN)
+
+                pending_req = MessageRequest.objects.create(
+                    sender=request.user,
+                    recipient=other_user,
+                    initial_message=text or "Sent an attachment",
+                    conversation=conv,
+                    status="PENDING",
+                    is_anonymous=is_anon,
+                    anonymous_alias=anon_alias if is_anon else "",
+                )
 
         # Validate attachments upfront so oversized (>20 MB docs) or corrupt files return 400 clearly
         from django.core.exceptions import ValidationError as DjangoValidationError
@@ -375,8 +425,15 @@ class SendMessageView(APIView):
             conversation=conv,
             sender=request.user,
             text=text,
-            attachment=att_first
+            attachment=att_first,
+            is_anonymous=is_anon,
+            anonymous_alias=anon_alias if is_anon else "",
         )
+
+        if is_anon and not conv.is_anonymous:
+            conv.is_anonymous = True
+            conv.anonymous_alias = anon_alias
+            conv.save(update_fields=["is_anonymous", "anonymous_alias"])
 
         # Handle unified attachments (images, documents, voice notes, video)
         if attachments:
@@ -396,12 +453,12 @@ class SendMessageView(APIView):
         conv.save()  # update updated_at timestamp
 
         # Dispatch in-app notification to all other conversation members
-        sender_name = request.user.full_name or request.user.email.split("@")[0]
+        sender_name = anon_alias if is_anon else (request.user.full_name or request.user.email.split("@")[0])
         other_members = conv.members.exclude(user=request.user).select_related("user")
         is_shared_card = "[CAMPUS_POST_CARD:" in text
         has_audio_att = msg.attachments.filter(file_type="AUDIO").exists()
         notif_type = 'SHARE' if is_shared_card else 'MESSAGE'
-        notif_title = f"Post Shared 🔗" if is_shared_card else (f"{conv.name}" if conv.is_group else f"{sender_name} 💬")
+        notif_title = f"{sender_name} 🎭" if is_anon else (f"Post Shared 🔗" if is_shared_card else (f"{conv.name}" if conv.is_group else f"{sender_name} 💬"))
         fallback_att_label = "Sent a voice note 🎙️" if has_audio_att else "Sent an attachment"
         notif_msg = f"{sender_name} shared a post with you." if is_shared_card else f"{sender_name}: {text[:75] or fallback_att_label}"
 
@@ -409,11 +466,11 @@ class SendMessageView(APIView):
             if not m.is_hidden:
                 create_notification(
                     recipient=m.user,
-                    sender=request.user,
+                    sender=request.user if not is_anon else None,
                     notification_type=notif_type,
                     title=notif_title,
                     message=notif_msg,
-                    data={'conversation_id': str(conv.id)}
+                    data={'conversation_id': str(conv.id), 'is_anonymous': is_anon}
                 )
 
         return Response(MessageSerializer(msg, context={"request": request}).data, status=status.HTTP_201_CREATED)

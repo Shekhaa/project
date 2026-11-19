@@ -126,6 +126,7 @@ class PostSerializer(serializers.ModelSerializer):
             "attachments",
             "is_anonymous",
             "anonymous_alias",
+            "is_confession",
             "author_name",
             "author_username",
             "author_avatar",

@@ -82,9 +82,9 @@ class FeedView(generics.ListAPIView):
                 resource_q = Q(media_type="DOCUMENT") | Q(document__isnull=False) | Q(attachments__file_type="DOCUMENT")
                 qs_filter = public_q & resource_q
             elif scope_param == "CONFESSIONS":
-                qs_filter = public_q & Q(is_anonymous=True)
+                qs_filter = public_q & (Q(is_confession=True) | Q(is_anonymous=True, anonymous_alias__in=["Owl", "Tiger", "Ghost", "Ninja", "Falcon", "🦉 Night Owl", "🐅 Brave Tiger", "👻 Campus Ghost", "🥷 Stealth Ninja", "🦅 High Falcon"]))
             else:
-                qs_filter = public_q
+                qs_filter = public_q & Q(is_confession=False)
 
             qs = (
                 Post.objects.filter(qs_filter, is_deleted=False)
@@ -126,31 +126,44 @@ class FeedView(generics.ListAPIView):
                 id_list = []
             qs_filter = Q(id__in=id_list) & base_permitted
         elif community_param:
-            qs_filter = Q(community_id=community_param) & base_permitted
+            qs_filter = Q(community_id=community_param) & base_permitted & Q(is_confession=False)
         elif scope_param == "GLOBAL":
-            qs_filter = Q(visibility="GLOBAL")
+            qs_filter = Q(visibility="GLOBAL") & Q(is_confession=False)
         elif scope_param == "COLLEGE":
-            qs_filter = college_q
+            qs_filter = college_q & Q(is_confession=False)
         elif scope_param in ["FOLLOWERS", "FOLLOWING"]:
-            qs_filter = Q(visibility="FOLLOWERS", author_id__in=followed_ids) | Q(visibility="FOLLOWERS", author=user)
+            qs_filter = (Q(visibility="FOLLOWERS", author_id__in=followed_ids) | Q(visibility="FOLLOWERS", author=user)) & Q(is_confession=False)
         elif scope_param == "CONNECTIONS":
             conn_u1 = list(Connection.objects.filter(user2=user, status="ACCEPTED").values_list("user1_id", flat=True))
             conn_u2 = list(Connection.objects.filter(user1=user, status="ACCEPTED").values_list("user2_id", flat=True))
             connected_ids = list(set(conn_u1) | set(conn_u2))
-            qs_filter = Q(visibility="CONNECTIONS", author_id__in=connected_ids) | Q(visibility="CONNECTIONS", author=user)
+            qs_filter = (Q(visibility="CONNECTIONS", author_id__in=connected_ids) | Q(visibility="CONNECTIONS", author=user)) & Q(is_confession=False)
         elif scope_param == "MEDIA":
             media_q = Q(media_type__in=["IMAGE", "VIDEO"]) | Q(images__isnull=False) | Q(attachments__file_type="IMAGE")
-            qs_filter = base_permitted & media_q
+            qs_filter = base_permitted & media_q & Q(is_confession=False)
         elif scope_param == "RESOURCES":
             resource_q = Q(media_type="DOCUMENT") | Q(document__isnull=False) | Q(attachments__file_type="DOCUMENT")
-            qs_filter = base_permitted & resource_q
+            qs_filter = base_permitted & resource_q & Q(is_confession=False)
         elif scope_param == "CONFESSIONS":
-            qs_filter = base_permitted & Q(is_anonymous=True)
+            conf_level = str(request.query_params.get("level") or request.query_params.get("confession_scope") or "ALL").upper().strip()
+            confession_base = base_permitted & Q(is_confession=True)
+            if conf_level == "GLOBAL":
+                qs_filter = confession_base & Q(visibility="GLOBAL")
+            elif conf_level == "COLLEGE":
+                qs_filter = confession_base & college_q
+            elif conf_level == "COURSE":
+                user_course = getattr(getattr(user, "profile", None), "course", None)
+                if user_course:
+                    qs_filter = confession_base & (Q(community__course=user_course) | Q(author__profile__course=user_course) | Q(visibility="COLLEGE"))
+                else:
+                    qs_filter = confession_base
+            else:
+                qs_filter = confession_base
         elif scope_param == "COMMUNITY":
-            qs_filter = Q(visibility="COMMUNITY", community_id__in=user_community_ids)
+            qs_filter = Q(visibility="COMMUNITY", community_id__in=user_community_ids) & Q(is_confession=False)
         else:
-            # Default: Unified Global Timeline mixing all colleges + enrolled communities + followed peers
-            qs_filter = base_permitted
+            # Default: Unified Global Timeline mixing all colleges + enrolled communities + followed peers (excluding confessions)
+            qs_filter = base_permitted & Q(is_confession=False)
 
         qs = (
             Post.objects.filter(
@@ -262,6 +275,14 @@ class CreatePostView(APIView):
         }
         post_data["visibility"] = visibility
         post_data["community"] = community_id
+        is_confession = request.data.get("is_confession")
+        if isinstance(is_confession, list):
+            is_confession = is_confession[0]
+        is_confession_bool = str(is_confession).lower() in ["true", "1"]
+        post_data["is_confession"] = is_confession_bool
+        if is_confession_bool:
+            post_data["is_anonymous"] = True
+            post_data["community"] = None
 
         # Never persist massive inline data: base64 URIs in Post.media_url when binary uploads are used
         raw_media_url = post_data.get("media_url", "")

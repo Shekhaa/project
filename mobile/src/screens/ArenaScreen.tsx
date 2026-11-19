@@ -17,6 +17,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { lostFoundService, LostFoundItem } from '../services/lostFoundService';
 import { Post, postService } from '../services/postService';
 import { CommentsModal } from '../components/feed/CommentsModal';
+import { ImageCropperModal } from '../components/media/ImageCropperModal';
 import {
   MapPin,
   Plus,
@@ -31,6 +32,11 @@ import {
   Share2,
   Trash2,
   Lock,
+  Crop,
+  Globe,
+  Building2,
+  GraduationCap,
+  Sparkles,
 } from 'lucide-react-native';
 
 interface ArenaScreenProps {
@@ -42,11 +48,20 @@ interface ArenaScreenProps {
 }
 
 const MASCOTS = [
-  { name: 'Anonymous Owl', icon: '🦉', desc: 'Wise & watchful' },
-  { name: 'Incognito Tiger', icon: '🐅', desc: 'Fierce & bold' },
-  { name: 'Campus Ghost', icon: '👻', desc: 'Unseen & floating' },
-  { name: 'Shadow Ninja', icon: '🥷', desc: 'Stealthy & silent' },
-  { name: 'Mystic Falcon', icon: '🦅', desc: 'Keen & sharp' },
+  { name: '🦉 Night Owl', icon: '🦉', desc: 'Wise & watchful' },
+  { name: '🐅 Brave Tiger', icon: '🐅', desc: 'Fierce & bold' },
+  { name: '👻 Campus Ghost', icon: '👻', desc: 'Unseen & floating' },
+  { name: '🥷 Stealth Ninja', icon: '🥷', desc: 'Stealthy & silent' },
+  { name: '🦅 High Falcon', icon: '🦅', desc: 'Keen & sharp' },
+];
+
+export type ConfessionScope = 'ALL' | 'GLOBAL' | 'COLLEGE' | 'COURSE';
+
+const CONFESSION_SCOPES: { key: ConfessionScope; label: string; icon: string }[] = [
+  { key: 'ALL', label: 'All Feeds', icon: '✨' },
+  { key: 'GLOBAL', label: 'All Campuses', icon: '🌐' },
+  { key: 'COLLEGE', label: 'My College', icon: '🏛️' },
+  { key: 'COURSE', label: 'My Course', icon: '🎓' },
 ];
 
 export const ArenaScreen: React.FC<ArenaScreenProps> = ({
@@ -72,10 +87,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
 
   // --- Confessions State ---
   const [confessions, setConfessions] = useState<Post[]>([]);
+  const [confessionScope, setConfessionScope] = useState<ConfessionScope>('ALL');
   const [loadingConfessions, setLoadingConfessions] = useState(false);
   const [confessionModalVisible, setConfessionModalVisible] = useState(false);
-  const [selectedMascot, setSelectedMascot] = useState('Anonymous Owl');
+  const [selectedMascot, setSelectedMascot] = useState('🦉 Night Owl');
   const [confessionText, setConfessionText] = useState('');
+  const [confessionAudience, setConfessionAudience] = useState<'COLLEGE' | 'GLOBAL'>('COLLEGE');
+  const [attachedConfessionImage, setAttachedConfessionImage] = useState<any>(null);
+  const [croppingImageUri, setCroppingImageUri] = useState<string | null>(null);
   const [submittingConfession, setSubmittingConfession] = useState(false);
   const [activeCommentsPost, setActiveCommentsPost] = useState<Post | null>(null);
 
@@ -95,18 +114,22 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
     }
   }, [activeTab]);
 
-  // Load Confessions
-  const loadConfessions = useCallback(async () => {
+  // Load Confessions with level filters (GLOBAL, COLLEGE, COURSE, ALL)
+  const loadConfessions = useCallback(async (scopeOverride?: ConfessionScope) => {
     setLoadingConfessions(true);
     try {
-      const feedData = await postService.getFeed({ scope: 'CONFESSIONS' as any }, 1);
+      const activeScope = scopeOverride || confessionScope;
+      const feedData = await postService.getFeed({
+        scope: 'CONFESSIONS',
+        level: activeScope !== 'ALL' ? activeScope : undefined,
+      }, 1);
       setConfessions(feedData.results || []);
     } catch (e) {
       console.log('Error fetching confessions', e);
     } finally {
       setLoadingConfessions(false);
     }
-  }, []);
+  }, [confessionScope]);
 
   useEffect(() => {
     if (activeSlab === 'LOST_FOUND') {
@@ -260,6 +283,41 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
     setConfessionModalVisible(true);
   };
 
+  // Image Picker & Cropper for Confessions
+  const handlePickConfessionImage = async () => {
+    try {
+      const ImagePicker = require('expo-image-picker');
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        const msg = 'Please grant photo gallery permission to attach confession images.';
+        setBanner({ kind: 'error', text: msg });
+        if (Platform.OS !== 'web') Alert.alert('Permission Needed', msg);
+        return;
+      }
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false, // We use ImageCropperModal for customizable free/preset cropping!
+        quality: 0.9,
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        setCroppingImageUri(res.assets[0].uri);
+      }
+    } catch (err) {
+      console.log('Error picking confession image', err);
+    }
+  };
+
+  const handleConfessionCropComplete = (croppedUri: string, width?: number, height?: number) => {
+    setAttachedConfessionImage({
+      uri: croppedUri,
+      name: 'confession_attachment.jpg',
+      type: 'image/jpeg',
+      width,
+      height,
+    });
+    setCroppingImageUri(null);
+  };
+
   const handlePostConfession = async () => {
     if (!canParticipate) {
       setConfessionModalVisible(false);
@@ -276,14 +334,30 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
     setSubmittingConfession(true);
     setBanner(null);
     try {
-      await postService.createPost({
-        content: confessionText.trim(),
-        is_anonymous: true,
-        anonymous_alias: selectedMascot,
-        visibility: 'COLLEGE',
-      } as any);
+      const formData = new FormData();
+      formData.append('content', confessionText.trim());
+      formData.append('is_anonymous', 'true');
+      formData.append('is_confession', 'true');
+      formData.append('anonymous_alias', selectedMascot);
+      formData.append('visibility', confessionAudience);
+
+      if (attachedConfessionImage) {
+        if (Platform.OS === 'web') {
+          const blob = await fetch(attachedConfessionImage.uri).then((r) => r.blob());
+          formData.append('images', blob, 'confession_attachment.jpg');
+        } else {
+          formData.append('images', {
+            uri: attachedConfessionImage.uri,
+            name: 'confession_attachment.jpg',
+            type: 'image/jpeg',
+          } as any);
+        }
+      }
+
+      await postService.createPost(formData);
       setConfessionModalVisible(false);
       setConfessionText('');
+      setAttachedConfessionImage(null);
       await loadConfessions();
       const okMsg = 'Your confession was spilled anonymously into The Arena! 🎭';
       setBanner({ kind: 'notice', text: okMsg });
@@ -632,6 +706,44 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
       {/* ========================================================================= */}
       {activeSlab === 'CONFESSIONS' && (
         <>
+          {/* Confessions Scope Filter Tabs */}
+          <View style={[styles.tabsRow, { backgroundColor: colors.background }]}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              {CONFESSION_SCOPES.map((scopeItem) => {
+                const active = confessionScope === scopeItem.key;
+                return (
+                  <TouchableOpacity
+                    key={scopeItem.key}
+                    style={[
+                      styles.tab,
+                      {
+                        backgroundColor: active ? colors.primary : colors.surface,
+                        borderColor: active ? colors.primary : colors.cardBorder,
+                      },
+                    ]}
+                    onPress={() => {
+                      setConfessionScope(scopeItem.key);
+                      loadConfessions(scopeItem.key);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Text
+                      style={[
+                        styles.tabText,
+                        {
+                          color: active ? colors.onPrimary : colors.textSecondary,
+                          fontWeight: active ? '700' : '600',
+                        },
+                      ]}
+                    >
+                      {scopeItem.icon} {scopeItem.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
           {loadingConfessions ? (
             <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
           ) : (
@@ -646,6 +758,11 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
                   item.anonymous_alias?.includes('Ghost') ? '👻' :
                   item.anonymous_alias?.includes('Ninja') ? '🥷' :
                   item.anonymous_alias?.includes('Falcon') ? '🦅' : '🎭';
+
+                const displayImage =
+                  item.images && item.images.length > 0
+                    ? item.images[0].image
+                    : item.media_url || null;
 
                 return (
                   <View style={[styles.confessionCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
@@ -672,6 +789,13 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
                     <Text style={[styles.confessionBody, { color: colors.textPrimary }]}>
                       {item.content}
                     </Text>
+
+                    {/* Optional Attached Confession Photo */}
+                    {displayImage ? (
+                      <View style={styles.confessionImageWrapper}>
+                        <Image source={{ uri: displayImage }} style={styles.confessionImage} resizeMode="cover" />
+                      </View>
+                    ) : null}
 
                     {/* Reaction Bar */}
                     <View style={[styles.reactionRow, { borderTopColor: colors.cardBorder }]}>
@@ -859,80 +983,171 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
       {/* ========================================================================= */}
       <Modal visible={confessionModalVisible} animationType="slide" transparent onRequestClose={() => setConfessionModalVisible(false)}>
         <View style={[styles.modalOverlay, { backgroundColor: colors.modalOverlay }]}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View>
-                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Spill Confession ☕</Text>
-                <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-                  Your student name and admission number are 100% hidden.
-                </Text>
+          <ScrollView
+            contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 20 }}
+            style={{ width: '100%' }}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View>
+                  <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Spill Confession ☕</Text>
+                  <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+                    Your student identity and details are 100% hidden.
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setConfessionModalVisible(false)}>
+                  <X size={20} color={colors.textMuted} />
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity onPress={() => setConfessionModalVisible(false)}>
-                <X size={20} color={colors.textMuted} />
-              </TouchableOpacity>
-            </View>
 
-            {/* Mascot Picker */}
-            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>CHOOSE YOUR ANONYMOUS MASCOT</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 6 }}>
-              {MASCOTS.map((m) => {
-                const isSelected = selectedMascot === m.name;
-                return (
+              {/* Scope / Audience Selection */}
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>CONFESSION AUDIENCE</Text>
+              <View style={styles.audienceRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.audienceChip,
+                    {
+                      backgroundColor: confessionAudience === 'COLLEGE' ? colors.primary : colors.surfaceLight,
+                      borderColor: confessionAudience === 'COLLEGE' ? colors.primary : colors.cardBorder,
+                    },
+                  ]}
+                  onPress={() => setConfessionAudience('COLLEGE')}
+                  activeOpacity={0.8}
+                >
+                  <Building2 size={13} color={confessionAudience === 'COLLEGE' ? colors.onPrimary : colors.textSecondary} />
+                  <Text style={[styles.audienceChipText, { color: confessionAudience === 'COLLEGE' ? colors.onPrimary : colors.textSecondary }]}>
+                    My College
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.audienceChip,
+                    {
+                      backgroundColor: confessionAudience === 'GLOBAL' ? colors.primary : colors.surfaceLight,
+                      borderColor: confessionAudience === 'GLOBAL' ? colors.primary : colors.cardBorder,
+                    },
+                  ]}
+                  onPress={() => setConfessionAudience('GLOBAL')}
+                  activeOpacity={0.8}
+                >
+                  <Globe size={13} color={confessionAudience === 'GLOBAL' ? colors.onPrimary : colors.textSecondary} />
+                  <Text style={[styles.audienceChipText, { color: confessionAudience === 'GLOBAL' ? colors.onPrimary : colors.textSecondary }]}>
+                    All Campuses
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Mascot Picker */}
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary, marginTop: 8 }]}>CHOOSE YOUR ANONYMOUS MASCOT</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 6 }}>
+                {MASCOTS.map((m) => {
+                  const isSelected = selectedMascot === m.name;
+                  return (
+                    <TouchableOpacity
+                      key={m.name}
+                      style={[
+                        styles.mascotChip,
+                        {
+                          backgroundColor: isSelected ? colors.primary : colors.surfaceLight,
+                          borderColor: isSelected ? colors.primary : colors.cardBorder,
+                        },
+                      ]}
+                      onPress={() => setSelectedMascot(m.name)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={{ fontSize: 18 }}>{m.icon}</Text>
+                      <Text style={[styles.mascotChipText, { color: isSelected ? colors.onPrimary : colors.textSecondary }]}>
+                        {m.name.replace(/^[^\s]+\s+/, '')}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Confession Text Area - Large and Spacious */}
+              <TextInput
+                style={[styles.confessionInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
+                placeholder="What's your confession? Spill the tea anonymously... Share thoughts, stories, secrets, or shoutouts."
+                placeholderTextColor={colors.textMuted}
+                multiline
+                numberOfLines={8}
+                value={confessionText}
+                onChangeText={setConfessionText}
+              />
+
+              {/* Photo Attachment Picker with Cropping */}
+              {attachedConfessionImage ? (
+                <View style={styles.imagePreviewBox}>
+                  <Image source={{ uri: attachedConfessionImage.uri }} style={styles.previewThumb} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[styles.photoAttachedText, { color: colors.textPrimary }]}>Photo Attached (Cropped)</Text>
+                    <Text style={[styles.photoSubText, { color: colors.textMuted }]}>Will appear on your anonymous confession</Text>
+                  </View>
                   <TouchableOpacity
-                    key={m.name}
-                    style={[
-                      styles.mascotChip,
-                      {
-                        backgroundColor: isSelected ? colors.primary : colors.surfaceLight,
-                        borderColor: isSelected ? colors.primary : colors.cardBorder,
-                      },
-                    ]}
-                    onPress={() => setSelectedMascot(m.name)}
-                    activeOpacity={0.8}
+                    style={[styles.cropActionBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                    onPress={() => setCroppingImageUri(attachedConfessionImage.uri)}
+                    activeOpacity={0.7}
                   >
-                    <Text style={{ fontSize: 18 }}>{m.icon}</Text>
-                    <Text style={[styles.mascotChipText, { color: isSelected ? colors.onPrimary : colors.textSecondary }]}>
-                      {m.name.split(' ')[1] || m.name}
-                    </Text>
+                    <Crop size={15} color={colors.primary} />
                   </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+                  <TouchableOpacity
+                    style={styles.removeImageBtn}
+                    onPress={() => setAttachedConfessionImage(null)}
+                  >
+                    <Trash2 size={16} color="#ef4444" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.pickPhotoBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                  onPress={handlePickConfessionImage}
+                  activeOpacity={0.8}
+                >
+                  <Camera size={18} color={colors.primary} style={{ marginRight: 8 }} />
+                  <Text style={[styles.pickPhotoText, { color: colors.primary }]}>+ Attach Photo / Meme (With Cropping ✂️)</Text>
+                </TouchableOpacity>
+              )}
 
-            {/* Confession Text Area */}
-            <TextInput
-              style={[styles.confessionInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
-              placeholder="What's your confession? Spill the tea anonymously..."
-              placeholderTextColor={colors.textMuted}
-              multiline
-              numberOfLines={4}
-              value={confessionText}
-              onChangeText={setConfessionText}
-            />
+              <View style={styles.modalBtnRow}>
+                <TouchableOpacity
+                  style={[styles.cancelBtn, { borderColor: colors.cardBorder }]}
+                  onPress={() => {
+                    setConfessionModalVisible(false);
+                    setAttachedConfessionImage(null);
+                  }}
+                >
+                  <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
 
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity
-                style={[styles.cancelBtn, { borderColor: colors.cardBorder }]}
-                onPress={() => setConfessionModalVisible(false)}
-              >
-                <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.submitBtn, { backgroundColor: colors.primary }]}
-                onPress={handlePostConfession}
-                disabled={submittingConfession}
-              >
-                {submittingConfession ? (
-                  <ActivityIndicator color={colors.onPrimary} size="small" />
-                ) : (
-                  <Text style={[styles.submitBtnText, { color: colors.onPrimary }]}>Post Confession</Text>
-                )}
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.submitBtn, { backgroundColor: colors.primary }]}
+                  onPress={handlePostConfession}
+                  disabled={submittingConfession}
+                >
+                  {submittingConfession ? (
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
+                  ) : (
+                    <Text style={[styles.submitBtnText, { color: colors.onPrimary }]}>Post Confession</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
+
+      {/* Image Cropper Modal */}
+      {croppingImageUri && (
+        <ImageCropperModal
+          visible={!!croppingImageUri}
+          imageUri={croppingImageUri}
+          onClose={() => setCroppingImageUri(null)}
+          onCropComplete={handleConfessionCropComplete}
+          initialAspectRatio="FREE"
+        />
+      )}
 
       {/* Structured Comments Modal Reused for Confessions */}
       <CommentsModal
@@ -1279,13 +1494,52 @@ const styles = StyleSheet.create({
   },
   confessionInput: {
     borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 13.5,
-    minHeight: 90,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    lineHeight: 22,
+    minHeight: 180,
     textAlignVertical: 'top',
     marginTop: 8,
     marginBottom: 14,
+  },
+  confessionImageWrapper: {
+    width: '100%',
+    height: 240,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 12,
+    backgroundColor: '#000',
+  },
+  confessionImage: {
+    width: '100%',
+    height: '100%',
+  },
+  audienceRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginVertical: 6,
+  },
+  audienceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  audienceChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  cropActionBtn: {
+    padding: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginRight: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalBtnRow: {
     flexDirection: 'row',

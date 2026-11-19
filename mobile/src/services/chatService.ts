@@ -156,8 +156,17 @@ export const chatService = {
   },
 
   // Send message
-  async sendMessage(conversationId: string, text: string): Promise<Message> {
-    const res = await api.post(`/chat/${conversationId}/send/`, { text });
+  async sendMessage(
+    conversationId: string,
+    text: string,
+    options?: { is_anonymous?: boolean; anonymous_alias?: string }
+  ): Promise<Message> {
+    const payload: any = { text };
+    if (options?.is_anonymous) {
+      payload.is_anonymous = true;
+      payload.anonymous_alias = options.anonymous_alias || '🦉 Anonymous Classmate';
+    }
+    const res = await api.post(`/chat/${conversationId}/send/`, payload);
     return res.data;
   },
 
@@ -166,11 +175,16 @@ export const chatService = {
     conversationId: string,
     text: string,
     files: any[],
-    onProgress?: (percent: number) => void
+    onProgress?: (percent: number) => void,
+    options?: { is_anonymous?: boolean; anonymous_alias?: string }
   ): Promise<Message> {
     const formData = new FormData();
     if (text) {
       formData.append('text', text);
+    }
+    if (options?.is_anonymous) {
+      formData.append('is_anonymous', 'true');
+      formData.append('anonymous_alias', options.anonymous_alias || '🦉 Anonymous Classmate');
     }
     files.forEach((item, index) => {
       let fileToAppend = item.file;

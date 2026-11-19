@@ -337,10 +337,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
 
     let textToSend = rawText;
+    let chosenMascot = '';
     if (isAnonMode) {
-      const mascots = ['Anonymous Owl', 'Anonymous Fox', 'Anonymous Tiger', 'Anonymous Panda', 'Anonymous Falcon'];
-      const chosenMascot = mascots[Math.floor(Math.random() * mascots.length)];
-      textToSend = `[ANON_MSG: ${chosenMascot}] ${textToSend}`;
+      const mascots = ['🦉 Night Owl', '🐅 Brave Tiger', '👻 Campus Ghost', '🥷 Stealth Ninja', '🦅 High Falcon'];
+      chosenMascot = mascots[Math.floor(Math.random() * mascots.length)];
     }
     setInputMessage('');
 
@@ -349,7 +349,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       id: tempId as any,
       conversation: activeConv.id as any,
       sender: currentUser?.id,
-      sender_name: isAnonMode ? 'Anonymous Mascot' : (currentUser?.full_name || 'You'),
+      sender_name: isAnonMode ? (chosenMascot || 'You (Anonymous)') : (currentUser?.full_name || 'You'),
       sender_email: currentUser?.email || '',
       text: textToSend,
       attachments: [],
@@ -362,7 +362,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
     try {
       setSending(true);
-      const sent = await chatService.sendMessage(activeConv.id, textToSend);
+      const sent = await chatService.sendMessage(activeConv.id, textToSend, {
+        is_anonymous: isAnonMode,
+        anonymous_alias: chosenMascot,
+      });
       setMessages((prev) => upsertMessageUnique(prev, sent, tempId));
     } catch (e: any) {
       if (isVerifyRequiredErr(e)) {
@@ -438,7 +441,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         name: item.name,
         type: item.mimeType || (item.type === 'IMAGE' ? 'image/jpeg' : (item.type === 'AUDIO' ? 'audio/webm' : (item.type === 'VIDEO' ? 'video/mp4' : 'application/octet-stream'))),
       }));
-      const sent = await chatService.sendMessageWithAttachments(activeConv.id, finalCaption, filesToSend);
+      const sent = await chatService.sendMessageWithAttachments(activeConv.id, finalCaption, filesToSend, undefined, {
+        is_anonymous: isAnonMode,
+        anonymous_alias: isAnonMode ? '🦉 Night Owl' : undefined,
+      });
       setMessages((prev) => upsertMessageUnique(prev, sent, tempId));
     } catch (err: any) {
       if (isVerifyRequiredErr(err)) {

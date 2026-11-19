@@ -29,6 +29,10 @@ class Conversation(models.Model):
         help_text="Unique invite token for group chat invite link (Instagram style)"
     )
 
+    # Anonymous Direct Messaging Attributes
+    is_anonymous = models.BooleanField(default=False, db_index=True)
+    anonymous_alias = models.CharField(max_length=50, blank=True, default="")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -116,6 +120,8 @@ class Message(models.Model):
     text = models.TextField(blank=True, default="")
     attachment = models.FileField(upload_to="chat_attachments/", blank=True, null=True)
     is_read = models.BooleanField(default=False)
+    is_anonymous = models.BooleanField(default=False, db_index=True)
+    anonymous_alias = models.CharField(max_length=50, blank=True, default="")
     is_unsent = models.BooleanField(default=False, db_index=True, help_text="True if sender unsent message for everyone")
     unsent_at = models.DateTimeField(null=True, blank=True)
     deleted_for_users = models.ManyToManyField(
@@ -175,6 +181,8 @@ class MessageRequest(models.Model):
         default="PENDING",
         db_index=True
     )
+    is_anonymous = models.BooleanField(default=False, db_index=True)
+    anonymous_alias = models.CharField(max_length=50, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 

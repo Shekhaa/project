@@ -77,7 +77,8 @@ export const postService = {
   async getFeed(
     options?: {
       communityId?: number;
-      scope?: 'GLOBAL' | 'COLLEGE' | 'FOLLOWING' | 'CONNECTIONS' | 'COMMUNITY' | 'MEDIA' | 'RESOURCES';
+      scope?: 'GLOBAL' | 'COLLEGE' | 'FOLLOWING' | 'CONNECTIONS' | 'COMMUNITY' | 'MEDIA' | 'RESOURCES' | 'CONFESSIONS' | string;
+      level?: 'ALL' | 'GLOBAL' | 'COLLEGE' | 'COURSE' | string;
       ids?: number[];
     } | number,
     page: number = 1
@@ -88,6 +89,7 @@ export const postService = {
     } else if (options) {
       if (options.communityId) params.community = options.communityId;
       if (options.scope) params.scope = options.scope;
+      if (options.level) params.level = options.level;
       if (options.ids && options.ids.length > 0) params.ids = options.ids.join(',');
     }
     const res = await api.get('/posts/feed/', { params });

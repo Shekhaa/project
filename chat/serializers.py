@@ -18,13 +18,27 @@ class MessageSerializer(serializers.ModelSerializer):
             "sender_name",
             "sender_email",
             "sender_avatar",
+            "is_anonymous",
+            "anonymous_alias",
             "text",
             "attachment",
             "attachments",
             "is_read",
             "created_at",
         ]
-        read_only_fields = ["id", "sender", "sender_name", "sender_email", "sender_avatar", "attachments", "is_read", "created_at"]
+        read_only_fields = ["id", "sender", "sender_name", "sender_email", "sender_avatar", "is_anonymous", "anonymous_alias", "attachments", "is_read", "created_at"]
+
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        request = self.context.get("request")
+        current_user = request.user if request else None
+        if obj.is_anonymous and current_user != obj.sender:
+            alias = obj.anonymous_alias or "🦉 Anonymous Classmate"
+            data["sender"] = None
+            data["sender_name"] = alias
+            data["sender_email"] = None
+            data["sender_avatar"] = None
+        return data
 
     def get_sender_avatar(self, obj):
         if hasattr(obj.sender, "profile") and obj.sender.profile.profile_picture:
@@ -74,6 +88,8 @@ class ConversationSerializer(serializers.ModelSerializer):
             "last_message",
             "unread_count",
             "is_request_pending",
+            "is_anonymous",
+            "anonymous_alias",
             "invite_code",
             "members",
             "updated_at",
@@ -117,6 +133,21 @@ class ConversationSerializer(serializers.ModelSerializer):
             return None
         other_user = obj.get_other_member(request.user)
         if other_user:
+            if obj.is_anonymous:
+                first_anon_msg = obj.messages.filter(is_anonymous=True).first()
+                if first_anon_msg and first_anon_msg.sender_id == other_user.id:
+                    alias = obj.anonymous_alias or first_anon_msg.anonymous_alias or "🦉 Anonymous Classmate"
+                    return {
+                        "id": None,
+                        "email": None,
+                        "name": alias,
+                        "full_name": alias,
+                        "username": "anonymous",
+                        "avatar": None,
+                        "profile_picture": None,
+                        "is_anonymous": True,
+                        "anonymous_alias": alias,
+                    }
             prof = getattr(other_user, "profile", None)
             avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
             return {
@@ -127,6 +158,7 @@ class ConversationSerializer(serializers.ModelSerializer):
                 "username": getattr(prof, "username", "") if prof else "",
                 "avatar": avatar_url,
                 "profile_picture": avatar_url,
+                "is_anonymous": False,
             }
         return None
 
@@ -163,6 +195,8 @@ class MessageRequestSerializer(serializers.ModelSerializer):
             "initial_message",
             "conversation_id",
             "status",
+            "is_anonymous",
+            "anonymous_alias",
             "created_at",
             "updated_at",
         ]
@@ -172,6 +206,22 @@ class MessageRequestSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         current_user = request.user if request else None
         s = obj.sender
+        if obj.is_anonymous and current_user != s:
+            alias = obj.anonymous_alias or "🦉 Anonymous Classmate"
+            return {
+                "id": None,
+                "full_name": alias,
+                "username": "anonymous",
+                "email": None,
+                "college_name": s.profile.college.short_name if (hasattr(s, "profile") and s.profile and s.profile.college) else "Campus",
+                "branch_name": "",
+                "avatar": None,
+                "profile_picture": None,
+                "is_verified": False,
+                "is_anonymous": True,
+                "anonymous_alias": alias,
+                "connection_status": "ANONYMOUS",
+            }
         prof = getattr(s, "profile", None)
         conn_status = Connection.get_status(current_user, s) if current_user else "NOT_CONNECTED"
         avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
