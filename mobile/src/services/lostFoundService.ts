@@ -5,7 +5,7 @@ export interface LostFoundItem {
   item_type: 'LOST' | 'FOUND';
   description: string;
   location: string;
-  image?: string;
+  image?: string | null;
   status: 'OPEN' | 'RESOLVED';
   reporter_name: string;
   reporter_id: number;
@@ -16,18 +16,21 @@ export interface LostFoundItem {
 export const lostFoundService = {
   // Get all active lost & found items
   async getItems(type?: 'LOST' | 'FOUND'): Promise<LostFoundItem[]> {
-    const params = type ? { item_type: type } : {};
+    const params = type ? { type } : {};
     const res = await api.get('/lost-found/', { params });
     return res.data.results || res.data;
   },
 
-  // Frictionless 1-step post (Simple description + Written location)
-  async reportItem(data: {
+  // Frictionless post (description + location + optional photo)
+  async reportItem(data: FormData | {
     item_type: 'LOST' | 'FOUND';
     description: string;
     location: string;
   }) {
-    const res = await api.post('/lost-found/report/', data);
+    const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
+    const res = await api.post('/lost-found/create/', data, isFormData ? {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    } : undefined);
     return res.data;
   },
 

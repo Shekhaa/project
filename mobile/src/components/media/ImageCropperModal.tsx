@@ -663,7 +663,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
                 <Text
                   style={[
                     styles.aspectPillText,
-                    { color: active ? '#ffffff' : colors.textSecondary },
+                    { color: active ? colors.onPrimary : colors.textSecondary },
                     active && styles.aspectPillTextActive,
                   ]}
                 >

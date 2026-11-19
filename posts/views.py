@@ -81,6 +81,8 @@ class FeedView(generics.ListAPIView):
             elif scope_param == "RESOURCES":
                 resource_q = Q(media_type="DOCUMENT") | Q(document__isnull=False) | Q(attachments__file_type="DOCUMENT")
                 qs_filter = public_q & resource_q
+            elif scope_param == "CONFESSIONS":
+                qs_filter = public_q & Q(is_anonymous=True)
             else:
                 qs_filter = public_q
 
@@ -142,6 +144,8 @@ class FeedView(generics.ListAPIView):
         elif scope_param == "RESOURCES":
             resource_q = Q(media_type="DOCUMENT") | Q(document__isnull=False) | Q(attachments__file_type="DOCUMENT")
             qs_filter = base_permitted & resource_q
+        elif scope_param == "CONFESSIONS":
+            qs_filter = base_permitted & Q(is_anonymous=True)
         elif scope_param == "COMMUNITY":
             qs_filter = Q(visibility="COMMUNITY", community_id__in=user_community_ids)
         else:

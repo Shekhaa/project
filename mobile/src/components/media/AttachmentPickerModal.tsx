@@ -632,7 +632,7 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
                       <Text
                         style={[
                           styles.qualityPillText,
-                          { color: active ? '#ffffff' : colors.textSecondary },
+                          { color: active ? colors.onPrimary : colors.textSecondary },
                         ]}
                       >
                         {opt.label}

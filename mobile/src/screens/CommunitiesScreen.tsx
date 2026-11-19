@@ -1855,7 +1855,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   style={[
                     styles.categoryPillText,
                     {
-                      color: active ? '#ffffff' : colors.textSecondary,
+                      color: active ? colors.onPrimary : colors.textSecondary,
                       fontWeight: active ? '700' : '600',
                     },
                   ]}

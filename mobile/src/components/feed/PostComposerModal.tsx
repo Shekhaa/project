@@ -1016,7 +1016,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                         <Text
                           style={[
                             styles.qualityPillText,
-                            { color: active ? '#ffffff' : colors.textSecondary },
+                            { color: active ? colors.onPrimary : colors.textSecondary },
                           ]}
                         >
                           {opt.label}

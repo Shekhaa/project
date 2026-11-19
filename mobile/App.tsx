@@ -33,7 +33,7 @@ if (Platform.OS === 'web' && typeof console !== 'undefined') {
   };
 }
 
-import { Home, Building2, MessageSquare, User as UserIcon, Search } from 'lucide-react-native';
+import { Home, Building2, MessageSquare, User as UserIcon, Search, Flame } from 'lucide-react-native';
 import {
   authService,
   User,
@@ -322,10 +322,13 @@ function AppMain() {
             onOpenProfile={(uid) => setViewingProfileUserId(uid)}
           />
         )}
-        {displayedTab === 'LOST_FOUND' && currentUser && (
+        {(displayedTab === 'LOST_FOUND' || (displayedTab as string) === 'ARENA') && currentUser && (
           <LostFoundScreen
+            currentUser={currentUser}
             canParticipate={canParticipate}
+            onRequireAuth={() => setAuthMode('login')}
             onRequireVerify={handleRequireVerify}
+            onOpenProfile={(uid) => setViewingProfileUserId(uid)}
           />
         )}
         {displayedTab === 'PROFILE' && currentUser && (
@@ -409,19 +412,19 @@ function AppMain() {
           onPress={() => navigateToTab('LOST_FOUND')}
           activeOpacity={0.7}
         >
-          <Search
+          <Flame
             size={22}
-            color={displayedTab === 'LOST_FOUND' ? colors.primary : colors.textSecondary}
-            strokeWidth={displayedTab === 'LOST_FOUND' ? 2.5 : 1.8}
+            color={(displayedTab === 'LOST_FOUND' || (displayedTab as string) === 'ARENA') ? colors.primary : colors.textSecondary}
+            strokeWidth={(displayedTab === 'LOST_FOUND' || (displayedTab as string) === 'ARENA') ? 2.5 : 1.8}
           />
           <Text
             style={[
               styles.tabLabel,
-              { color: displayedTab === 'LOST_FOUND' ? colors.primary : colors.textMuted },
-              displayedTab === 'LOST_FOUND' && styles.tabActiveText,
+              { color: (displayedTab === 'LOST_FOUND' || (displayedTab as string) === 'ARENA') ? colors.primary : colors.textMuted },
+              (displayedTab === 'LOST_FOUND' || (displayedTab as string) === 'ARENA') && styles.tabActiveText,
             ]}
           >
-            Lost/Found
+            Arena
           </Text>
         </TouchableOpacity>
 

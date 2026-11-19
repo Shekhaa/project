@@ -28,6 +28,7 @@ import {
 import { profileService } from '../services/profileService';
 import { postService, Post } from '../services/postService';
 import { PostCard } from '../components/feed/PostCard';
+import { CommentsModal } from '../components/feed/CommentsModal';
 import { StudentProfileModal } from '../components/profile/StudentProfileModal';
 import { SocialListModal, SocialModalType } from '../components/profile/SocialListModal';
 import { UserAvatar } from '../components/common/UserAvatar';
@@ -269,6 +270,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [savedModalVisible, setSavedModalVisible] = useState(false);
   const [savedPosts, setSavedPosts] = useState<Post[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
+  const [activeSavedCommentsPost, setActiveSavedCommentsPost] = useState<Post | null>(null);
 
   const [blockedModalVisible, setBlockedModalVisible] = useState(false);
   const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
@@ -2715,36 +2717,40 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               </View>
             ) : (
               <ScrollView style={styles.customModalScroll} showsVerticalScrollIndicator={false}>
-                <View style={{ gap: 12, paddingBottom: 32 }}>
+                <View style={{ gap: 14, paddingBottom: 32 }}>
                   {savedPosts.map((post) => (
-                    <View
+                    <PostCard
                       key={post.id}
-                      style={[styles.savedCardBox, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                    >
-                      <View style={styles.savedCardHeader}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.savedAuthorName, { color: colors.textPrimary }]}>{post.author_name}</Text>
-                          <Text style={[styles.savedPostTime, { color: colors.textMuted }]}>
-                            {new Date(post.created_at).toLocaleDateString()}
-                          </Text>
-                        </View>
-                        <TouchableOpacity
-                          style={styles.unsaveBtn}
-                          onPress={() => handleRemoveSavedPost(post.id)}
-                        >
-                          <Bookmark size={14} color="#eab308" fill="#eab308" />
-                          <Text style={styles.unsaveBtnText}>Unsave</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <Text style={[styles.savedContentText, { color: colors.textPrimary }]} numberOfLines={3}>
-                        {post.content}
-                      </Text>
-                      {post.media_url ? (
-                        <View style={styles.savedMediaIndicator}>
-                          <Text style={{ fontSize: 12, color: colors.primary }}>📎 Media attached</Text>
-                        </View>
-                      ) : null}
-                    </View>
+                      post={post}
+                      currentUser={currentUser}
+                      onLike={async (pid) => {
+                        try {
+                          const res = await postService.toggleLike(pid);
+                          setSavedPosts((prev) =>
+                            prev.map((p) =>
+                              p.id === pid
+                                ? { ...p, has_liked: res.has_liked ?? res.liked, likes_count: res.likes_count }
+                                : p
+                            )
+                          );
+                        } catch (e) {
+                          console.log('Like error', e);
+                        }
+                      }}
+                      onCommentPress={(p) => setActiveSavedCommentsPost(p)}
+                      onSharePress={(p) => {
+                        showCrossPlatformAlert('Share', `Post by ${p.author_name} is saved in your bookmarks.`);
+                      }}
+                      onAuthorPress={(authorId) => {
+                        setSavedModalVisible(false);
+                        setViewingStudentId(authorId);
+                      }}
+                      onBookmarkToggle={(postId, isBookmarked) => {
+                        if (!isBookmarked) {
+                          setSavedPosts((prev) => prev.filter((p) => p.id !== postId));
+                        }
+                      }}
+                    />
                   ))}
                 </View>
               </ScrollView>
@@ -2752,6 +2758,21 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* Comments Modal for Saved Posts */}
+      <CommentsModal
+        visible={!!activeSavedCommentsPost}
+        post={activeSavedCommentsPost}
+        currentUser={currentUser}
+        canParticipate={effectiveCanParticipate}
+        onRequireAuth={() => {}}
+        onRequireVerify={onRequireVerify}
+        onClose={() => setActiveSavedCommentsPost(null)}
+        onOpenProfile={(uid) => {
+          setSavedModalVisible(false);
+          setViewingStudentId(uid);
+        }}
+      />
 
       {/* 🚫 My Blocked IDs Modal */}
       <Modal

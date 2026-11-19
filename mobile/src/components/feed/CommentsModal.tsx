@@ -52,6 +52,14 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
+  const [expandedReplies, setExpandedReplies] = useState<Record<number, boolean>>({});
+
+  const toggleReplies = (commentId: number) => {
+    setExpandedReplies((prev) => ({
+      ...prev,
+      [commentId]: !prev[commentId],
+    }));
+  };
 
   useEffect(() => {
     if (visible && post) {
@@ -62,6 +70,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
       setCursorPos(0);
       setMentionDismissed(false);
       setReplyingTo(null);
+      setExpandedReplies({});
     }
   }, [visible, post]);
 
@@ -160,6 +169,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
       );
 
       if (parentId) {
+        setExpandedReplies((prev) => ({ ...prev, [parentId]: true }));
         setComments((prev) =>
           prev.map((c) => {
             if (c.id === parentId) {
@@ -315,10 +325,27 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
           </View>
         </View>
 
-        {/* Nested Replies */}
+        {/* Nested Replies (Instagram-Style Collapsible) */}
         {item.replies && item.replies.length > 0 && (
-          <View style={[styles.nestedRepliesContainer, { borderLeftColor: colors.cardBorder }]}>
-            {item.replies.map((reply) => renderReplyItem(reply))}
+          <View style={styles.repliesWrapper}>
+            <TouchableOpacity
+              style={styles.toggleRepliesBtn}
+              onPress={() => toggleReplies(item.id)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.toggleRepliesLine, { backgroundColor: colors.textMuted }]} />
+              <Text style={[styles.toggleRepliesText, { color: colors.textMuted }]}>
+                {expandedReplies[item.id]
+                  ? 'Hide replies'
+                  : `View ${item.replies.length} ${item.replies.length === 1 ? 'reply' : 'replies'}`}
+              </Text>
+            </TouchableOpacity>
+
+            {expandedReplies[item.id] && (
+              <View style={[styles.nestedRepliesContainer, { borderLeftColor: colors.cardBorder }]}>
+                {item.replies.map((reply) => renderReplyItem(reply))}
+              </View>
+            )}
           </View>
         )}
       </View>
@@ -618,10 +645,29 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '600',
   },
+  repliesWrapper: {
+    marginLeft: 36,
+    marginTop: 4,
+  },
+  toggleRepliesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  toggleRepliesLine: {
+    width: 22,
+    height: 1,
+    opacity: 0.6,
+  },
+  toggleRepliesText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
   nestedRepliesContainer: {
-    marginLeft: 30,
-    marginTop: 8,
-    paddingLeft: 12,
+    marginLeft: 10,
+    marginTop: 6,
+    paddingLeft: 10,
     borderLeftWidth: 2,
   },
   replyRow: {
