@@ -24,7 +24,7 @@ def approve_selected_id_cards(modeladmin, request, queryset):
             Notification.objects.create(
                 recipient=user,
                 sender=request.user,
-                notification_type="SYSTEM",
+                notification_type="ANNOUNCEMENT",
                 title="Campus ID Approved",
                 message="Your Student ID has been verified by the admin team. Posting, confessing & chatting are now unlocked!",
             )
@@ -67,7 +67,7 @@ def reject_or_flag_fake(modeladmin, request, queryset):
             Notification.objects.create(
                 recipient=user,
                 sender=request.user,
-                notification_type="SYSTEM",
+                notification_type="ANNOUNCEMENT",
                 title="ID Verification Notice",
                 message="Your uploaded ID card photo could not be verified. Please upload a clearer photo from Profile Settings.",
             )
@@ -77,8 +77,20 @@ def reject_or_flag_fake(modeladmin, request, queryset):
     modeladmin.message_user(request, f"Flagged {count} profile(s) as invalid/fake.", messages.WARNING)
 
 
+def delete_selected_profiles_and_users(modeladmin, request, queryset):
+    count = 0
+    for profile in queryset:
+        user = profile.user
+        profile.delete()
+        if user and not user.is_staff and not user.is_superuser:
+            user.delete()
+        count += 1
+    modeladmin.message_user(request, f"Permanently deleted {count} profile(s) and associated user account(s).", messages.SUCCESS)
+
+
 approve_selected_id_cards.short_description = "✅ Approve selected Student ID Cards (Unlock full access)"
 reject_or_flag_fake.short_description = "❌ Reject / Flag selected ID Cards as Fake"
+delete_selected_profiles_and_users.short_description = "🗑️ Delete selected Profiles AND User accounts"
 
 
 @admin.register(PendingIDCardApproval)
@@ -96,7 +108,7 @@ class PendingIDCardApprovalAdmin(admin.ModelAdmin):
     list_display_links = ("id_card_photo", "student_full_name")
     list_filter = ("college", "course", "created_at")
     search_fields = ("username", "user__email", "user__full_name", "admission_number")
-    actions = [approve_selected_id_cards, reject_or_flag_fake]
+    actions = [approve_selected_id_cards, reject_or_flag_fake, delete_selected_profiles_and_users]
     readonly_fields = ("id_card_large_preview", "id_card_ocr_data", "id_card_hash", "created_at")
     fields = (
         "user",
@@ -113,6 +125,25 @@ class PendingIDCardApprovalAdmin(admin.ModelAdmin):
         "id_card_hash",
         "created_at",
     )
+
+    def save_model(self, request, obj, form, change):
+        if obj.id_card_verified or obj.verified:
+            obj.verification_method = "ADMIN_VERIFIED"
+            obj.is_flagged_fake = False
+            if not obj.flag_reason:
+                obj.flag_reason = f"Approved via admin form ({request.user.email})"
+            user = obj.user
+            if user and not user.is_verified_student:
+                user.is_verified_student = True
+                user.save(update_fields=["is_verified_student"])
+        elif obj.is_flagged_fake:
+            obj.id_card_verified = False
+            obj.verified = False
+            user = obj.user
+            if user and user.is_verified_student:
+                user.is_verified_student = False
+                user.save(update_fields=["is_verified_student"])
+        super().save_model(request, obj, form, change)
 
     def get_queryset(self, request):
         return super().get_queryset(request).filter(
@@ -181,8 +212,27 @@ class StudentProfileAdmin(admin.ModelAdmin):
         "course",
     )
     search_fields = ("username", "user__email", "user__full_name", "admission_number")
-    actions = [approve_selected_id_cards, reject_or_flag_fake]
+    actions = [approve_selected_id_cards, reject_or_flag_fake, delete_selected_profiles_and_users]
     readonly_fields = ("id_card_large_preview", "id_card_ocr_data", "id_card_hash")
+
+    def save_model(self, request, obj, form, change):
+        if obj.id_card_verified or obj.verified:
+            obj.verification_method = "ADMIN_VERIFIED"
+            obj.is_flagged_fake = False
+            if not obj.flag_reason:
+                obj.flag_reason = f"Approved via admin form ({request.user.email})"
+            user = obj.user
+            if user and not user.is_verified_student:
+                user.is_verified_student = True
+                user.save(update_fields=["is_verified_student"])
+        elif obj.is_flagged_fake:
+            obj.id_card_verified = False
+            obj.verified = False
+            user = obj.user
+            if user and user.is_verified_student:
+                user.is_verified_student = False
+                user.save(update_fields=["is_verified_student"])
+        super().save_model(request, obj, form, change)
 
     def student_full_name(self, obj):
         return obj.user.full_name or obj.username

@@ -725,6 +725,20 @@ def seed():
         )
     print(" -> Seeded Starter Batch Invite Codes: GEU2026, GEHU2026")
 
+    # Auto-Heal & Synchronize All Pending/Approved ID Cards
+    # Guarantees that any profile marked verified or id_card_verified=True has user.is_verified_student=True
+    synced_count = 0
+    for prof in StudentProfile.objects.filter(id_card_verified=True, user__is_verified_student=False).select_related("user"):
+        prof.user.is_verified_student = True
+        prof.user.save(update_fields=["is_verified_student"])
+        synced_count += 1
+    for prof in StudentProfile.objects.filter(verified=True, user__is_verified_student=False).select_related("user"):
+        prof.user.is_verified_student = True
+        prof.user.save(update_fields=["is_verified_student"])
+        synced_count += 1
+    if synced_count > 0:
+        print(f" -> Auto-healed and synced {synced_count} student(s) to is_verified_student=True in production!")
+
     print("\n==================================================")
     print("  Canonical Seeding Complete (12 Students + Chats)!")
     print("==================================================")

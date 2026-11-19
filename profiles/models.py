@@ -107,6 +107,23 @@ class StudentProfile(models.Model):
     def credibility_score(self):
         return CredibilityEndorsement.objects.filter(recipient=self.user).count()
 
+    def save(self, *args, **kwargs):
+        # Auto-sync verification status to User model across all save paths
+        if self.user_id:
+            try:
+                user = self.user
+                if self.id_card_verified or self.verified or self.verification_method in ("MICROSOFT_SSO", "ADMIN_VERIFIED", "INVITE_CODE"):
+                    if not user.is_verified_student:
+                        user.is_verified_student = True
+                        user.save(update_fields=["is_verified_student"])
+                elif self.is_flagged_fake:
+                    if user.is_verified_student:
+                        user.is_verified_student = False
+                        user.save(update_fields=["is_verified_student"])
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"@{self.username} ({self.college.short_name} - {self.course.name})"
 
