@@ -32,6 +32,7 @@ import { useTheme } from '../../theme/ThemeContext';
 import { postService } from '../../services/postService';
 import { StagedAttachment } from '../media/AttachmentPickerModal';
 import { ImageCropperModal } from '../media/ImageCropperModal';
+import { MediaDeckCarousel } from '../media/MediaDeckCarousel';
 import {
   MentionCandidate,
   MentionSuggestionsBar,
@@ -1051,25 +1052,25 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
             </View>
           )}
 
-          {/* Video Preview (if video staged on Web) */}
-          {videoFiles.length > 0 && Platform.OS === 'web' && (
-            <View
-              style={[
-                styles.videoPreviewBox,
-                { backgroundColor: '#000000', borderColor: colors.cardBorder },
-              ]}
-            >
-              <video
-                src={videoFiles[0].uri}
-                controls
-                playsInline
-                style={{
-                  width: '100%',
-                  maxHeight: 340,
-                  objectFit: 'contain',
-                  display: 'block',
-                  borderRadius: 10,
-                }}
+          {/* Video Preview Deck (renders all attached videos with Reddit/Twitter style slide deck) */}
+          {videoFiles.length > 0 && (
+            <View style={{ marginHorizontal: 16, marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <Text style={[styles.stagedTitle, { color: colors.textSecondary }]}>
+                  Attached Videos ({videoFiles.length})
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                  Swipe to review all videos
+                </Text>
+              </View>
+              <MediaDeckCarousel
+                media={videoFiles.map((v) => ({
+                  id: v.id,
+                  uri: v.uri,
+                  file_url: v.uri,
+                  file_type: 'VIDEO',
+                  name: v.name,
+                }))}
               />
             </View>
           )}

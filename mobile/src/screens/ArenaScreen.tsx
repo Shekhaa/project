@@ -93,7 +93,6 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
   const [selectedMascot, setSelectedMascot] = useState('🦉 Night Owl');
   const [confessionText, setConfessionText] = useState('');
   const [confessionAudience, setConfessionAudience] = useState<'COLLEGE' | 'GLOBAL'>('COLLEGE');
-  const [attachedConfessionImage, setAttachedConfessionImage] = useState<any>(null);
   const [croppingImageUri, setCroppingImageUri] = useState<string | null>(null);
   const [submittingConfession, setSubmittingConfession] = useState(false);
   const [activeCommentsPost, setActiveCommentsPost] = useState<Post | null>(null);
@@ -139,8 +138,32 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
     }
   }, [activeSlab, loadLfItems, loadConfessions]);
 
-  // Image Picker for Lost & Found
-  const handlePickImage = async () => {
+  // Camera Capture for Lost & Found (Opens ImageCropperModal Crop Studio)
+  const handleCaptureLfPhoto = async () => {
+    try {
+      const ImagePicker = require('expo-image-picker');
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        const msg = 'Please grant camera permission to take a picture of the item.';
+        setBanner({ kind: 'error', text: msg });
+        if (Platform.OS !== 'web') Alert.alert('Permission Needed', msg);
+        return;
+      }
+      const res = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false, // Opens ImageCropperModal Crop Studio!
+        quality: 0.9,
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        setCroppingImageUri(res.assets[0].uri);
+      }
+    } catch (err) {
+      console.log('Error launching camera', err);
+    }
+  };
+
+  // Gallery Picker for Lost & Found (Opens ImageCropperModal Crop Studio)
+  const handlePickLfImage = async () => {
     try {
       const ImagePicker = require('expo-image-picker');
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -152,15 +175,25 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
       }
       const res = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.8,
+        allowsEditing: false, // Opens ImageCropperModal Crop Studio!
+        quality: 0.9,
       });
       if (!res.canceled && res.assets && res.assets.length > 0) {
-        setItemImage(res.assets[0]);
+        setCroppingImageUri(res.assets[0].uri);
       }
     } catch (err) {
       console.log('Error picking image', err);
     }
+  };
+
+  // Crop Complete Handler for Lost & Found
+  const handleLfCropComplete = (croppedUri: string) => {
+    setItemImage({
+      uri: croppedUri,
+      name: 'lost_found_photo.jpg',
+      type: 'image/jpeg',
+    });
+    setCroppingImageUri(null);
   };
 
   const handleOpenReportModal = () => {
@@ -283,41 +316,6 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
     setConfessionModalVisible(true);
   };
 
-  // Image Picker & Cropper for Confessions
-  const handlePickConfessionImage = async () => {
-    try {
-      const ImagePicker = require('expo-image-picker');
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        const msg = 'Please grant photo gallery permission to attach confession images.';
-        setBanner({ kind: 'error', text: msg });
-        if (Platform.OS !== 'web') Alert.alert('Permission Needed', msg);
-        return;
-      }
-      const res = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false, // We use ImageCropperModal for customizable free/preset cropping!
-        quality: 0.9,
-      });
-      if (!res.canceled && res.assets && res.assets.length > 0) {
-        setCroppingImageUri(res.assets[0].uri);
-      }
-    } catch (err) {
-      console.log('Error picking confession image', err);
-    }
-  };
-
-  const handleConfessionCropComplete = (croppedUri: string, width?: number, height?: number) => {
-    setAttachedConfessionImage({
-      uri: croppedUri,
-      name: 'confession_attachment.jpg',
-      type: 'image/jpeg',
-      width,
-      height,
-    });
-    setCroppingImageUri(null);
-  };
-
   const handlePostConfession = async () => {
     if (!canParticipate) {
       setConfessionModalVisible(false);
@@ -341,23 +339,10 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
       formData.append('anonymous_alias', selectedMascot);
       formData.append('visibility', confessionAudience);
 
-      if (attachedConfessionImage) {
-        if (Platform.OS === 'web') {
-          const blob = await fetch(attachedConfessionImage.uri).then((r) => r.blob());
-          formData.append('images', blob, 'confession_attachment.jpg');
-        } else {
-          formData.append('images', {
-            uri: attachedConfessionImage.uri,
-            name: 'confession_attachment.jpg',
-            type: 'image/jpeg',
-          } as any);
-        }
-      }
-
-      await postService.createPost(formData);
+      const created = await postService.createPost(formData);
       setConfessionModalVisible(false);
       setConfessionText('');
-      setAttachedConfessionImage(null);
+      setConfessions((prev) => [created, ...prev]);
       await loadConfessions();
       const okMsg = 'Your confession was spilled anonymously into The Arena! 🎭';
       setBanner({ kind: 'notice', text: okMsg });
@@ -928,30 +913,50 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
               onChangeText={setLocation}
             />
 
-            {/* Photo Attachment Picker */}
+            {/* Photo Attachment Picker with Crop Studio */}
             {itemImage ? (
               <View style={styles.imagePreviewBox}>
                 <Image source={{ uri: itemImage.uri }} style={styles.previewThumb} />
                 <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={[styles.photoAttachedText, { color: colors.textPrimary }]}>Photo Attached</Text>
-                  <Text style={[styles.photoSubText, { color: colors.textMuted }]}>Classmates will see this photo</Text>
+                  <Text style={[styles.photoAttachedText, { color: colors.textPrimary }]}>Photo Attached (Cropped)</Text>
+                  <Text style={[styles.photoSubText, { color: colors.textMuted }]}>Classmates will see this item photo</Text>
                 </View>
+                <TouchableOpacity
+                  style={[styles.cropActionBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                  onPress={() => setCroppingImageUri(itemImage.uri)}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Recrop photo"
+                >
+                  <Crop size={15} color={colors.primary} />
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.removeImageBtn}
                   onPress={() => setItemImage(null)}
+                  accessibilityLabel="Remove photo"
                 >
                   <Trash2 size={16} color="#ef4444" />
                 </TouchableOpacity>
               </View>
             ) : (
-              <TouchableOpacity
-                style={[styles.pickPhotoBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                onPress={handlePickImage}
-                activeOpacity={0.8}
-              >
-                <Camera size={18} color={colors.primary} style={{ marginRight: 8 }} />
-                <Text style={[styles.pickPhotoText, { color: colors.primary }]}>+ Attach Item Photo (Optional)</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 8, marginVertical: 6 }}>
+                <TouchableOpacity
+                  style={[styles.pickPhotoBtn, { flex: 1, backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                  onPress={handleCaptureLfPhoto}
+                  activeOpacity={0.8}
+                >
+                  <Camera size={16} color={colors.primary} style={{ marginRight: 6 }} />
+                  <Text style={[styles.pickPhotoText, { color: colors.primary }]}>Take Photo</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.pickPhotoBtn, { flex: 1, backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                  onPress={handlePickLfImage}
+                  activeOpacity={0.8}
+                >
+                  <Plus size={16} color={colors.primary} style={{ marginRight: 6 }} />
+                  <Text style={[styles.pickPhotoText, { color: colors.primary }]}>Upload Photo</Text>
+                </TouchableOpacity>
+              </View>
             )}
 
             <View style={styles.modalBtnRow}>
@@ -1077,45 +1082,11 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
                 onChangeText={setConfessionText}
               />
 
-              {/* Photo Attachment Picker with Cropping */}
-              {attachedConfessionImage ? (
-                <View style={styles.imagePreviewBox}>
-                  <Image source={{ uri: attachedConfessionImage.uri }} style={styles.previewThumb} />
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={[styles.photoAttachedText, { color: colors.textPrimary }]}>Photo Attached (Cropped)</Text>
-                    <Text style={[styles.photoSubText, { color: colors.textMuted }]}>Will appear on your anonymous confession</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.cropActionBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                    onPress={() => setCroppingImageUri(attachedConfessionImage.uri)}
-                    activeOpacity={0.7}
-                  >
-                    <Crop size={15} color={colors.primary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.removeImageBtn}
-                    onPress={() => setAttachedConfessionImage(null)}
-                  >
-                    <Trash2 size={16} color="#ef4444" />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.pickPhotoBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                  onPress={handlePickConfessionImage}
-                  activeOpacity={0.8}
-                >
-                  <Camera size={18} color={colors.primary} style={{ marginRight: 8 }} />
-                  <Text style={[styles.pickPhotoText, { color: colors.primary }]}>+ Attach Photo / Meme (With Cropping ✂️)</Text>
-                </TouchableOpacity>
-              )}
-
               <View style={styles.modalBtnRow}>
                 <TouchableOpacity
                   style={[styles.cancelBtn, { borderColor: colors.cardBorder }]}
                   onPress={() => {
                     setConfessionModalVisible(false);
-                    setAttachedConfessionImage(null);
                   }}
                 >
                   <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
@@ -1144,7 +1115,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
           visible={!!croppingImageUri}
           imageUri={croppingImageUri}
           onClose={() => setCroppingImageUri(null)}
-          onCropComplete={handleConfessionCropComplete}
+          onCropComplete={handleLfCropComplete}
           initialAspectRatio="FREE"
         />
       )}

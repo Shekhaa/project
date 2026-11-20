@@ -26,6 +26,7 @@ import {
 import { useTheme } from '../../theme/ThemeContext';
 import { Post } from '../../services/postService';
 import { MediaGrid } from '../media/MediaGrid';
+import { MediaDeckCarousel, UnifiedMediaItem } from '../media/MediaDeckCarousel';
 import { DocumentCard } from '../media/DocumentCard';
 import { ImageViewerModal } from '../media/ImageViewerModal';
 import { UserAvatar } from '../common/UserAvatar';
@@ -159,42 +160,51 @@ const PostCardComponent: React.FC<PostCardProps> = ({
     }
   };
 
-  // Unified Media Attachments with backend host resolution
-  const imageAttachments = (post.attachments || [])
-    .filter((a) => a.file_type === 'IMAGE' && a.file_url)
-    .map((a) => ({ ...a, file_url: getFullMediaUrl(a.file_url) }));
+  // Unified Visual Media Items (Images AND Multiple Videos combined for Reddit/Twitter style slide deck)
+  const unifiedMediaDeck: UnifiedMediaItem[] = [];
 
-  const legacyImages = (post.images || [])
-    .filter((img) => img.image)
-    .map((img) => ({
-      id: String(img.id),
-      file_url: getFullMediaUrl(img.image),
-      download_url: getFullMediaUrl(img.image),
-      file_name: 'Campus image',
-      file_type: 'IMAGE' as const,
-      file_extension: 'jpg',
-      mime_type: 'image/jpeg',
-      file_size: 0,
-      file_size_formatted: '',
-      created_at: img.uploaded_at || post.created_at,
-    }));
+  // 1. Process all attachments preserving sequence
+  (post.attachments || []).forEach((att) => {
+    const isVid = att.file_type === 'VIDEO' || att.file_extension?.match(/^(mp4|webm|mov|mkv|avi|m4v)$/i);
+    const isImg = att.file_type === 'IMAGE' || att.file_extension?.match(/^(jpg|jpeg|png|webp|gif)$/i);
+    if ((isVid || isImg) && att.file_url) {
+      unifiedMediaDeck.push({
+        ...att,
+        file_type: isVid ? 'VIDEO' : 'IMAGE',
+        file_url: getFullMediaUrl(att.file_url),
+      });
+    }
+  });
 
-  const allImages = [...imageAttachments, ...legacyImages];
-  const singleMediaUrl = post.media_url ? getFullMediaUrl(post.media_url) : null;
+  // 2. Legacy post images
+  (post.images || []).forEach((img) => {
+    if (img.image) {
+      unifiedMediaDeck.push({
+        id: String(img.id),
+        file_url: getFullMediaUrl(img.image),
+        download_url: getFullMediaUrl(img.image),
+        file_name: 'Campus image',
+        file_type: 'IMAGE',
+        file_extension: 'jpg',
+      });
+    }
+  });
+
+  // 3. Fallback post.media_url if not already represented in attachments
+  if (post.media_url && unifiedMediaDeck.length === 0) {
+    const fullMedia = getFullMediaUrl(post.media_url);
+    const isVid =
+      post.media_type === 'VIDEO' ||
+      Boolean(fullMedia.match(/\.(mp4|webm|mov|mkv|avi|m4v)(\?.*)?$/i));
+    unifiedMediaDeck.push({
+      id: `media_url_${post.id}`,
+      file_url: fullMedia,
+      file_type: isVid ? 'VIDEO' : 'IMAGE',
+      file_name: isVid ? 'Campus video' : 'Campus image',
+    });
+  }
+
   const docAttachments = (post.attachments || []).filter((a) => a.file_type === 'DOCUMENT');
-
-  const videoAttachment = (post.attachments || []).find(
-    (a) => a.file_type === 'VIDEO' || a.file_extension?.match(/^(mp4|webm|mov|mkv|avi|m4v)$/i)
-  );
-  const isVideoMedia =
-    post.media_type === 'VIDEO' ||
-    Boolean(videoAttachment) ||
-    Boolean(singleMediaUrl && singleMediaUrl.match(/\.(mp4|webm|mov|mkv|avi|m4v)(\?.*)?$/i));
-  const postVideoUrl = videoAttachment
-    ? getFullMediaUrl(videoAttachment.file_url)
-    : isVideoMedia
-    ? singleMediaUrl
-    : null;
 
   useEffect(() => {
     setImageError(false);
@@ -341,98 +351,12 @@ const PostCardComponent: React.FC<PostCardProps> = ({
         </TouchableOpacity>
       ) : null}
 
-      {/* 3. Post Video */}
-      {postVideoUrl ? (
-        <View style={styles.videoWrapper}>
-          {Platform.OS === 'web' ? (
-            <video
-              src={postVideoUrl}
-              controls
-              playsInline
-              style={{
-                width: '100%',
-                maxHeight: 400,
-                objectFit: 'contain',
-                display: 'block',
-                borderRadius: 12,
-                backgroundColor: '#000',
-              }}
-            />
-          ) : (
-            <TouchableOpacity
-              style={[
-                styles.videoPlaceholder,
-                { backgroundColor: '#090d16' },
-              ]}
-              onPress={() => Linking.openURL(postVideoUrl)}
-            >
-              <View style={styles.playButtonCircle}>
-                <Play size={28} color="#ffffff" fill="#ffffff" />
-              </View>
-              <Text style={styles.playVideoLabel}>Play Video Attachment</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      ) : null}
-
-      {/* 4. Post Images (Proportional up to 9:16 via MediaGrid or adaptive legacy frame) */}
-      {allImages.length > 0 ? (
+      {/* 3. Visual Media Deck (Photos & Videos in Reddit/Twitter style slide deck) */}
+      {unifiedMediaDeck.length > 0 && (
         <View style={styles.mediaGridWrapper}>
-          <MediaGrid images={allImages} />
+          <MediaDeckCarousel media={unifiedMediaDeck} />
         </View>
-      ) : !isVideoMedia &&
-        singleMediaUrl &&
-        (post.media_type === 'IMAGE' || !post.media_type) &&
-        !imageError ? (
-        <>
-          <TouchableOpacity
-            style={[
-              styles.imageContainer,
-              {
-                aspectRatio: legacyRatio,
-                maxHeight: 520,
-                backgroundColor: colors.surfaceLight,
-              },
-            ]}
-            onPress={() => setLegacyViewerVisible(true)}
-            activeOpacity={0.95}
-          >
-            <Image
-              source={{ uri: singleMediaUrl }}
-              style={styles.postImage}
-              resizeMode="contain"
-              onLoad={(e: any) => {
-                const src = e?.nativeEvent?.source;
-                const w = src?.width || e?.target?.naturalWidth;
-                const h = src?.height || e?.target?.naturalHeight;
-                if (w && h) {
-                  setLegacyRatio(clampAspectRatio(w, h, legacyRatio));
-                }
-              }}
-              onError={() => setImageError(true)}
-            />
-          </TouchableOpacity>
-          <ImageViewerModal
-            visible={legacyViewerVisible}
-            images={[
-              {
-                id: String(post.id),
-                file_url: singleMediaUrl,
-                download_url: singleMediaUrl,
-                file_name: 'post_image.jpg',
-                file_type: 'IMAGE',
-                file_extension: 'jpg',
-                mime_type: 'image/jpeg',
-                file_size: 0,
-                file_size_formatted: '',
-                created_at: post.created_at,
-              },
-            ]}
-            initialIndex={0}
-            onClose={() => setLegacyViewerVisible(false)}
-          />
-        </>
-      ) : null}
+      )}
 
       {/* 5. Academic Documents */}
       {docAttachments.length > 0 ? (
