@@ -4,19 +4,30 @@ import { dataUrlToWebFile } from '../utils/mediaUtils';
 export interface Conversation {
   id: string;
   name?: string;
+  display_title?: string;
   is_group: boolean;
   is_ephemeral: boolean;
+  is_anonymous?: boolean;
+  anonymous_alias?: string;
+  anonymous_sender_id?: number | null;
+  is_anonymous_sender?: boolean;
+  expires_in_days?: number | null;
   duration?: '10_MIN' | '1_HOUR' | '12_HOURS' | '24_HOURS';
   purpose_tag?: string;
   expires_at?: string;
   is_expired?: boolean;
   recipient?: {
-    id: number;
+    id: number | null;
     full_name: string;
-    email: string;
+    email?: string | null;
     username?: string;
     avatar?: string | null;
     profile_picture?: string | null;
+    is_anonymous?: boolean;
+    is_outgoing_anonymous?: boolean;
+    is_incoming_anonymous?: boolean;
+    anonymous_alias?: string;
+    my_alias?: string;
   };
   last_message?: {
     id: string;
@@ -88,8 +99,10 @@ export interface InboxResponse {
 
 export const chatService = {
   // Get active inbox conversations (auto-excludes expired ephemeral groups and pending requests)
-  async getInbox(): Promise<InboxResponse> {
-    const res = await api.get('/chat/inbox/');
+  async getInbox(mode?: 'ALL' | 'NORMAL' | 'ANONYMOUS'): Promise<InboxResponse> {
+    const params: any = {};
+    if (mode && mode !== 'ALL') params.mode = mode;
+    const res = await api.get('/chat/inbox/', { params });
     if (res.data && res.data.results) {
       return {
         results: res.data.results,
@@ -127,12 +140,16 @@ export const chatService = {
   },
 
   // Start 1-on-1 direct chat with a student (by username or email)
-  async startDirectChat(identifier: string): Promise<Conversation> {
-    const res = await api.post(`/chat/start/${encodeURIComponent(identifier)}/`);
+  async startDirectChat(
+    identifier: string,
+    isAnonymous: boolean = false,
+    anonymousAlias?: string
+  ): Promise<Conversation> {
+    const res = await api.post(`/chat/start/${encodeURIComponent(identifier)}/`, {
+      is_anonymous: isAnonymous,
+      anonymous_alias: anonymousAlias,
+    });
     const conv = res.data?.conversation || res.data;
-    if (conv && !conv.is_group && (res.data?.status === 'MESSAGE_REQUEST_PENDING' || res.data?.status === 'MESSAGE_REQUEST_SENT')) {
-      return { ...conv, is_request_pending: true };
-    }
     return conv;
   },
 

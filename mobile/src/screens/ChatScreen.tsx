@@ -11,6 +11,7 @@ import {
   Platform,
   Alert,
   Modal,
+  ScrollView,
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import {
@@ -74,6 +75,14 @@ const extractApiError = (err: any, fallback: string): string => {
   return fallback;
 };
 
+const MASCOTS = [
+  { name: '🦉 Night Owl', icon: '🦉' },
+  { name: '🐅 Brave Tiger', icon: '🐅' },
+  { name: '👻 Campus Ghost', icon: '👻' },
+  { name: '🥷 Stealth Ninja', icon: '🥷' },
+  { name: '🦅 High Falcon', icon: '🦅' },
+];
+
 export const ChatScreen: React.FC<ChatScreenProps> = ({
   currentUser,
   canParticipate = true,
@@ -92,6 +101,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [inputMessage, setInputMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [checkingRequestStatus, setCheckingRequestStatus] = useState(false);
+
+  // Chat Mode: NORMAL (Direct Chats) vs ANONYMOUS (7-Day Fading Ghost Chats)
+  const [chatMode, setChatMode] = useState<'NORMAL' | 'ANONYMOUS'>('NORMAL');
+  const [chosenMascot, setChosenMascot] = useState<string>('🦉 Night Owl');
 
   // Inline feedback banners (visible on both Web & Native)
   const [deliveryError, setDeliveryError] = useState<string | null>(null);
@@ -119,9 +132,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const voiceRecorder = useVoiceRecorder({
     onFallbackNative: () => setAttachmentPickerVisible(true),
   });
-
-  // Anonymous Messaging (Green Verified Only)
-  const [isAnonMode, setIsAnonMode] = useState(false);
 
   // Group Invite & Add Members Modals (Instagram Style)
   const [addMembersModalVisible, setAddMembersModalVisible] = useState(false);
@@ -195,10 +205,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
   }, [searchQuery]);
 
-  const loadInbox = async (): Promise<Conversation[]> => {
+  const loadInbox = async (modeOverride?: 'NORMAL' | 'ANONYMOUS'): Promise<Conversation[]> => {
     try {
       setLoadingInbox(true);
-      const data: any = await chatService.getInbox();
+      const activeMode = modeOverride || chatMode;
+      const data: any = await chatService.getInbox(activeMode);
       const list: Conversation[] = data.results || (Array.isArray(data) ? data : []);
       setConversations(list);
       if (data.pending_requests_count !== undefined) {
@@ -208,10 +219,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         if (!prev) return prev;
         const fresh = list.find((c) => String(c.id) === String(prev.id));
         if (!fresh) return prev;
-        if (Boolean(fresh.is_request_pending) !== Boolean(prev.is_request_pending)) {
-          return { ...prev, ...fresh };
-        }
-        return prev;
+        return { ...prev, ...fresh };
       });
       return list;
     } catch (e) {
@@ -220,6 +228,27 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     } finally {
       setLoadingInbox(false);
     }
+  };
+
+  const handleToggleChatMode = (newMode: 'NORMAL' | 'ANONYMOUS') => {
+    if (newMode === 'ANONYMOUS') {
+      if (!canParticipate) {
+        onRequireVerify?.('Verify your campus ID first to chat anonymously.');
+        return;
+      }
+      if (currentUser?.verification_tier !== 'FULLY_VERIFIED') {
+        const msg =
+          'Anonymous messaging is exclusive to Green-Verified students. Please verify your student ID.';
+        setInboxError(msg);
+        if (Platform.OS !== 'web') {
+          Alert.alert('Green Badge Required', msg);
+        }
+        return;
+      }
+    }
+    setInboxError(null);
+    setChatMode(newMode);
+    loadInbox(newMode);
   };
 
   const loadMessages = async (convId?: string, isSilent = false) => {
@@ -298,30 +327,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     setDraftVoiceNote(recorded);
   };
 
-  const toggleAnonMode = () => {
-    if (!canParticipate) {
-      onRequireVerify?.('Verify your campus ID first to chat anonymously.');
-      return;
-    }
-    if (currentUser?.verification_tier !== 'FULLY_VERIFIED') {
-      const msg =
-        'Anonymous messaging is exclusive to Green-Verified students. Please verify your student ID.';
-      setDeliveryError(msg);
-      if (Platform.OS !== 'web') {
-        Alert.alert('Green Badge Required', msg);
-      }
-      return;
-    }
-    setDeliveryError(null);
-    setIsAnonMode(!isAnonMode);
-  };
-
   const handleSendMessage = async () => {
     if (!canParticipate) {
       onRequireVerify?.('Verify your campus ID or enter an invite code to send messages.');
       return;
     }
-    if (!activeConv || sending || isRequestPending) return;
+    if (!activeConv || sending) return;
     const rawText = inputMessage.trim();
     if (!rawText && !draftVoiceNote) return;
 
@@ -337,19 +348,22 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     }
 
     let textToSend = rawText;
-    let chosenMascot = '';
-    if (isAnonMode) {
-      const mascots = ['🦉 Night Owl', '🐅 Brave Tiger', '👻 Campus Ghost', '🥷 Stealth Ninja', '🦅 High Falcon'];
-      chosenMascot = mascots[Math.floor(Math.random() * mascots.length)];
-    }
     setInputMessage('');
+
+    const isConvAnon = Boolean(activeConv.is_anonymous);
+    const isOutAnon = Boolean(activeConv.is_anonymous_sender || activeConv.recipient?.is_outgoing_anonymous);
+    const mySenderName = isConvAnon
+      ? isOutAnon
+        ? `You (${activeConv.anonymous_alias || chosenMascot || 'Mascot'})`
+        : (currentUser?.full_name || 'You')
+      : (currentUser?.full_name || 'You');
 
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const optimisticMsg: Message = {
       id: tempId as any,
       conversation: activeConv.id as any,
       sender: currentUser?.id,
-      sender_name: isAnonMode ? (chosenMascot || 'You (Anonymous)') : (currentUser?.full_name || 'You'),
+      sender_name: mySenderName,
       sender_email: currentUser?.email || '',
       text: textToSend,
       attachments: [],
@@ -362,10 +376,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
     try {
       setSending(true);
-      const sent = await chatService.sendMessage(activeConv.id, textToSend, {
-        is_anonymous: isAnonMode,
-        anonymous_alias: chosenMascot,
-      });
+      const sent = await chatService.sendMessage(activeConv.id, textToSend);
       setMessages((prev) => upsertMessageUnique(prev, sent, tempId));
     } catch (e: any) {
       if (isVerifyRequiredErr(e)) {
@@ -375,11 +386,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         return;
       }
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as any } : m)));
-      const errStatus = e?.response?.data?.status;
       const errMsg = extractApiError(e, 'Could not deliver message.');
-      if (e?.response?.status === 403 && errStatus === 'MESSAGE_REQUEST_PENDING') {
-        setActiveConv((prev) => (prev ? { ...prev, is_request_pending: true } : prev));
-      }
       setRoomNotice(null);
       setDeliveryError(errMsg);
       if (Platform.OS !== 'web') {
@@ -395,22 +402,25 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       onRequireVerify?.('Verify your campus ID or enter an invite code to share attachments.');
       return;
     }
-    if (!activeConv || isRequestPending) return;
+    if (!activeConv) return;
     setDeliveryError(null);
     setRoomNotice(null);
     const tempId = `temp_att_msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     let finalCaption = (caption || '').trim();
-    if (isAnonMode) {
-      const mascots = ['Anonymous Owl', 'Anonymous Fox', 'Anonymous Tiger', 'Anonymous Panda', 'Anonymous Falcon'];
-      const chosenMascot = mascots[Math.floor(Math.random() * mascots.length)];
-      finalCaption = finalCaption ? `[ANON_MSG: ${chosenMascot}] ${finalCaption}` : `[ANON_MSG: ${chosenMascot}]`;
-    }
+
+    const isConvAnon = Boolean(activeConv.is_anonymous);
+    const isOutAnon = Boolean(activeConv.is_anonymous_sender || activeConv.recipient?.is_outgoing_anonymous);
+    const mySenderName = isConvAnon
+      ? isOutAnon
+        ? `You (${activeConv.anonymous_alias || chosenMascot || 'Mascot'})`
+        : (currentUser?.full_name || 'You')
+      : (currentUser?.full_name || 'You');
 
     const optimisticMsg: Message = {
       id: tempId as any,
       conversation: activeConv.id as any,
       sender: currentUser?.id,
-      sender_name: isAnonMode ? 'Anonymous Mascot' : (currentUser?.full_name || 'You'),
+      sender_name: mySenderName,
       sender_email: currentUser?.email || '',
       text: finalCaption,
       created_at: new Date().toISOString(),
@@ -441,10 +451,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         name: item.name,
         type: item.mimeType || (item.type === 'IMAGE' ? 'image/jpeg' : (item.type === 'AUDIO' ? 'audio/webm' : (item.type === 'VIDEO' ? 'video/mp4' : 'application/octet-stream'))),
       }));
-      const sent = await chatService.sendMessageWithAttachments(activeConv.id, finalCaption, filesToSend, undefined, {
-        is_anonymous: isAnonMode,
-        anonymous_alias: isAnonMode ? '🦉 Night Owl' : undefined,
-      });
+      const sent = await chatService.sendMessageWithAttachments(activeConv.id, finalCaption, filesToSend);
       setMessages((prev) => upsertMessageUnique(prev, sent, tempId));
     } catch (err: any) {
       if (isVerifyRequiredErr(err)) {
@@ -478,8 +485,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       setDirectoryModalVisible(false);
       setSearchQuery('');
       setDirectoryResults([]);
-      const conv = await chatService.startDirectChat(user.email || user.username || String(user.id));
-      await loadInbox();
+      const isAnon = chatMode === 'ANONYMOUS';
+      const conv = await chatService.startDirectChat(
+        user.email || user.username || String(user.id),
+        isAnon,
+        isAnon ? chosenMascot : undefined
+      );
+      await loadInbox(chatMode);
       setActiveConv(conv);
     } catch (e: any) {
       if (isVerifyRequiredErr(e)) {
@@ -918,10 +930,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                   backgroundColor: colors.surfaceLight,
                   borderColor: colors.cardBorder,
                 },
-                isRequestPending && styles.controlDisabled,
               ]}
               onPress={() => setAttachmentPickerVisible(true)}
-              disabled={isRequestPending}
               activeOpacity={0.7}
               accessibilityLabel="Share media or document"
             >
@@ -935,37 +945,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                   backgroundColor: colors.surfaceLight,
                   borderColor: colors.cardBorder,
                 },
-                isRequestPending && styles.controlDisabled,
               ]}
               onPress={() => voiceRecorder.startRecording()}
-              disabled={isRequestPending}
               activeOpacity={0.7}
               accessibilityLabel="Record voice note"
             >
               <Mic size={17} color={colors.primary} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.anonToggleBtn,
-                {
-                  backgroundColor: isAnonMode
-                    ? isDark
-                      ? 'rgba(147, 51, 234, 0.25)'
-                      : 'rgba(147, 51, 234, 0.12)'
-                    : colors.surfaceLight,
-                  borderColor: isAnonMode ? '#a855f7' : colors.cardBorder,
-                },
-                isRequestPending && styles.controlDisabled,
-              ]}
-              onPress={toggleAnonMode}
-              disabled={isRequestPending}
-              activeOpacity={0.8}
-              accessibilityLabel="Toggle anonymous message"
-            >
-              <Text style={[styles.anonToggleText, { color: isAnonMode ? '#a855f7' : colors.textMuted }]}>
-                {isAnonMode ? '🎭 ON' : '🎭'}
-              </Text>
             </TouchableOpacity>
 
             <TextInput
@@ -976,15 +961,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                   color: colors.textPrimary,
                   borderColor: colors.cardBorder,
                 },
-                isRequestPending && { opacity: 0.6 },
               ]}
               placeholder={
-                isRequestPending
-                  ? 'Waiting for request acceptance...'
-                  : draftVoiceNote
+                draftVoiceNote
                   ? 'Add text to voice note...'
-                  : isAnonMode
-                  ? 'Type anonymous message...'
                   : 'Type a message...'
               }
               placeholderTextColor={colors.textMuted}
@@ -993,7 +973,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 setInputMessage(txt);
                 if (deliveryError) setDeliveryError(null);
               }}
-              editable={!isRequestPending}
               multiline
               maxLength={1000}
             />
@@ -1001,10 +980,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               style={[
                 styles.sendButton,
                 { backgroundColor: colors.primary },
-                (isRequestPending || !(inputMessage.trim() || draftVoiceNote) || sending) && styles.sendButtonDisabled,
+                (!(inputMessage.trim() || draftVoiceNote) || sending) && styles.sendButtonDisabled,
               ]}
               onPress={handleSendMessage}
-              disabled={isRequestPending || !(inputMessage.trim() || draftVoiceNote) || sending}
+              disabled={!(inputMessage.trim() || draftVoiceNote) || sending}
             >
               {sending ? (
                 <ActivityIndicator size="small" color={colors.onPrimary} />
@@ -1209,6 +1188,84 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         </View>
       </View>
 
+      {/* Inbox Mode Switcher: Direct Chats vs Anonymous Mode */}
+      <View style={[styles.modeTabsRow, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
+        <TouchableOpacity
+          style={[
+            styles.modeTab,
+            chatMode === 'NORMAL' && [styles.modeTabActive, { borderColor: colors.primary, backgroundColor: isDark ? '#18181b' : '#f1f5f9' }],
+          ]}
+          onPress={() => handleToggleChatMode('NORMAL')}
+          activeOpacity={0.8}
+        >
+          <Text
+            style={[
+              styles.modeTabText,
+              { color: chatMode === 'NORMAL' ? colors.textPrimary : colors.textMuted },
+              chatMode === 'NORMAL' && { fontWeight: '700' },
+            ]}
+          >
+            💬 Direct Chats
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.modeTab,
+            chatMode === 'ANONYMOUS' && [styles.modeTabActive, { borderColor: '#a855f7', backgroundColor: isDark ? 'rgba(168, 85, 247, 0.15)' : 'rgba(168, 85, 247, 0.08)' }],
+          ]}
+          onPress={() => handleToggleChatMode('ANONYMOUS')}
+          activeOpacity={0.8}
+        >
+          <Text
+            style={[
+              styles.modeTabText,
+              { color: chatMode === 'ANONYMOUS' ? (isDark ? '#c084fc' : '#9333ea') : colors.textMuted },
+              chatMode === 'ANONYMOUS' && { fontWeight: '700' },
+            ]}
+          >
+            🎭 Anonymous (7D)
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Mascot Selector Bar when Anonymous Mode is Active */}
+      {chatMode === 'ANONYMOUS' && (
+        <View style={[styles.anonBarContainer, { backgroundColor: isDark ? '#0e0b14' : '#faf5ff', borderBottomColor: isDark ? '#2e1065' : '#f3e8ff' }]}>
+          <View style={styles.anonBannerHeader}>
+            <Text style={[styles.anonBannerTitle, { color: isDark ? '#e9d5ff' : '#6b21a8' }]}>
+              🎭 Ghost Incognito Active · 7-Day Auto-Fade
+            </Text>
+            <Text style={[styles.anonBannerSub, { color: colors.textMuted }]}>
+              Choose your mascot identity before searching and pinging:
+            </Text>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mascotScroll}>
+            {MASCOTS.map((m) => {
+              const selected = chosenMascot === m.name;
+              return (
+                <TouchableOpacity
+                  key={m.name}
+                  style={[
+                    styles.mascotChip,
+                    {
+                      backgroundColor: selected ? (isDark ? '#581c87' : '#e9d5ff') : (isDark ? '#1c1917' : '#ffffff'),
+                      borderColor: selected ? '#a855f7' : colors.cardBorder,
+                    },
+                  ]}
+                  onPress={() => setChosenMascot(m.name)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.mascotText, { color: selected ? (isDark ? '#ffffff' : '#581c87') : colors.textSecondary }]}>
+                    {m.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
       {!canParticipate && (
         <TouchableOpacity
           style={[
@@ -1333,15 +1390,19 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           data={filteredConvs}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
-            const name =
+            const isAnon = Boolean(item.is_anonymous);
+            const isOutgoingAnon = Boolean(item.is_anonymous_sender || item.recipient?.is_outgoing_anonymous);
+            const rawName =
               item.name ||
               item.recipient?.full_name ||
               item.recipient?.email?.split('@')[0] ||
               'Campus Student';
+            const name = item.display_title || rawName;
+            const daysLeft = item.expires_in_days !== undefined ? item.expires_in_days : 7;
 
             return (
               <TouchableOpacity
-                style={[styles.convCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}
+                style={[styles.convCard, { backgroundColor: colors.surface, borderColor: isAnon ? (isDark ? '#3b1c61' : '#e9d5ff') : colors.cardBorder }]}
                 onPress={() => setActiveConv(item)}
                 delayLongPress={450}
                 onLongPress={() => setActionConv(item)}
@@ -1356,24 +1417,33 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               >
                 <UserAvatar
                   uri={
-                    !item.is_group
+                    !item.is_group && !isAnon
                       ? item.recipient?.avatar || item.recipient?.profile_picture
                       : undefined
                   }
-                  name={name}
+                  name={isAnon ? (item.anonymous_alias || '🎭') : name}
                   size={44}
-                  borderWidth={item.is_ephemeral ? 1.5 : 1}
-                  borderColor={item.is_ephemeral ? colors.ephemeralFire : colors.cardBorder}
-                  backgroundColor={colors.surfaceLight}
-                  textColor={colors.textPrimary}
+                  borderWidth={item.is_ephemeral || isAnon ? 1.5 : 1}
+                  borderColor={item.is_ephemeral ? colors.ephemeralFire : isAnon ? '#a855f7' : colors.cardBorder}
+                  backgroundColor={isAnon ? (isDark ? 'rgba(168, 85, 247, 0.2)' : '#f3e8ff') : colors.surfaceLight}
+                  textColor={isAnon ? '#a855f7' : colors.textPrimary}
                   style={{ marginRight: 12 }}
                 />
 
                 <View style={styles.convBody}>
                   <View style={styles.convTopRow}>
-                    <Text style={[styles.convName, { color: colors.textPrimary }]} numberOfLines={1}>
-                      {item.is_ephemeral ? `🔥 ${name}` : name}
-                    </Text>
+                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 6 }}>
+                      <Text style={[styles.convName, { color: colors.textPrimary, flexShrink: 1 }]} numberOfLines={1}>
+                        {item.is_ephemeral ? `🔥 ${name}` : name}
+                      </Text>
+                      {isAnon && (
+                        <View style={[styles.anonPillSmall, { backgroundColor: isDark ? 'rgba(168, 85, 247, 0.25)' : '#f3e8ff' }]}>
+                          <Text style={[styles.anonPillTextSmall, { color: isDark ? '#c084fc' : '#9333ea' }]}>
+                            {isOutgoingAnon ? 'OUT' : 'IN'} · ⏳{daysLeft}d
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                     {item.last_message?.created_at && (
                       <Text style={[styles.convTime, { color: colors.textMuted }]}>
                         {new Date(item.last_message.created_at).toLocaleTimeString([], {
@@ -1937,17 +2007,66 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  anonToggleBtn: {
-    paddingHorizontal: 7,
-    height: 34,
-    borderRadius: 8,
-    borderWidth: 1,
+  modeTabsRow: {
     flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 10,
+    borderBottomWidth: 1,
+  },
+  modeTab: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
-  anonToggleText: {
-    fontSize: 11.5,
+  modeTabActive: {
+    borderWidth: 1,
+  },
+  modeTabText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  anonBarContainer: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  anonBannerHeader: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  anonBannerTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  anonBannerSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  mascotScroll: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  mascotChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  mascotText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  anonPillSmall: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  anonPillTextSmall: {
+    fontSize: 10,
     fontWeight: '700',
   },
 });

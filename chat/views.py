@@ -47,12 +47,20 @@ class InboxView(generics.ListAPIView):
             status="PENDING"
         ).values_list("conversation_id", flat=True)
 
+        mode = self.request.query_params.get("mode", "ALL").upper().strip()
+
         qs = (
             Conversation.objects.filter(id__in=user_conv_ids)
             .exclude(id__in=pending_received_conv_ids)
             .exclude(is_ephemeral=True, expires_at__lt=timezone.now())
+            .exclude(is_anonymous=True, expires_at__lt=timezone.now())
             .prefetch_related("members", "messages")
         )
+
+        if mode == "NORMAL":
+            qs = qs.filter(is_anonymous=False)
+        elif mode == "ANONYMOUS":
+            qs = qs.filter(is_anonymous=True)
 
         if not include_communities:
             # Keeps personal Chats tab clean: only 1-on-1 direct chats and temporary hangout groups
@@ -114,55 +122,62 @@ class StartDirectChatView(APIView):
         if UserBlock.is_blocked(request.user, target_user):
             return Response({"error": "Cannot start conversation with this user."}, status=status.HTTP_403_FORBIDDEN)
 
-        # 2. Check existing 1-on-1 conversation
-        existing = Conversation.objects.filter(
-            is_group=False,
-            is_ephemeral=False,
-            members__user=request.user
-        ).filter(members__user=target_user).first()
+        is_anon = str(request.data.get("is_anonymous", False)).lower() in ["true", "1"]
+        anon_alias = str(request.data.get("anonymous_alias", "") or "").strip() or "🦉 Night Owl"
+
+        # 2. Check existing 1-on-1 conversation for this specific mode
+        # ME TO HIM (Anonymous) is distinct from ME TO HIM (Generic) and distinct from HIM TO ME (Anonymous)!
+        if is_anon:
+            existing = Conversation.objects.filter(
+                is_group=False,
+                is_anonymous=True,
+                anonymous_sender=request.user,
+                members__user=request.user
+            ).filter(members__user=target_user).filter(
+                Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())
+            ).first()
+        else:
+            existing = Conversation.objects.filter(
+                is_group=False,
+                is_anonymous=False,
+                members__user=request.user
+            ).filter(members__user=target_user).first()
 
         are_connected = Connection.are_connected(request.user, target_user)
         target_prof = getattr(target_user, "profile", None)
         messaging_pref = target_prof.messaging_preference if target_prof else "EVERYONE"
 
-        # Check existing message request
+        # Check existing message request for this conversation
         existing_request = MessageRequest.objects.filter(
-            Q(sender=request.user, recipient=target_user) |
-            Q(sender=target_user, recipient=request.user)
-        ).first()
+            conversation=existing,
+            status="PENDING"
+        ).first() if existing else None
 
-        # If already accepted or connected, return conversation directly
-        if are_connected or (existing_request and existing_request.status == "ACCEPTED"):
-            if existing:
-                ConversationMember.objects.filter(
-                    conversation=existing,
-                    user=request.user,
-                    is_hidden=True
-                ).update(is_hidden=False)
-                return Response(ConversationSerializer(existing, context={"request": request}).data)
+        # If already existing, unhide for current user
+        if existing:
+            ConversationMember.objects.filter(
+                conversation=existing,
+                user=request.user,
+                is_hidden=True
+            ).update(is_hidden=False)
 
-            conv = Conversation.objects.create(is_group=False)
-            ConversationMember.objects.create(conversation=conv, user=request.user, is_admin=True)
-            ConversationMember.objects.create(conversation=conv, user=target_user)
-            return Response(ConversationSerializer(conv, context={"request": request}).data, status=status.HTTP_201_CREATED)
-
-        # Non-connected user flow: enforce recipient's messaging_preference
-        if messaging_pref == "NOBODY":
-            return Response(
-                {"error": "This student does not accept direct messages or message requests."},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        if messaging_pref == "CONNECTIONS_ONLY":
-            return Response(
-                {
-                    "error": "This student only accepts messages from mutual connections. Please send a connection request first.",
-                    "requires_connection": True,
-                    "target_user_id": target_user.id
-                },
-                status=status.HTTP_403_FORBIDDEN
-            )
-        if messaging_pref == "FOLLOWING":
-            if not Follow.is_following(target_user, request.user):
+        # Enforce recipient's messaging_preference if non-connected and not anonymous
+        if not are_connected and not is_anon and not (existing_request and existing_request.status == "ACCEPTED"):
+            if messaging_pref == "NOBODY":
+                return Response(
+                    {"error": "This student does not accept direct messages or message requests."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            if messaging_pref == "CONNECTIONS_ONLY":
+                return Response(
+                    {
+                        "error": "This student only accepts messages from mutual connections. Please send a connection request first.",
+                        "requires_connection": True,
+                        "target_user_id": target_user.id
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            if messaging_pref == "FOLLOWING" and not Follow.is_following(target_user, request.user):
                 return Response(
                     {
                         "error": "This student only accepts messages from people they follow.",
@@ -172,58 +187,41 @@ class StartDirectChatView(APIView):
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-        # If pending message request already exists
-        if existing_request and existing_request.status == "PENDING":
-            if existing_request.sender_id == request.user.id:
-                return Response({
-                    "status": "MESSAGE_REQUEST_PENDING",
-                    "message": "Message request already sent. Waiting for recipient to accept.",
-                    "message_request_id": str(existing_request.id),
-                    "conversation": ConversationSerializer(existing_request.conversation, context={"request": request}).data if existing_request.conversation else None
-                }, status=status.HTTP_200_OK)
-            else:
-                # Target had sent a message request to request.user! Auto-accept it upon initiation!
-                existing_request.status = "ACCEPTED"
-                existing_request.save(update_fields=["status", "updated_at"])
-                if existing_request.conversation:
-                    ConversationMember.objects.filter(
-                        conversation=existing_request.conversation,
-                        user=request.user,
-                        is_hidden=True
-                    ).update(is_hidden=False)
-                    return Response(ConversationSerializer(existing_request.conversation, context={"request": request}).data)
-
         if not existing:
-            existing = Conversation.objects.create(is_group=False)
+            if is_anon:
+                existing = Conversation.objects.create(
+                    is_group=False,
+                    is_anonymous=True,
+                    anonymous_sender=request.user,
+                    anonymous_alias=anon_alias,
+                    expires_at=timezone.now() + timedelta(days=7)
+                )
+            else:
+                existing = Conversation.objects.create(
+                    is_group=False,
+                    is_anonymous=False
+                )
             ConversationMember.objects.create(conversation=existing, user=request.user, is_admin=True)
             ConversationMember.objects.create(conversation=existing, user=target_user)
-        else:
-            ConversationMember.objects.filter(
-                conversation=existing,
-                user=request.user,
-                is_hidden=True
-            ).update(is_hidden=False)
 
         # Check if caller passed an initial message text
         initial_text = (request.data.get("message") or "").strip()
         if not initial_text:
-            # User simply opened conversation to compose - do NOT send a premature message request or notification!
+            # User simply opened conversation to compose - return conversation cleanly without premature notification!
             return Response(ConversationSerializer(existing, context={"request": request}).data, status=status.HTTP_200_OK)
 
-        is_anon = str(request.data.get("is_anonymous", False)).lower() in ["true", "1"]
-        anon_alias = str(request.data.get("anonymous_alias", "") or "").strip()
-        if is_anon and not anon_alias:
-            anon_alias = "🦉 Anonymous Classmate"
-
-        msg_req = MessageRequest.objects.create(
-            sender=request.user,
-            recipient=target_user,
-            initial_message=initial_text,
-            conversation=existing,
-            status="PENDING",
-            is_anonymous=is_anon,
-            anonymous_alias=anon_alias if is_anon else "",
-        )
+        if not are_connected and not existing_request:
+            msg_req = MessageRequest.objects.create(
+                sender=request.user,
+                recipient=target_user,
+                initial_message=initial_text,
+                conversation=existing,
+                status="PENDING",
+                is_anonymous=is_anon,
+                anonymous_alias=anon_alias if is_anon else "",
+            )
+        else:
+            msg_req = existing_request
 
         Message.objects.create(
             conversation=existing,
@@ -233,11 +231,6 @@ class StartDirectChatView(APIView):
             anonymous_alias=anon_alias if is_anon else "",
         )
 
-        if is_anon:
-            existing.is_anonymous = True
-            existing.anonymous_alias = anon_alias
-            existing.save(update_fields=["is_anonymous", "anonymous_alias"])
-
         sender_label = anon_alias if is_anon else (request.user.full_name or (request.user.profile.username if hasattr(request.user, "profile") else request.user.email.split('@')[0]))
         create_notification(
             recipient=target_user,
@@ -245,15 +238,10 @@ class StartDirectChatView(APIView):
             notification_type="MESSAGE_REQUEST",
             title="Anonymous Message Request 🎭" if is_anon else "Message Request ✉️",
             message=f"{sender_label} sent you {'an anonymous ' if is_anon else 'a '}message request.",
-            data={"conversation_id": str(existing.id), "message_request_id": str(msg_req.id)}
+            data={"conversation_id": str(existing.id), "message_request_id": str(msg_req.id) if msg_req else ""}
         )
 
-        return Response({
-            "status": "MESSAGE_REQUEST_SENT",
-            "message": "Message request sent successfully to recipient.",
-            "message_request_id": str(msg_req.id),
-            "conversation": ConversationSerializer(existing, context={"request": request}).data
-        }, status=status.HTTP_201_CREATED)
+        return Response(ConversationSerializer(existing, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
 
@@ -342,7 +330,7 @@ class SendMessageView(APIView):
 
         if conv.is_expired:
             return Response(
-                {"error": "This temporary hangout group has expired and can no longer receive messages."},
+                {"error": "This conversation has expired (7-day anonymous memory limit reached)."},
                 status=status.HTTP_410_GONE
             )
 
@@ -353,10 +341,13 @@ class SendMessageView(APIView):
         if not text and not attachment and not attachments:
             return Response({"error": "Message text or attachment required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        is_anon = str(request.data.get("is_anonymous", False)).lower() in ["true", "1"]
-        anon_alias = str(request.data.get("anonymous_alias", "") or "").strip()
-        if is_anon and not anon_alias:
-            anon_alias = "🦉 Anonymous Classmate"
+        # In an anonymous conversation, sender identity is derived automatically from the conversation room
+        if conv.is_anonymous:
+            is_anon = (conv.anonymous_sender_id == request.user.id)
+            anon_alias = conv.anonymous_alias if is_anon else ""
+        else:
+            is_anon = False
+            anon_alias = ""
 
         # Check blocking for direct chats
         if not conv.is_group:
@@ -365,27 +356,20 @@ class SendMessageView(APIView):
                 return Response({"error": "Cannot send messages to this user."}, status=status.HTTP_403_FORBIDDEN)
 
             are_connected = Connection.are_connected(request.user, other_user)
-            # Check if there is an active pending message request for this conversation
             pending_req = MessageRequest.objects.filter(conversation=conv, status="PENDING").first()
             if pending_req:
-                if pending_req.sender_id == request.user.id and conv.messages.filter(sender=request.user).exists():
-                    return Response({
-                        "error": "You must wait for the recipient to accept your message request before sending more messages.",
-                        "status": "MESSAGE_REQUEST_PENDING"
-                    }, status=status.HTTP_403_FORBIDDEN)
-                elif pending_req.recipient_id == request.user.id:
+                if pending_req.recipient_id == request.user.id:
                     # Recipient replied! Auto-accept the message request!
                     pending_req.status = "ACCEPTED"
                     pending_req.save(update_fields=["status", "updated_at"])
             elif not are_connected and other_user:
-                # First real message to a non-connected classmate -> create MessageRequest with actual typed message
                 target_prof = getattr(other_user, "profile", None)
                 pref = target_prof.messaging_preference if target_prof else "EVERYONE"
-                if pref == "NOBODY":
+                if pref == "NOBODY" and not conv.is_anonymous:
                     return Response({"error": "This student does not accept direct messages."}, status=status.HTTP_403_FORBIDDEN)
-                if pref == "CONNECTIONS_ONLY":
+                if pref == "CONNECTIONS_ONLY" and not conv.is_anonymous:
                     return Response({"error": "This student only accepts messages from mutual connections. Please send a connection request first."}, status=status.HTTP_403_FORBIDDEN)
-                if pref == "FOLLOWING" and not Follow.is_following(other_user, request.user):
+                if pref == "FOLLOWING" and not Follow.is_following(other_user, request.user) and not conv.is_anonymous:
                     return Response({"error": "This student only accepts messages from people they follow."}, status=status.HTTP_403_FORBIDDEN)
 
                 pending_req = MessageRequest.objects.create(

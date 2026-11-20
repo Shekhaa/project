@@ -32,6 +32,13 @@ class Conversation(models.Model):
     # Anonymous Direct Messaging Attributes
     is_anonymous = models.BooleanField(default=False, db_index=True)
     anonymous_alias = models.CharField(max_length=50, blank=True, default="")
+    anonymous_sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="anonymous_started_conversations"
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -69,7 +76,7 @@ class Conversation(models.Model):
 
     @property
     def is_expired(self):
-        if self.is_ephemeral and self.expires_at:
+        if (self.is_ephemeral or self.is_anonymous) and self.expires_at:
             return timezone.now() > self.expires_at
         return False
 

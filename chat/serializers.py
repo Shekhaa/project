@@ -32,8 +32,9 @@ class MessageSerializer(serializers.ModelSerializer):
         data = super().to_representation(obj)
         request = self.context.get("request")
         current_user = request.user if request else None
-        if obj.is_anonymous and current_user != obj.sender:
-            alias = obj.anonymous_alias or "🦉 Anonymous Classmate"
+        is_anon_msg = obj.is_anonymous or (obj.conversation.is_anonymous and obj.conversation.anonymous_sender_id == obj.sender_id)
+        if is_anon_msg and current_user != obj.sender:
+            alias = obj.anonymous_alias or obj.conversation.anonymous_alias or "🦉 Anonymous Classmate"
             data["sender"] = None
             data["sender_name"] = alias
             data["sender_email"] = None
@@ -68,9 +69,12 @@ class ConversationMemberSerializer(serializers.ModelSerializer):
 class ConversationSerializer(serializers.ModelSerializer):
     last_message = serializers.SerializerMethodField()
     recipient = serializers.SerializerMethodField()
+    display_title = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
     is_request_pending = serializers.SerializerMethodField()
     is_expired = serializers.BooleanField(read_only=True)
+    is_anonymous_sender = serializers.SerializerMethodField()
+    expires_in_days = serializers.SerializerMethodField()
     members = ConversationMemberSerializer(many=True, read_only=True)
 
     class Meta:
@@ -78,11 +82,13 @@ class ConversationSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+            "display_title",
             "is_group",
             "is_ephemeral",
             "duration",
             "purpose_tag",
             "expires_at",
+            "expires_in_days",
             "is_expired",
             "recipient",
             "last_message",
@@ -90,11 +96,45 @@ class ConversationSerializer(serializers.ModelSerializer):
             "is_request_pending",
             "is_anonymous",
             "anonymous_alias",
+            "anonymous_sender_id",
+            "is_anonymous_sender",
             "invite_code",
             "members",
             "updated_at",
             "created_at",
         ]
+
+    def get_is_anonymous_sender(self, obj):
+        request = self.context.get("request")
+        if request and request.user.is_authenticated and obj.is_anonymous:
+            return obj.anonymous_sender_id == request.user.id
+        return False
+
+    def get_expires_in_days(self, obj):
+        if (obj.is_ephemeral or obj.is_anonymous) and obj.expires_at:
+            from django.utils import timezone
+            delta = obj.expires_at - timezone.now()
+            if delta.total_seconds() <= 0:
+                return 0
+            return max(1, delta.days)
+        return None
+
+    def get_display_title(self, obj):
+        request = self.context.get("request")
+        if obj.is_group:
+            return obj.name or "Group Chat"
+        if not request or not request.user.is_authenticated:
+            return obj.name or "Direct Chat"
+        other_user = obj.get_other_member(request.user)
+        if obj.is_anonymous:
+            if obj.anonymous_sender_id == request.user.id:
+                other_name = (getattr(other_user, "full_name", "") or getattr(other_user, "email", "").split("@")[0]) if other_user else "Classmate"
+                return f"{obj.anonymous_alias or '🦉 Night Owl'} (to {other_name})"
+            else:
+                return obj.anonymous_alias or "🦉 Anonymous Classmate"
+        if other_user:
+            return getattr(other_user, "full_name", "") or other_user.email.split("@")[0]
+        return obj.name or "Direct Chat"
 
     def get_is_request_pending(self, obj):
         request = self.context.get("request")
@@ -134,9 +174,8 @@ class ConversationSerializer(serializers.ModelSerializer):
         other_user = obj.get_other_member(request.user)
         if other_user:
             if obj.is_anonymous:
-                first_anon_msg = obj.messages.filter(is_anonymous=True).first()
-                if first_anon_msg and first_anon_msg.sender_id == other_user.id:
-                    alias = obj.anonymous_alias or first_anon_msg.anonymous_alias or "🦉 Anonymous Classmate"
+                if obj.anonymous_sender_id != request.user.id:
+                    alias = obj.anonymous_alias or "🦉 Anonymous Classmate"
                     return {
                         "id": None,
                         "email": None,
@@ -147,6 +186,22 @@ class ConversationSerializer(serializers.ModelSerializer):
                         "profile_picture": None,
                         "is_anonymous": True,
                         "anonymous_alias": alias,
+                        "is_incoming_anonymous": True,
+                    }
+                else:
+                    prof = getattr(other_user, "profile", None)
+                    avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
+                    return {
+                        "id": other_user.id,
+                        "email": other_user.email,
+                        "name": other_user.full_name or other_user.email.split("@")[0],
+                        "full_name": other_user.full_name or other_user.email.split("@")[0],
+                        "username": getattr(prof, "username", "") if prof else "",
+                        "avatar": avatar_url,
+                        "profile_picture": avatar_url,
+                        "is_anonymous": True,
+                        "is_outgoing_anonymous": True,
+                        "my_alias": obj.anonymous_alias or "🦉 Night Owl",
                     }
             prof = getattr(other_user, "profile", None)
             avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
