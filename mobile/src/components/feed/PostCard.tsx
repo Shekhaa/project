@@ -31,7 +31,7 @@ import { DocumentCard } from '../media/DocumentCard';
 import { ImageViewerModal } from '../media/ImageViewerModal';
 import { UserAvatar } from '../common/UserAvatar';
 import { getFullMediaUrl } from '../../config/api';
-import { clampAspectRatio, measureImageSize, showCrossPlatformAlert } from '../../utils/mediaUtils';
+import { showCrossPlatformAlert } from '../../utils/mediaUtils';
 
 interface PostCardProps {
   post: Post;
@@ -59,8 +59,6 @@ const PostCardComponent: React.FC<PostCardProps> = ({
   const { colors, isDark } = useTheme();
   const [menuVisible, setMenuVisible] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [legacyRatio, setLegacyRatio] = useState<number>(4 / 3);
-  const [legacyViewerVisible, setLegacyViewerVisible] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
 
   useEffect(() => {
@@ -205,20 +203,6 @@ const PostCardComponent: React.FC<PostCardProps> = ({
   }
 
   const docAttachments = (post.attachments || []).filter((a) => a.file_type === 'DOCUMENT');
-
-  useEffect(() => {
-    setImageError(false);
-    if (!singleMediaUrl || isVideoMedia || allImages.length > 0) return;
-    let cancelled = false;
-    measureImageSize(singleMediaUrl).then((dims) => {
-      if (!cancelled && dims) {
-        setLegacyRatio(clampAspectRatio(dims.width, dims.height, 4 / 3));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [singleMediaUrl, isVideoMedia, allImages.length]);
 
   const renderContentWithMentions = (text: string) => {
     const tokens = text.split(/(\s+)/);
