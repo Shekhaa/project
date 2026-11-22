@@ -544,18 +544,24 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
                   style={[
                     styles.tab,
                     {
-                      backgroundColor: active ? colors.primary : colors.surface,
-                      borderColor: active ? colors.primary : colors.cardBorder,
+                      backgroundColor: active
+                        ? (isDark ? '#27272a' : '#e0f2fe')
+                        : colors.surface,
+                      borderColor: active
+                        ? (isDark ? '#ffffff' : '#0284c7')
+                        : colors.cardBorder,
                     },
                   ]}
                   onPress={() => setActiveTab(tab)}
-                  activeOpacity={0.7}
+                  activeOpacity={0.75}
                 >
                   <Text
                     style={[
                       styles.tabText,
                       {
-                        color: active ? colors.onPrimary : colors.textSecondary,
+                        color: active
+                          ? (isDark ? '#ffffff' : '#0369a1')
+                          : colors.textSecondary,
                         fontWeight: active ? '700' : '600',
                       },
                     ]}
@@ -702,8 +708,12 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
                     style={[
                       styles.tab,
                       {
-                        backgroundColor: active ? colors.primary : colors.surface,
-                        borderColor: active ? colors.primary : colors.cardBorder,
+                        backgroundColor: active
+                          ? (isDark ? '#27272a' : '#e0f2fe')
+                          : colors.surface,
+                        borderColor: active
+                          ? (isDark ? '#ffffff' : '#0284c7')
+                          : colors.cardBorder,
                       },
                     ]}
                     onPress={() => {
@@ -716,7 +726,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
                       style={[
                         styles.tabText,
                         {
-                          color: active ? colors.onPrimary : colors.textSecondary,
+                          color: active
+                            ? (isDark ? '#ffffff' : '#0369a1')
+                            : colors.textSecondary,
                           fontWeight: active ? '700' : '600',
                         },
                       ]}

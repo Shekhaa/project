@@ -1841,21 +1841,24 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   styles.categoryPill,
                   {
                     backgroundColor: active
-                      ? colors.primary
-                      : isDark
-                      ? '#141516'
-                      : '#ffffff',
-                    borderColor: active ? colors.primary : colors.cardBorder,
+                      ? (isDark ? '#27272a' : '#e0f2fe')
+                      : (isDark ? '#141417' : '#ffffff'),
+                    borderColor: active
+                      ? (isDark ? '#ffffff' : '#0284c7')
+                      : colors.cardBorder,
                     borderWidth: 1,
                   },
                 ]}
                 onPress={() => setSelectedCategory(cat)}
+                activeOpacity={0.75}
               >
                 <Text
                   style={[
                     styles.categoryPillText,
                     {
-                      color: active ? colors.onPrimary : colors.textSecondary,
+                      color: active
+                        ? (isDark ? '#ffffff' : '#0369a1')
+                        : colors.textSecondary,
                       fontWeight: active ? '700' : '600',
                     },
                   ]}
@@ -2170,12 +2173,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   categoryPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
   },
   categoryPillText: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '600',
   },
   listContent: {

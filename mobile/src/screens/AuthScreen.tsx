@@ -37,7 +37,6 @@ import {
   Mail,
   LogIn,
   ArrowLeft,
-  Coffee,
   Building2,
 } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
@@ -525,15 +524,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
             activeOpacity={0.8}
             accessibilityLabel="Toggle theme"
           >
-            {resolvedTheme === 'dark' ? (
-              <Coffee size={15} color="#e5d2b5" />
-            ) : resolvedTheme === 'espresso' ? (
-              <Sun size={15} color="#d9a760" />
+            {isDark ? (
+              <Sun size={15} color="#f59e0b" />
             ) : (
               <Moon size={15} color={colors.textPrimary} />
             )}
             <Text style={[styles.themeToggleText, { color: colors.textSecondary }]}>
-              {resolvedTheme === 'dark' ? 'Mocha' : resolvedTheme === 'espresso' ? 'Light' : 'Black'}
+              {isDark ? 'Light' : 'Dark'}
             </Text>
           </TouchableOpacity>
         </View>

@@ -25,7 +25,7 @@ import { NotificationsModal } from '../components/notifications/NotificationsMod
 import { notificationService, NotificationItem } from '../services/notificationService';
 import { api } from '../config/api';
 import { showCrossPlatformAlert } from '../utils/mediaUtils';
-import { Plus, Bell, Sparkles, SlidersHorizontal, Check, X, Sun, Moon, Coffee } from 'lucide-react-native';
+import { Plus, Bell, Sparkles, SlidersHorizontal, Check, X, Sun, Moon } from 'lucide-react-native';
 
 const SCOPE_TABS: Array<{
   key: 'ALL' | 'COLLEGE' | 'FOLLOWING' | 'SAVED' | 'MEDIA' | 'RESOURCES';
@@ -393,7 +393,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         </View>
 
         <View style={[styles.navActions, isCompactViewport && { gap: 6 }]}>
-          {/* Quick 1-Tap 3-Mode Theme Switcher: Black -> Mocha -> White */}
+          {/* Quick 1-Tap Dual-Mode Theme Switcher: Dark <-> Light */}
           <TouchableOpacity
             style={[
               styles.iconBtn,
@@ -403,17 +403,11 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             onPress={toggleTheme}
             activeOpacity={0.7}
             accessibilityLabel={
-              resolvedTheme === 'dark'
-                ? 'Switch to Mocha Cream Theme'
-                : resolvedTheme === 'espresso'
-                ? 'Switch to Light Theme'
-                : 'Switch to Dark Theme'
+              isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'
             }
           >
-            {resolvedTheme === 'dark' ? (
-              <Coffee size={isCompactViewport ? 15 : 17} color="#e5d2b5" />
-            ) : resolvedTheme === 'espresso' ? (
-              <Sun size={isCompactViewport ? 15 : 17} color="#d9a760" />
+            {isDark ? (
+              <Sun size={isCompactViewport ? 15 : 17} color="#f59e0b" />
             ) : (
               <Moon size={isCompactViewport ? 15 : 17} color={colors.primary} />
             )}

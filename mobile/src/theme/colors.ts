@@ -54,29 +54,29 @@ export interface ThemeColors {
 }
 
 export const darkColors: ThemeColors = {
-  // Instagram True Black — Pure Monochrome White Ink (ONLY CampusConnect wordmark is bluish)
+  // Pure AMOLED Monochrome Black — Zero Brown / Muddy Tint
   background: '#000000',
-  surface: '#0a0a0a',
+  surface: '#09090b',
   surfaceLight: '#18181b',
-  card: '#0d0d0d',
-  cardBorder: '#262626',
-  hairline: '#262626',
+  card: '#0f0f12',
+  cardBorder: '#27272a',
+  hairline: '#27272a',
   hairlineStrong: '#3f3f46',
 
-  // Crisp Monochrome White Actions + Single Brand Blue Accent
+  // Crisp Monochrome White Actions + Electric Sky Blue Brand Accent
   primary: '#ffffff',
   onPrimary: '#000000',
-  primaryHover: '#e4e4e7',
-  primaryFocus: '#d4d4d8',
-  brandAccent: '#2997ff',
+  primaryHover: '#f4f4f5',
+  primaryFocus: '#e4e4e7',
+  brandAccent: '#38bdf8',
 
-  // Monochrome Component Surfaces (Zero Repetitive Blue Blobs)
-  avatarBg: '#262626',
+  // Monochrome Component Surfaces
+  avatarBg: '#27272a',
   avatarText: '#ffffff',
-  chipActiveBg: '#1f1f22',
-  chipActiveBorder: '#ffffff',
+  chipActiveBg: '#27272a',
+  chipActiveBorder: '#52525b',
   chipActiveText: '#ffffff',
-  bannerBg: '#111113',
+  bannerBg: '#121215',
 
   // Semantics
   accent: '#22c55e',
@@ -90,16 +90,16 @@ export const darkColors: ThemeColors = {
   textMuted: '#a1a1aa',
   textTertiary: '#71717a',
 
-  // Chat Bubbles (Clean Instagram Monochrome Dark)
-  bubbleMe: '#262626',
+  // Chat Bubbles (Clean Monochrome Dark)
+  bubbleMe: '#27272a',
   bubbleMeText: '#ffffff',
-  bubbleThem: '#141416',
-  bubbleThemBorder: '#262626',
+  bubbleThem: '#121215',
+  bubbleThemBorder: '#27272a',
   bubbleThemText: '#ffffff',
 
-  // Mascots / Anonymous (Monochrome White on Graphite)
+  // Mascots / Anonymous (Clean White on Graphite)
   anonPurple: '#ffffff',
-  anonBadge: '#1c1c1e',
+  anonBadge: '#18181b',
 
   // Ephemeral Group
   ephemeralFire: '#f97316',
@@ -108,86 +108,33 @@ export const darkColors: ThemeColors = {
   modalOverlay: 'rgba(0, 0, 0, 0.85)',
 };
 
-export const espressoColors: ThemeColors = {
-  // Gen-Z Quiet-Luxury Mocha / Espresso Cloth Brown + Creamy Ivory Typography + Olive Sage
-  // Inspired by Oura & Claude DESIGN.md warm organic palettes
-  background: '#19120e',
-  surface: '#231a14',
-  surfaceLight: '#30241c',
-  card: '#271d17',
-  cardBorder: '#443429',
-  hairline: '#443429',
-  hairlineStrong: '#5c4739',
-
-  // Creamy Linen Primary CTAs + Warm Caramel Brand Accent
-  primary: '#e5d2b5',
-  onPrimary: '#19120e',
-  primaryHover: '#f2e4ce',
-  primaryFocus: '#d4bc9a',
-  brandAccent: '#c9a67e',
-
-  // Warm Suede & Linen Surfaces
-  avatarBg: '#3e2e24',
-  avatarText: '#f6efe2',
-  chipActiveBg: '#382a21',
-  chipActiveBorder: '#e5d2b5',
-  chipActiveText: '#f6efe2',
-  bannerBg: '#2b2019',
-
-  // Organic Earth Semantics (Olive Sage Verified!)
-  accent: '#8fa382',
-  success: '#8fa382',
-  warning: '#d9a760',
-  danger: '#d96b59',
-
-  // Warm Creamy Ivory Ink
-  textPrimary: '#f6efe2',
-  textSecondary: '#e4d5bf',
-  textMuted: '#b8a58e',
-  textTertiary: '#877460',
-
-  // Chat Bubbles (Warm Espresso & Cocoa)
-  bubbleMe: '#3e2e24',
-  bubbleMeText: '#f6efe2',
-  bubbleThem: '#2a1f18',
-  bubbleThemBorder: '#443429',
-  bubbleThemText: '#f6efe2',
-
-  // Mascots / Anonymous (Warm Sand/Caramel)
-  anonPurple: '#c9a67e',
-  anonBadge: '#30241c',
-
-  // Ephemeral Group
-  ephemeralFire: '#d98245',
-
-  // Modals & Overlays
-  modalOverlay: 'rgba(18, 12, 8, 0.86)',
-};
+// Backwards-compatibility alias (espresso removed in favor of True Black)
+export const espressoColors: ThemeColors = darkColors;
 
 export const lightColors: ThemeColors = {
-  // Apple / Vercel Studio Daylight Canvas & Surfaces
-  background: '#f8f9fa',
+  // Clean Studio Daylight Canvas & Surfaces
+  background: '#f8fafc',
   surface: '#ffffff',
-  surfaceLight: '#f1f3f5',
+  surfaceLight: '#f1f5f9',
   card: '#ffffff',
-  cardBorder: '#e5e7eb',
-  hairline: '#e5e7eb',
-  hairlineStrong: '#d1d5db',
+  cardBorder: '#e2e8f0',
+  hairline: '#e2e8f0',
+  hairlineStrong: '#cbd5e1',
 
-  // Apple / Vercel Action Blue for Light Mode
-  primary: '#0066cc',
+  // Crisp Studio Sky Blue
+  primary: '#0284c7',
   onPrimary: '#ffffff',
-  primaryHover: '#0070f3',
-  primaryFocus: '#0052cc',
-  brandAccent: '#0066cc',
+  primaryHover: '#0369a1',
+  primaryFocus: '#075985',
+  brandAccent: '#0284c7',
 
   // Studio Daylight Component Surfaces
-  avatarBg: '#0066cc',
+  avatarBg: '#0284c7',
   avatarText: '#ffffff',
-  chipActiveBg: '#eff6ff',
-  chipActiveBorder: '#0066cc',
-  chipActiveText: '#0066cc',
-  bannerBg: '#eff6ff',
+  chipActiveBg: '#e0f2fe',
+  chipActiveBorder: '#0284c7',
+  chipActiveText: '#0369a1',
+  bannerBg: '#f0f9ff',
 
   // Semantics
   accent: '#16a34a',
@@ -196,21 +143,21 @@ export const lightColors: ThemeColors = {
   danger: '#dc2626',
 
   // Deep High-Contrast Ink
-  textPrimary: '#0a0a0a',
+  textPrimary: '#0f172a',
   textSecondary: '#334155',
   textMuted: '#64748b',
   textTertiary: '#94a3b8',
 
   // Chat Bubbles (Light Mode Craft)
-  bubbleMe: '#0066cc',
+  bubbleMe: '#0284c7',
   bubbleMeText: '#ffffff',
   bubbleThem: '#f1f5f9',
   bubbleThemBorder: '#e2e8f0',
-  bubbleThemText: '#0a0a0a',
+  bubbleThemText: '#0f172a',
 
   // Mascots / Anonymous
-  anonPurple: '#0066cc',
-  anonBadge: '#e8f2ff',
+  anonPurple: '#0284c7',
+  anonBadge: '#e0f2fe',
 
   // Ephemeral Group
   ephemeralFire: '#ea580c',

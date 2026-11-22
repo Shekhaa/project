@@ -1,10 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useColorScheme, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ThemeColors, darkColors, espressoColors, lightColors } from './colors';
+import { ThemeColors, darkColors, lightColors } from './colors';
 
-export type ThemeMode = 'dark' | 'light' | 'espresso' | 'system';
-export type ResolvedTheme = 'dark' | 'light' | 'espresso';
+export type ThemeMode = 'dark' | 'light' | 'system';
+export type ResolvedTheme = 'dark' | 'light';
 
 interface ThemeContextValue {
   themeMode: ThemeMode;
@@ -30,13 +30,17 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const systemScheme = useColorScheme();
   const [themeMode, setThemeModeState] = useState<ThemeMode>('dark');
 
-  // Load saved theme preference on mount
+  // Load saved theme preference on mount (auto-migrate away from deprecated mocha/espresso)
   useEffect(() => {
     (async () => {
       try {
         const saved = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-        if (saved === 'dark' || saved === 'light' || saved === 'espresso' || saved === 'system') {
+        if (saved === 'dark' || saved === 'light' || saved === 'system') {
           setThemeModeState(saved as ThemeMode);
+        } else if (saved === 'espresso') {
+          // Deprecated mocha/espresso theme migrated to pure dark
+          setThemeModeState('dark');
+          await AsyncStorage.setItem(THEME_STORAGE_KEY, 'dark');
         }
       } catch (err) {
         console.log('Error loading saved theme', err);
@@ -53,12 +57,7 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const isDark = resolvedTheme !== 'light';
 
-  const activeColors =
-    resolvedTheme === 'light'
-      ? lightColors
-      : resolvedTheme === 'espresso'
-      ? espressoColors
-      : darkColors;
+  const activeColors = resolvedTheme === 'light' ? lightColors : darkColors;
 
   // Sync web document background when theme changes
   useEffect(() => {
@@ -78,14 +77,9 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // Cycle cleanly across all 3 signature themes: Dark (Black) -> Mocha (Espresso/Cream) -> Light (White)
+  // Toggle cleanly between True Black and Clean Light
   const toggleTheme = () => {
-    const nextMode: ThemeMode =
-      resolvedTheme === 'dark'
-        ? 'espresso'
-        : resolvedTheme === 'espresso'
-        ? 'light'
-        : 'dark';
+    const nextMode: ThemeMode = resolvedTheme === 'dark' ? 'light' : 'dark';
     setThemeMode(nextMode);
   };
 

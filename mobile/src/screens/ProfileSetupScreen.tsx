@@ -27,7 +27,6 @@ import {
   ArrowLeft,
   Sun,
   Moon,
-  Coffee,
   ChevronDown,
   Search,
   X,
@@ -522,15 +521,13 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
           onPress={toggleTheme}
           activeOpacity={0.8}
         >
-          {resolvedTheme === 'dark' ? (
-            <Coffee size={15} color="#e5d2b5" />
-          ) : resolvedTheme === 'espresso' ? (
-            <Sun size={15} color="#d9a760" />
+          {isDark ? (
+            <Sun size={15} color="#f59e0b" />
           ) : (
             <Moon size={15} color={colors.textPrimary} />
           )}
           <Text style={[styles.themeToggleText, { color: colors.textSecondary }]}>
-            {resolvedTheme === 'dark' ? 'Mocha' : resolvedTheme === 'espresso' ? 'Light' : 'Black'}
+            {isDark ? 'Light' : 'Dark'}
           </Text>
         </TouchableOpacity>
       </View>

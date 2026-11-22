@@ -44,7 +44,6 @@ import {
   Sun,
   Moon,
   Monitor,
-  Coffee,
   Bookmark,
   UserX,
   Bell,
@@ -2086,16 +2085,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   {/* Theme & Appearance */}
                   <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Appearance & Theme</Text>
                   <Text style={[styles.prefSub, { color: colors.textMuted }]}>
-                    Choose Black (Instagram monochrome), Mocha (Gen-Z cream & cloth brown), or Studio Light.
+                    Choose True Black (AMOLED Monochrome) or Studio Clean Light.
                   </Text>
 
                   <View style={[styles.themeSelectorRow, { flexWrap: 'wrap' }]}>
                     {(
                       [
-                        { mode: 'dark' as const, label: 'Black', icon: Moon, desc: 'Monochrome' },
-                        { mode: 'espresso' as const, label: 'Mocha', icon: Coffee, desc: 'Cream & Brown' },
-                        { mode: 'light' as const, label: 'Light', icon: Sun, desc: 'Studio White' },
-                        { mode: 'system' as const, label: 'Auto', icon: Monitor, desc: 'OS Match' },
+                        { mode: 'dark' as const, label: 'True Black', icon: Moon, desc: 'AMOLED Pure Dark' },
+                        { mode: 'light' as const, label: 'Clean Light', icon: Sun, desc: 'Studio Daylight' },
+                        { mode: 'system' as const, label: 'Auto', icon: Monitor, desc: 'Sync with OS' },
                       ] as const
                     ).map((t) => {
                       const IconComp = t.icon;

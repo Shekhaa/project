@@ -349,15 +349,24 @@ function AppMain() {
           onPress={() => navigateToTab('FEED')}
           activeOpacity={0.7}
         >
-          <Home
-            size={22}
-            color={displayedTab === 'FEED' ? colors.primary : colors.textSecondary}
-            strokeWidth={displayedTab === 'FEED' ? 2.5 : 1.8}
-          />
+          <View
+            style={[
+              styles.tabIconPill,
+              displayedTab === 'FEED' && {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(2, 132, 199, 0.12)',
+              },
+            ]}
+          >
+            <Home
+              size={20}
+              color={displayedTab === 'FEED' ? (isDark ? '#ffffff' : colors.primary) : colors.textMuted}
+              strokeWidth={displayedTab === 'FEED' ? 2.4 : 1.8}
+            />
+          </View>
           <Text
             style={[
               styles.tabLabel,
-              { color: displayedTab === 'FEED' ? colors.primary : colors.textMuted },
+              { color: displayedTab === 'FEED' ? (isDark ? '#ffffff' : colors.primary) : colors.textMuted },
               displayedTab === 'FEED' && styles.tabActiveText,
             ]}
           >
@@ -370,15 +379,24 @@ function AppMain() {
           onPress={() => navigateToTab('COMMUNITIES')}
           activeOpacity={0.7}
         >
-          <Building2
-            size={22}
-            color={displayedTab === 'COMMUNITIES' ? colors.primary : colors.textSecondary}
-            strokeWidth={displayedTab === 'COMMUNITIES' ? 2.5 : 1.8}
-          />
+          <View
+            style={[
+              styles.tabIconPill,
+              displayedTab === 'COMMUNITIES' && {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(2, 132, 199, 0.12)',
+              },
+            ]}
+          >
+            <Building2
+              size={20}
+              color={displayedTab === 'COMMUNITIES' ? (isDark ? '#ffffff' : colors.primary) : colors.textMuted}
+              strokeWidth={displayedTab === 'COMMUNITIES' ? 2.4 : 1.8}
+            />
+          </View>
           <Text
             style={[
               styles.tabLabel,
-              { color: displayedTab === 'COMMUNITIES' ? colors.primary : colors.textMuted },
+              { color: displayedTab === 'COMMUNITIES' ? (isDark ? '#ffffff' : colors.primary) : colors.textMuted },
               displayedTab === 'COMMUNITIES' && styles.tabActiveText,
             ]}
           >
@@ -391,15 +409,24 @@ function AppMain() {
           onPress={() => navigateToTab('CHAT')}
           activeOpacity={0.7}
         >
-          <MessageSquare
-            size={22}
-            color={displayedTab === 'CHAT' ? colors.primary : colors.textSecondary}
-            strokeWidth={displayedTab === 'CHAT' ? 2.5 : 1.8}
-          />
+          <View
+            style={[
+              styles.tabIconPill,
+              displayedTab === 'CHAT' && {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(2, 132, 199, 0.12)',
+              },
+            ]}
+          >
+            <MessageSquare
+              size={20}
+              color={displayedTab === 'CHAT' ? (isDark ? '#ffffff' : colors.primary) : colors.textMuted}
+              strokeWidth={displayedTab === 'CHAT' ? 2.4 : 1.8}
+            />
+          </View>
           <Text
             style={[
               styles.tabLabel,
-              { color: displayedTab === 'CHAT' ? colors.primary : colors.textMuted },
+              { color: displayedTab === 'CHAT' ? (isDark ? '#ffffff' : colors.primary) : colors.textMuted },
               displayedTab === 'CHAT' && styles.tabActiveText,
             ]}
           >
@@ -412,15 +439,24 @@ function AppMain() {
           onPress={() => navigateToTab('LOST_FOUND')}
           activeOpacity={0.7}
         >
-          <Flame
-            size={22}
-            color={(displayedTab === 'LOST_FOUND' || (displayedTab as string) === 'ARENA') ? colors.primary : colors.textSecondary}
-            strokeWidth={(displayedTab === 'LOST_FOUND' || (displayedTab as string) === 'ARENA') ? 2.5 : 1.8}
-          />
+          <View
+            style={[
+              styles.tabIconPill,
+              (displayedTab === 'LOST_FOUND' || (displayedTab as string) === 'ARENA') && {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(2, 132, 199, 0.12)',
+              },
+            ]}
+          >
+            <Flame
+              size={20}
+              color={(displayedTab === 'LOST_FOUND' || (displayedTab as string) === 'ARENA') ? (isDark ? '#ffffff' : colors.primary) : colors.textMuted}
+              strokeWidth={(displayedTab === 'LOST_FOUND' || (displayedTab as string) === 'ARENA') ? 2.4 : 1.8}
+            />
+          </View>
           <Text
             style={[
               styles.tabLabel,
-              { color: (displayedTab === 'LOST_FOUND' || (displayedTab as string) === 'ARENA') ? colors.primary : colors.textMuted },
+              { color: (displayedTab === 'LOST_FOUND' || (displayedTab as string) === 'ARENA') ? (isDark ? '#ffffff' : colors.primary) : colors.textMuted },
               (displayedTab === 'LOST_FOUND' || (displayedTab as string) === 'ARENA') && styles.tabActiveText,
             ]}
           >
@@ -433,15 +469,24 @@ function AppMain() {
           onPress={() => navigateToTab('PROFILE')}
           activeOpacity={0.7}
         >
-          <UserIcon
-            size={22}
-            color={displayedTab === 'PROFILE' ? colors.primary : colors.textSecondary}
-            strokeWidth={displayedTab === 'PROFILE' ? 2.5 : 1.8}
-          />
+          <View
+            style={[
+              styles.tabIconPill,
+              displayedTab === 'PROFILE' && {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(2, 132, 199, 0.12)',
+              },
+            ]}
+          >
+            <UserIcon
+              size={20}
+              color={displayedTab === 'PROFILE' ? (isDark ? '#ffffff' : colors.primary) : colors.textMuted}
+              strokeWidth={displayedTab === 'PROFILE' ? 2.4 : 1.8}
+            />
+          </View>
           <Text
             style={[
               styles.tabLabel,
-              { color: displayedTab === 'PROFILE' ? colors.primary : colors.textMuted },
+              { color: displayedTab === 'PROFILE' ? (isDark ? '#ffffff' : colors.primary) : colors.textMuted },
               displayedTab === 'PROFILE' && styles.tabActiveText,
             ]}
           >
@@ -534,10 +579,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 4,
   },
+  tabIconPill: {
+    width: 44,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tabLabel: {
     fontSize: 11,
     fontWeight: '500',
-    marginTop: 4,
+    marginTop: 3,
   },
   tabActiveText: {
     fontWeight: '700',
