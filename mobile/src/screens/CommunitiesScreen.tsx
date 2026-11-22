@@ -873,7 +873,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
               style={[
                 styles.segmentedTabText,
                 {
-                  color: activeTab === 'CHAT' ? '#ffffff' : colors.textSecondary,
+                  color: activeTab === 'CHAT' ? colors.onPrimary : colors.textSecondary,
                   fontWeight: activeTab === 'CHAT' ? '800' : '600',
                 },
               ]}
@@ -901,7 +901,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
               style={[
                 styles.segmentedTabText,
                 {
-                  color: activeTab === 'DISCUSS' ? '#ffffff' : colors.textSecondary,
+                  color: activeTab === 'DISCUSS' ? colors.onPrimary : colors.textSecondary,
                   fontWeight: activeTab === 'DISCUSS' ? '800' : '600',
                 },
               ]}

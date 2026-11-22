@@ -239,9 +239,9 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
             activeOpacity={0.8}
           >
             {submitting ? (
-              <ActivityIndicator color="#fff" size="small" />
+              <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
-              <Text style={styles.publishBtnText}>Post</Text>
+              <Text style={[styles.publishBtnText, { color: colors.onPrimary }]}>Post</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -492,11 +492,11 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
             activeOpacity={0.85}
           >
             {submitting ? (
-              <ActivityIndicator color="#fff" size="small" />
+              <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
               <View style={styles.bigSubmitBtnInner}>
-                <Send size={16} color="#fff" style={{ marginRight: 8 }} />
-                <Text style={styles.bigSubmitBtnText}>Post to Community</Text>
+                <Send size={16} color={colors.onPrimary} style={{ marginRight: 8 }} />
+                <Text style={[styles.bigSubmitBtnText, { color: colors.onPrimary }]}>Post to Community</Text>
               </View>
             )}
           </TouchableOpacity>

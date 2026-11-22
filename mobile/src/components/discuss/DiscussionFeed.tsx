@@ -98,8 +98,8 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
           onPress={onOpenComposer}
           activeOpacity={0.85}
         >
-          <Plus size={14} color="#fff" style={{ marginRight: 3 }} />
-          <Text style={styles.askBtnText}>Ask</Text>
+          <Plus size={14} color={colors.onPrimary} style={{ marginRight: 3 }} />
+          <Text style={[styles.askBtnText, { color: colors.onPrimary }]}>Ask</Text>
         </TouchableOpacity>
       </View>
 
@@ -245,7 +245,7 @@ export const DiscussionFeed: React.FC<DiscussionFeedProps> = ({
                   ]}
                   onPress={onOpenComposer}
                 >
-                  <Text style={[styles.emptyActionText, { color: '#ffffff' }]}>+ Start Discussion</Text>
+                  <Text style={[styles.emptyActionText, { color: colors.onPrimary }]}>+ Start Discussion</Text>
                 </TouchableOpacity>
               </View>
             </View>

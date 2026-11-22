@@ -914,9 +914,9 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                     disabled={!(replyText.trim() || draftVoiceNote) || submittingReply}
                   >
                     {submittingReply ? (
-                      <ActivityIndicator color="#fff" size="small" />
+                      <ActivityIndicator color={colors.onPrimary} size="small" />
                     ) : (
-                      <Send size={16} color="#fff" />
+                      <Send size={16} color={colors.onPrimary} />
                     )}
                   </TouchableOpacity>
                 </View>
