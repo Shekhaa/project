@@ -16,6 +16,7 @@ import {
   Maximize2,
   Minimize2,
   RotateCcw,
+  RotateCw,
   Film,
   AlertCircle,
 } from 'lucide-react-native';
@@ -50,7 +51,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   borderRadius = 12,
   onEnded,
 }) => {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const videoRef = useRef<any>(null);
   const containerRef = useRef<any>(null);
 
@@ -62,9 +63,12 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [hasError, setHasError] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [detectedRatio, setDetectedRatio] = useState<number | null>(null);
+  const [skipFeedback, setSkipFeedback] = useState<string | null>(null);
 
   const fullUrl = getFullMediaUrl(url);
   const hideTimerRef = useRef<any>(null);
+  const feedbackTimerRef = useRef<any>(null);
 
   const scheduleHideControls = useCallback(() => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
@@ -118,6 +122,22 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     showControlsTemporarily();
   };
 
+  // Skip ±10 seconds forward or backward with visual feedback badge
+  const handleSkip = (seconds: number, e?: any) => {
+    e?.stopPropagation?.();
+    if (!videoRef.current) return;
+    const cur = videoRef.current.currentTime || currentTime;
+    const dur = duration || videoRef.current.duration || 0;
+    const target = Math.max(0, Math.min(dur > 0 ? dur : 999999, cur + seconds));
+    videoRef.current.currentTime = target;
+    setCurrentTime(target);
+    showControlsTemporarily();
+
+    setSkipFeedback(seconds > 0 ? '+10s' : '-10s');
+    if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+    feedbackTimerRef.current = setTimeout(() => setSkipFeedback(null), 700);
+  };
+
   const handleSeek = (e: any) => {
     e?.stopPropagation?.();
     if (!videoRef.current || !duration) return;
@@ -155,6 +175,27 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     }
   };
 
+  // Keyboard shortcuts for Web
+  const handleKeyDown = (e: any) => {
+    if (Platform.OS !== 'web') return;
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      handleSkip(-10);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      handleSkip(10);
+    } else if (e.key === ' ' || e.key === 'k') {
+      e.preventDefault();
+      handleTogglePlay();
+    } else if (e.key === 'm' || e.key === 'M') {
+      e.preventDefault();
+      handleToggleMute();
+    } else if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault();
+      handleToggleFullscreen();
+    }
+  };
+
   useEffect(() => {
     const onFullscreenChange = () => {
       if (typeof document !== 'undefined') {
@@ -172,24 +213,32 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   useEffect(() => {
     return () => {
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
     };
   }, []);
 
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  // Natural 9:16 vertical detection: clamps between 9:16 (0.5625) and 16:9 (1.777)
+  const effectiveRatio = detectedRatio || aspectRatio;
+  const isPortraitVideo = effectiveRatio < 0.85;
+  const effectiveMaxHeight = isFullscreen ? '100%' : isPortraitVideo ? 560 : maxHeight;
 
   // Render on Web with custom custom HTML5 video engine
   if (Platform.OS === 'web') {
     return (
       <View
         ref={containerRef}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
         style={[
           styles.container,
           {
-            aspectRatio: isFullscreen ? undefined : aspectRatio,
-            maxHeight: isFullscreen ? '100%' : maxHeight,
+            aspectRatio: isFullscreen ? undefined : effectiveRatio,
+            maxHeight: effectiveMaxHeight,
             borderRadius: isFullscreen ? 0 : borderRadius,
             backgroundColor: '#000000',
-          },
+            outline: 'none',
+          } as any,
         ]}
         onMouseEnter={() => setControlsVisible(true)}
         onMouseLeave={() => isPlaying && setControlsVisible(false)}
@@ -222,7 +271,16 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           }}
           onLoadedMetadata={() => {
             if (videoRef.current) {
-              setDuration(videoRef.current.duration || 0);
+              const dur = videoRef.current.duration || 0;
+              setDuration(dur);
+              const vw = videoRef.current.videoWidth;
+              const vh = videoRef.current.videoHeight;
+              if (vw > 0 && vh > 0) {
+                const rawRatio = vw / vh;
+                // Allow vertical reels (down to 9:16 = 0.5625) and landscape (up to 16:9 = 1.777)
+                const clamped = Math.max(9 / 16, Math.min(16 / 9, rawRatio));
+                setDetectedRatio(clamped);
+              }
             }
           }}
           onWaiting={() => setBuffering(true)}
@@ -243,6 +301,13 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         {buffering && (
           <View style={styles.centerOverlay} pointerEvents="none">
             <ActivityIndicator size="large" color="#ffffff" />
+          </View>
+        )}
+
+        {/* Fast-Forward / Rewind Visual Splash Badge */}
+        {skipFeedback && (
+          <View style={styles.skipFeedbackBadge} pointerEvents="none">
+            <Text style={styles.skipFeedbackText}>{skipFeedback}</Text>
           </View>
         )}
 
@@ -280,7 +345,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
               onClick={handleSeek}
               style={{
                 width: '100%',
-                height: '14px',
+                height: '16px',
                 display: 'flex',
                 alignItems: 'center',
                 cursor: 'pointer',
@@ -294,7 +359,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                   backgroundColor: 'rgba(255, 255, 255, 0.3)',
                   borderRadius: '2px',
                   position: 'relative',
-                  overflow: 'hidden',
+                  overflow: 'visible',
                 }}
               >
                 <div
@@ -303,16 +368,29 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                     height: '100%',
                     backgroundColor: '#ffffff',
                     borderRadius: '2px',
-                    transition: 'width 0.1s linear',
+                    position: 'relative',
                   }}
-                />
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: '-5px',
+                      top: '-4px',
+                      width: '12px',
+                      height: '12px',
+                      borderRadius: '50%',
+                      backgroundColor: '#ffffff',
+                      boxShadow: '0 0 6px rgba(0, 0, 0, 0.5)',
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
             {/* Controls Row */}
             <View style={styles.controlsRow}>
               {/* Play / Pause Toggle */}
-              <TouchableOpacity onPress={handleTogglePlay} style={styles.ctrlBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity onPress={handleTogglePlay} style={styles.ctrlBtn} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
                 {isPlaying ? (
                   <Pause size={17} color="#ffffff" fill="#ffffff" />
                 ) : (
@@ -320,8 +398,30 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
                 )}
               </TouchableOpacity>
 
+              {/* Rewind -10s */}
+              <TouchableOpacity
+                onPress={(e) => handleSkip(-10, e)}
+                style={styles.skipBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                accessibilityLabel="Rewind 10 seconds"
+              >
+                <RotateCcw size={15} color="#ffffff" />
+                <Text style={styles.skipBtnText}>10s</Text>
+              </TouchableOpacity>
+
+              {/* Forward +10s */}
+              <TouchableOpacity
+                onPress={(e) => handleSkip(10, e)}
+                style={styles.skipBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                accessibilityLabel="Forward 10 seconds"
+              >
+                <RotateCw size={15} color="#ffffff" />
+                <Text style={styles.skipBtnText}>10s</Text>
+              </TouchableOpacity>
+
               {/* Mute / Unmute Toggle */}
-              <TouchableOpacity onPress={handleToggleMute} style={styles.ctrlBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity onPress={handleToggleMute} style={styles.ctrlBtn} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
                 {isMuted ? (
                   <VolumeX size={17} color="#ffffff" />
                 ) : (
@@ -357,8 +457,8 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       style={[
         styles.container,
         {
-          aspectRatio,
-          maxHeight,
+          aspectRatio: effectiveRatio,
+          maxHeight: effectiveMaxHeight,
           borderRadius,
           backgroundColor: '#090d16',
           borderColor: colors.cardBorder,
@@ -400,6 +500,25 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
     zIndex: 10,
   },
+  skipFeedbackBadge: {
+    position: 'absolute',
+    top: '44%',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    zIndex: 12,
+  },
+  skipFeedbackText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 0.5,
+  },
   bigPlayButton: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
@@ -425,18 +544,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: 8,
     paddingTop: 16,
-    background: 'linear-gradient(transparent, rgba(0, 0, 0, 0.8))',
+    background: 'linear-gradient(transparent, rgba(0, 0, 0, 0.85))',
     zIndex: 15,
   } as any,
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   ctrlBtn: {
     padding: 4,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  skipBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: 12,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  skipBtnText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   timeText: {
     color: '#ffffff',
@@ -444,6 +578,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
     letterSpacing: 0.3,
+    marginLeft: 2,
   },
   errorOverlay: {
     ...StyleSheet.absoluteFillObject,

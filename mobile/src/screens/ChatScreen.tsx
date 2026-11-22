@@ -825,7 +825,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         )}
 
         {/* Anonymous Mode Active Indicator Banner */}
-        {isAnonMode && (
+        {chatMode === 'ANONYMOUS' && (
           <View
             style={{
               paddingHorizontal: 12,
@@ -842,7 +842,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             <Text style={{ fontSize: 11, color: isDark ? '#c084fc' : '#7e22ce', fontWeight: '600', flex: 1 }}>
               🎭 Anonymous DM Active • Your real name is hidden.
             </Text>
-            <TouchableOpacity onPress={() => setIsAnonMode(false)}>
+            <TouchableOpacity onPress={() => handleToggleChatMode('NORMAL')}>
               <X size={14} color={isDark ? '#c084fc' : '#7e22ce'} />
             </TouchableOpacity>
           </View>

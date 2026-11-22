@@ -552,6 +552,9 @@ const styles = StyleSheet.create({
     flex: 1,
     height: (Platform.OS === 'web' ? '100dvh' : '100%') as any,
     maxHeight: (Platform.OS === 'web' ? '100dvh' : undefined) as any,
+    maxWidth: Platform.OS === 'web' ? 620 : undefined,
+    width: '100%',
+    alignSelf: 'center',
     overflow: 'hidden',
   },
   loadingContainer: {

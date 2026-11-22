@@ -16,6 +16,8 @@ import {
   AlertCircle,
   AtSign,
   Building2,
+  ChevronLeft,
+  ChevronRight,
   Crop,
   FileText,
   Globe,
@@ -101,6 +103,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   const [docSizeError, setDocSizeError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [croppingImage, setCroppingImage] = useState<StagedAttachment | null>(null);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   // Hidden file input refs for Web
   const imageInputRef = useRef<any>(null);
@@ -213,6 +216,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     setCursorPos(0);
     setMentionDismissed(false);
     setStagedFiles([]);
+    setActiveImageIndex(0);
     setImageQuality('HIGH');
     setDocSizeError(null);
     setIsAnonymous(false);
@@ -585,9 +589,10 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
 
   const imageFiles = stagedFiles.filter((f) => f.type === 'IMAGE');
   const videoFiles = stagedFiles.filter((f) => f.type === 'VIDEO');
-  const firstImage = imageFiles[0];
-  const heroRatio = firstImage
-    ? clampAspectRatio(firstImage.imageWidth, firstImage.imageHeight, 4 / 3)
+  const activeImageIdxClamped = Math.min(activeImageIndex, Math.max(0, imageFiles.length - 1));
+  const activeImage = imageFiles[activeImageIdxClamped] || imageFiles[0];
+  const activeRatio = activeImage
+    ? clampAspectRatio(activeImage.imageWidth, activeImage.imageHeight, 4 / 3)
     : 4 / 3;
   const cropPresetConfig = IMAGE_QUALITY_PRESETS[imageQuality];
 
@@ -944,8 +949,8 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
             </View>
           )}
 
-          {/* Photo Preview + Crop & Image Quality (ONLY when images attached) */}
-          {firstImage && (
+          {/* Photo Preview + Multi-Photo Carousel + Crop & Image Quality */}
+          {activeImage && (
             <View
               style={[
                 styles.mediaStudio,
@@ -961,27 +966,107 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                 >
                   <Sparkles size={13} color={colors.primary} />
                   <Text style={[styles.hdBadgeText, { color: colors.textSecondary }]}>
-                    {imageFiles.length} Photo{imageFiles.length > 1 ? 's' : ''}
-                    {firstImage.imageWidth && firstImage.imageHeight
-                      ? ` • ${firstImage.imageWidth}×${firstImage.imageHeight}`
+                    Photo {activeImageIdxClamped + 1} of {imageFiles.length}
+                    {activeImage.imageWidth && activeImage.imageHeight
+                      ? ` • ${activeImage.imageWidth}×${activeImage.imageHeight}`
                       : ''}
                   </Text>
                 </View>
+
+                {imageFiles.length > 1 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <TouchableOpacity
+                      onPress={() => setActiveImageIndex((prev) => Math.max(0, prev - 1))}
+                      disabled={activeImageIdxClamped === 0}
+                      style={{
+                        paddingHorizontal: 8,
+                        paddingVertical: 5,
+                        borderRadius: 8,
+                        backgroundColor: colors.surfaceLight,
+                        opacity: activeImageIdxClamped === 0 ? 0.35 : 1,
+                      }}
+                    >
+                      <ChevronLeft size={16} color={colors.textPrimary} />
+                    </TouchableOpacity>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>
+                      {activeImageIdxClamped + 1}/{imageFiles.length}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => setActiveImageIndex((prev) => Math.min(imageFiles.length - 1, prev + 1))}
+                      disabled={activeImageIdxClamped >= imageFiles.length - 1}
+                      style={{
+                        paddingHorizontal: 8,
+                        paddingVertical: 5,
+                        borderRadius: 8,
+                        backgroundColor: colors.surfaceLight,
+                        opacity: activeImageIdxClamped >= imageFiles.length - 1 ? 0.35 : 1,
+                      }}
+                    >
+                      <ChevronRight size={16} color={colors.textPrimary} />
+                    </TouchableOpacity>
+                  </View>
+                )}
 
                 <TouchableOpacity
                   style={[
                     styles.openCropperBtn,
                     { backgroundColor: colors.surfaceLight, borderColor: colors.primary },
                   ]}
-                  onPress={() => setCroppingImage(firstImage)}
+                  onPress={() => setCroppingImage(activeImage)}
                   activeOpacity={0.8}
                 >
                   <Crop size={13} color={colors.primary} />
                   <Text style={[styles.openCropperBtnText, { color: colors.primary }]}>
-                    Crop & Adjust
+                    Crop Photo {imageFiles.length > 1 ? `#${activeImageIdxClamped + 1}` : ''}
                   </Text>
                 </TouchableOpacity>
               </View>
+
+              {/* Multi-Photo Thumbnails Strip */}
+              {imageFiles.length > 1 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: 10, paddingVertical: 8, gap: 8 }}
+                >
+                  {imageFiles.map((img, idx) => {
+                    const isSelected = idx === activeImageIdxClamped;
+                    return (
+                      <TouchableOpacity
+                        key={img.id}
+                        activeOpacity={0.8}
+                        onPress={() => setActiveImageIndex(idx)}
+                        style={{
+                          width: 52,
+                          height: 52,
+                          borderRadius: 8,
+                          overflow: 'hidden',
+                          borderWidth: isSelected ? 2 : 1,
+                          borderColor: isSelected ? colors.primary : colors.cardBorder,
+                          position: 'relative',
+                        }}
+                      >
+                        <Image source={{ uri: img.uri }} style={{ width: '100%', height: '100%' }} />
+                        <View
+                          style={{
+                            position: 'absolute',
+                            bottom: 2,
+                            right: 2,
+                            backgroundColor: 'rgba(0,0,0,0.7)',
+                            borderRadius: 4,
+                            paddingHorizontal: 4,
+                            paddingVertical: 1,
+                          }}
+                        >
+                          <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700' }}>
+                            {idx + 1}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
 
               {/* Image Quality Presets (Strictly for images — never shown for documents) */}
               <View
@@ -1032,11 +1117,11 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
               {/* Proportional Image Preview (up to 9:16 vertical or 16:9 horizontal) */}
               <TouchableOpacity
                 activeOpacity={0.92}
-                onPress={() => setCroppingImage(firstImage)}
+                onPress={() => setCroppingImage(activeImage)}
                 style={[
                   styles.imagePreviewContainer,
                   {
-                    aspectRatio: heroRatio,
+                    aspectRatio: activeRatio,
                     maxHeight: 420,
                     backgroundColor: colors.surfaceLight,
                     borderColor: colors.hairline,
@@ -1044,7 +1129,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                 ]}
               >
                 <Image
-                  source={{ uri: firstImage.uri }}
+                  source={{ uri: activeImage.uri }}
                   style={styles.imagePreview}
                   resizeMode="contain"
                 />
@@ -1096,7 +1181,13 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                   >
                     {file.type === 'IMAGE' ? (
                       <View style={{ position: 'relative' }}>
-                        <TouchableOpacity onPress={() => setCroppingImage(file)}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            const idx = imageFiles.findIndex((f) => f.id === file.id);
+                            if (idx >= 0) setActiveImageIndex(idx);
+                            setCroppingImage(file);
+                          }}
+                        >
                           <Image source={{ uri: file.uri }} style={styles.stagedThumb} />
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -1104,7 +1195,11 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                             styles.stagedCropBadge,
                             { backgroundColor: colors.primary, borderColor: '#ffffff' },
                           ]}
-                          onPress={() => setCroppingImage(file)}
+                          onPress={() => {
+                            const idx = imageFiles.findIndex((f) => f.id === file.id);
+                            if (idx >= 0) setActiveImageIndex(idx);
+                            setCroppingImage(file);
+                          }}
                           activeOpacity={0.8}
                           accessibilityLabel="Crop photo"
                         >

@@ -63,6 +63,7 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
   const [layoutWidth, setLayoutWidth] = useState<number>(() => {
     return containerWidth || (Platform.OS === 'web' ? 580 : Dimensions.get('window').width - 32);
   });
+  const [singleRatio, setSingleRatio] = useState<number | null>(null);
 
   const mediaItems: UnifiedMediaItem[] = (rawMedia || []).map((m, idx) => {
     const rawUrl = m.file_url || m.uri || '';
@@ -76,6 +77,25 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
   });
 
   const total = mediaItems.length;
+
+  // Adapt single image aspect ratio (clamped between 4:5 portrait and 16:9 landscape)
+  useEffect(() => {
+    if (total === 1 && !isItemVideo(mediaItems[0])) {
+      const url = mediaItems[0].file_url || mediaItems[0].uri || '';
+      if (!url) return;
+      let cancelled = false;
+      measureImageSize(url).then((dims) => {
+        if (!cancelled && dims && dims.width > 0 && dims.height > 0) {
+          const raw = dims.width / dims.height;
+          const clamped = Math.max(4 / 5, Math.min(16 / 9, raw));
+          setSingleRatio(clamped);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [total, rawMedia]);
 
   const handleScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const contentOffsetX = e.nativeEvent.contentOffset.x;
@@ -114,14 +134,22 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
         {isVideo ? (
           <CustomVideoPlayer
             url={single.file_url || single.uri || ''}
-            maxHeight={460}
+            maxHeight={560}
             borderRadius={12}
           />
         ) : (
           <TouchableOpacity
             activeOpacity={0.93}
             onPress={() => handleOpenImageViewer(0)}
-            style={[styles.singleImageWrapper, { backgroundColor: colors.surfaceLight, borderColor: colors.hairline }]}
+            style={[
+              styles.singleImageWrapper,
+              {
+                aspectRatio: singleRatio || 4 / 3,
+                maxHeight: 520,
+                backgroundColor: isDark ? '#000000' : colors.surfaceLight,
+                borderColor: colors.cardBorder,
+              },
+            ]}
           >
             <Image
               source={{ uri: single.file_url || single.uri }}
@@ -293,16 +321,16 @@ const styles = StyleSheet.create({
   singleImageWrapper: {
     width: '100%',
     minHeight: 220,
-    maxHeight: 520,
+    maxHeight: 540,
     borderRadius: 12,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   singleImage: {
     width: '100%',
-    height: 380,
+    height: '100%',
   },
   captionText: {
     fontSize: 12,
@@ -337,7 +365,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   slide: {
-    height: 420,
+    height: 440,
+    maxHeight: 520,
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 14,
