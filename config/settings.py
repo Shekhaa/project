@@ -216,3 +216,7 @@ _default_email_backend = (
 )
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', _default_email_backend)
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or BREVO_SENDER_EMAIL or 'verify@campusconnect.local')
+
+# Junto Operations & Telemetry Admin API Key
+BACKEND_OPS_KEY = os.getenv('BACKEND_OPS_KEY', 'junto-ops-secret-key-2026')
+

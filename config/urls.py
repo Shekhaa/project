@@ -5,6 +5,8 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 from django.shortcuts import render
+from .admin_ops_views import admin_ops_overview
+from .moderation_views import moderation_reports, moderation_action, moderation_stats
 
 def landing_portal(request):
     return render(request, "landing.html")
@@ -21,6 +23,12 @@ urlpatterns = [
     path('', landing_portal, name='home'),
     path('admin/', admin.site.urls),
     path('api/health/', health_check, name='health-check'),
+    path('api/admin-ops/overview/', admin_ops_overview, name='admin-ops-overview'),
+
+    # Junto Safety & Campus Moderation APIs
+    path('api/moderation/reports/', moderation_reports, name='moderation-reports'),
+    path('api/moderation/reports/<int:post_id>/action/', moderation_action, name='moderation-action'),
+    path('api/moderation/stats/', moderation_stats, name='moderation-stats'),
     
     # Campus Connect Modular APIs
     path('api/authentication/', include('accounts.urls')),
