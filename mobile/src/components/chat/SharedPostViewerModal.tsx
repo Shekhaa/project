@@ -12,10 +12,14 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 import { postService, Post, Comment } from '../../services/postService';
 import { SharedPostCardData } from './MessageBubble';
-import { X, Heart, MessageCircle, Send } from 'lucide-react-native';
+import { CustomVideoPlayer } from '../media/CustomVideoPlayer';
+import { MediaDeckCarousel, UnifiedMediaItem } from '../media/MediaDeckCarousel';
+import { UserAvatar } from '../common/UserAvatar';
+import { getFullMediaUrl } from '../../config/api';
+import { X, Heart, MessageCircle, Send, MapPin, ExternalLink, ShieldCheck } from 'lucide-react-native';
 
 interface SharedPostViewerModalProps {
   cardData: SharedPostCardData | null;
@@ -26,21 +30,24 @@ export const SharedPostViewerModal: React.FC<SharedPostViewerModalProps> = ({
   cardData,
   onClose,
 }) => {
+  const { colors, isDark } = useTheme();
   const [post, setPost] = useState<Post | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
 
+  const isLostFound = cardData?.kind === 'LOST_FOUND';
+
   useEffect(() => {
-    if (cardData) {
+    if (cardData && !isLostFound && typeof cardData.id === 'number') {
       loadFullPost(cardData.id);
     } else {
       setPost(null);
       setComments([]);
       setNewComment('');
     }
-  }, [cardData]);
+  }, [cardData, isLostFound]);
 
   const loadFullPost = async (postId: number) => {
     try {
@@ -90,124 +97,246 @@ export const SharedPostViewerModal: React.FC<SharedPostViewerModalProps> = ({
 
   if (!cardData) return null;
 
+  // Determine media for Postcard (Video, Multiple Images, or Single Image)
+  const videoUrl =
+    cardData.video_url ||
+    (post?.attachments || []).find((a) => a.file_type === 'VIDEO')?.file_url ||
+    (post?.media_type === 'VIDEO' ? post.media_url : null) ||
+    (cardData.media_type === 'VIDEO' ? cardData.media_url : null);
+
+  const mediaDeckItems: UnifiedMediaItem[] = (
+    post?.attachments && post.attachments.length > 0
+      ? post.attachments
+      : cardData.media_urls && cardData.media_urls.length > 0
+      ? cardData.media_urls.map((url, idx) => ({ id: idx, file_url: url, file_type: 'IMAGE' }))
+      : []
+  ).map((item) => ({
+    ...item,
+    file_url: getFullMediaUrl(item.file_url || item.uri || ''),
+    uri: getFullMediaUrl(item.file_url || item.uri || ''),
+  }));
+
+  const singleImageUrl =
+    !videoUrl && mediaDeckItems.length === 0 && cardData.media_url
+      ? getFullMediaUrl(cardData.media_url)
+      : null;
+
   return (
-    <Modal visible={!!cardData} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={!!cardData} animationType="slide" transparent={false} onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.container}
+        style={[styles.container, { backgroundColor: colors.background }]}
       >
+        {/* Instagram-style Top Drag Handle Pill Bar */}
+        <TouchableOpacity
+          style={styles.dragHandleBar}
+          activeOpacity={0.8}
+          onPress={onClose}
+          accessibilityLabel="Swipe down or tap to close"
+        >
+          <View style={[styles.dragHandlePill, { backgroundColor: colors.hairlineStrong || '#52525b' }]} />
+        </TouchableOpacity>
+
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <X size={22} color={colors.textPrimary} />
+        <View style={[styles.header, { borderBottomColor: colors.cardBorder, backgroundColor: colors.surface }]}>
+          <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <X size={20} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Shared Post</Text>
-          <View style={{ width: 30 }} />
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+            {isLostFound ? 'Campus Notice' : 'Shared Campus Post'}
+          </Text>
+          <View style={{ width: 28 }} />
         </View>
 
-        <FlatList
-          data={comments}
-          keyExtractor={(item) => String(item.id)}
-          contentContainerStyle={styles.listContent}
-          ListHeaderComponent={
-            <View style={styles.postBody}>
-              {/* Author Row */}
-              <View style={styles.authorRow}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {cardData.author_name.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-                <View>
-                  <Text style={styles.authorName}>{cardData.author_name}</Text>
-                  {cardData.community_name && (
-                    <Text style={styles.communityTag}>🎓 {cardData.community_name}</Text>
-                  )}
-                </View>
-              </View>
-
-              {/* Text Content */}
-              {cardData.content ? (
-                <Text style={styles.postText}>{cardData.content}</Text>
-              ) : null}
-
-              {/* Photo */}
-              {cardData.media_type === 'IMAGE' && cardData.media_url ? (
-                <View style={styles.imageBox}>
-                  <Image
-                    source={{ uri: cardData.media_url }}
-                    style={styles.postImg}
-                    resizeMode="cover"
-                  />
-                </View>
-              ) : null}
-
-              {/* Actions */}
-              <View style={styles.statsRow}>
-                <TouchableOpacity style={styles.statBtn} onPress={handleLike}>
-                  <Heart
-                    size={20}
-                    color={post?.has_liked ? '#ef4444' : colors.textSecondary}
-                    fill={post?.has_liked ? '#ef4444' : 'transparent'}
-                  />
-                  <Text
-                    style={[
-                      styles.statText,
-                      post?.has_liked && { color: '#ef4444', fontWeight: '700' },
-                    ]}
-                  >
-                    {post?.likes_count ?? cardData.likes_count ?? 0}
-                  </Text>
-                </TouchableOpacity>
-
-                <View style={styles.statBtn}>
-                  <MessageCircle size={20} color={colors.textSecondary} />
-                  <Text style={styles.statText}>
-                    {post?.comments_count ?? cardData.comments_count ?? 0}
-                  </Text>
-                </View>
-              </View>
-
-              <Text style={styles.commentsHeading}>Comments</Text>
-              {loading && <ActivityIndicator size="small" color={colors.primary} />}
-            </View>
-          }
-          renderItem={({ item }) => (
-            <View style={styles.commentItem}>
-              <View style={styles.commentAvatar}>
-                <Text style={styles.commentAvatarText}>
-                  {(item.author_name || 'S').charAt(0).toUpperCase()}
+        {isLostFound ? (
+          // Lost & Found Notice Details (No comments chain, direct item inspect)
+          <View style={[styles.lostFoundBody, { backgroundColor: colors.surface }]}>
+            <View style={styles.authorRow}>
+              <View
+                style={[
+                  styles.badgePill,
+                  {
+                    backgroundColor:
+                      cardData.item_type === 'LOST'
+                        ? 'rgba(239, 68, 68, 0.18)'
+                        : 'rgba(34, 197, 94, 0.18)',
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: '800',
+                    color: cardData.item_type === 'LOST' ? '#ef4444' : '#22c55e',
+                  }}
+                >
+                  {cardData.item_type === 'LOST' ? '🔍 LOST NOTICE' : '📦 FOUND ITEM'}
                 </Text>
               </View>
-              <View style={styles.commentMeta}>
-                <Text style={styles.commentAuthor}>{item.author_name}</Text>
-                <Text style={styles.commentBodyText}>{item.text}</Text>
-              </View>
+              <Text style={[styles.authorName, { color: colors.textPrimary, marginLeft: 8 }]}>
+                Reported by {cardData.author_name}
+              </Text>
             </View>
-          )}
-        />
 
-        {/* Comment input */}
-        <View style={styles.inputBar}>
-          <TextInput
-            style={styles.input}
-            placeholder="Add a comment..."
-            placeholderTextColor={colors.textSecondary}
-            value={newComment}
-            onChangeText={setNewComment}
-          />
-          <TouchableOpacity
-            style={[styles.sendBtn, !newComment.trim() && styles.sendBtnDisabled]}
-            onPress={handleSendComment}
-            disabled={!newComment.trim() || submittingComment}
-          >
-            {submittingComment ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Send size={18} color="#fff" />
+            {singleImageUrl && (
+              <View style={[styles.imageBox, { borderColor: colors.cardBorder }]}>
+                <Image source={{ uri: singleImageUrl }} style={styles.postImg} resizeMode="contain" />
+              </View>
             )}
-          </TouchableOpacity>
-        </View>
+
+            <Text style={[styles.postText, { color: colors.textPrimary }]}>{cardData.content}</Text>
+
+            {cardData.location && (
+              <View style={[styles.locationRow, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                <MapPin size={16} color={colors.primary} />
+                <Text style={[styles.locationText, { color: colors.textSecondary }]}>
+                  Location: {cardData.location}
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.doneBtn, { backgroundColor: colors.primary }]}
+              onPress={onClose}
+              activeOpacity={0.85}
+            >
+              <Text style={{ color: colors.onPrimary, fontSize: 13, fontWeight: '700' }}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          // Regular Campus Post with Video, Photo Deck & Comment Chain
+          <FlatList
+            data={comments}
+            keyExtractor={(item) => String(item.id)}
+            contentContainerStyle={styles.listContent}
+            ListHeaderComponent={
+              <View style={[styles.postBody, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
+                {/* Author Row */}
+                <View style={styles.authorRow}>
+                  <UserAvatar
+                    name={cardData.author_name}
+                    size={38}
+                    uri={cardData.author_avatar || post?.author_avatar}
+                  />
+                  <View style={{ marginLeft: 10, flex: 1 }}>
+                    <Text style={[styles.authorName, { color: colors.textPrimary }]}>
+                      {cardData.author_name}
+                    </Text>
+                    {cardData.community_name && (
+                      <Text style={[styles.communityTag, { color: colors.textMuted }]}>
+                        🎓 {cardData.community_name}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+
+                {/* Text Content */}
+                {cardData.content ? (
+                  <Text style={[styles.postText, { color: colors.textPrimary }]}>{cardData.content}</Text>
+                ) : null}
+
+                {/* Video Player (Full Screen-Level 10s Controls) */}
+                {videoUrl ? (
+                  <View style={styles.mediaBox}>
+                    <CustomVideoPlayer url={videoUrl} autoPlay={false} />
+                  </View>
+                ) : mediaDeckItems.length > 0 ? (
+                  /* Photo Carousel Deck (Reddit / Insta Slide Deck) */
+                  <View style={styles.mediaBox}>
+                    <MediaDeckCarousel media={mediaDeckItems} />
+                  </View>
+                ) : singleImageUrl ? (
+                  <View style={[styles.imageBox, { borderColor: colors.cardBorder }]}>
+                    <Image source={{ uri: singleImageUrl }} style={styles.postImg} resizeMode="contain" />
+                  </View>
+                ) : null}
+
+                {/* Likes & Comments Counters */}
+                <View style={[styles.statsRow, { borderTopColor: colors.cardBorder }]}>
+                  <TouchableOpacity style={styles.statBtn} onPress={handleLike} activeOpacity={0.7}>
+                    <Heart
+                      size={20}
+                      color={post?.has_liked ? '#ef4444' : colors.textSecondary}
+                      fill={post?.has_liked ? '#ef4444' : 'transparent'}
+                    />
+                    <Text
+                      style={[
+                        styles.statText,
+                        { color: post?.has_liked ? '#ef4444' : colors.textSecondary },
+                      ]}
+                    >
+                      {post?.likes_count ?? cardData.likes_count ?? 0} Likes
+                    </Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.statBtn}>
+                    <MessageCircle size={20} color={colors.textSecondary} />
+                    <Text style={[styles.statText, { color: colors.textSecondary }]}>
+                      {post?.comments_count ?? cardData.comments_count ?? 0} Comments
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={[styles.commentsHeading, { color: colors.textPrimary }]}>Discussion Thread</Text>
+                {loading && <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 8 }} />}
+              </View>
+            }
+            renderItem={({ item }) => (
+              <View style={[styles.commentItem, { borderBottomColor: colors.cardBorder }]}>
+                <UserAvatar name={item.author_name} size={32} uri={item.author_avatar} />
+                <View style={styles.commentMeta}>
+                  <Text style={[styles.commentAuthor, { color: colors.textPrimary }]}>{item.author_name}</Text>
+                  <Text style={[styles.commentBodyText, { color: colors.textSecondary }]}>{item.text}</Text>
+                </View>
+              </View>
+            )}
+            ListEmptyComponent={
+              !loading ? (
+                <View style={styles.emptyCommentsBox}>
+                  <Text style={[styles.emptyCommentsText, { color: colors.textMuted }]}>
+                    No comments yet. Start the chain below!
+                  </Text>
+                </View>
+              ) : null
+            }
+          />
+        )}
+
+        {/* Comment Input Bar for Posts */}
+        {!isLostFound && (
+          <View style={[styles.inputBar, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: colors.surfaceLight,
+                  color: colors.textPrimary,
+                  borderColor: colors.cardBorder,
+                },
+              ]}
+              placeholder="Reply to this postcard..."
+              placeholderTextColor={colors.textMuted}
+              value={newComment}
+              onChangeText={setNewComment}
+            />
+            <TouchableOpacity
+              style={[
+                styles.sendBtn,
+                { backgroundColor: colors.primary },
+                !newComment.trim() && { opacity: 0.5 },
+              ]}
+              onPress={handleSendComment}
+              disabled={!newComment.trim() || submittingComment}
+              activeOpacity={0.8}
+            >
+              {submittingComment ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Send size={16} color={colors.onPrimary} />
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -216,87 +345,82 @@ export const SharedPostViewerModal: React.FC<SharedPostViewerModalProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+  },
+  dragHandleBar: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    cursor: 'pointer',
+  } as any,
+  dragHandlePill: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.cardBorder,
   },
   closeBtn: {
     padding: 4,
   },
   headerTitle: {
-    color: colors.textPrimary,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-  },
-  listContent: {
-    paddingBottom: 20,
   },
   postBody: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: colors.cardBorder,
   },
   authorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
     marginBottom: 12,
   },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1e3a8a',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    color: '#93c5fd',
-    fontSize: 16,
-    fontWeight: '700',
-  },
   authorName: {
-    color: colors.textPrimary,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
   },
   communityTag: {
-    color: colors.primary,
-    fontSize: 12,
-    marginTop: 2,
+    fontSize: 11.5,
+    marginTop: 1,
+  },
+  badgePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   postText: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14.5,
+    lineHeight: 21,
     marginBottom: 12,
   },
-  imageBox: {
-    width: '100%',
-    aspectRatio: 4 / 3,
+  mediaBox: {
+    marginBottom: 14,
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#000',
+  },
+  imageBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
     marginBottom: 14,
+    maxHeight: 400,
+    backgroundColor: '#000000',
   },
   postImg: {
     width: '100%',
-    height: '100%',
+    height: 320,
   },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 20,
-    paddingVertical: 8,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.05)',
   },
   statBtn: {
     flexDirection: 'row',
@@ -304,80 +428,89 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   statText: {
-    color: colors.textSecondary,
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '600',
   },
   commentsHeading: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-    marginTop: 14,
-    marginBottom: 8,
+    fontSize: 13.5,
+    fontWeight: '800',
+    marginTop: 16,
+    letterSpacing: 0.3,
+  },
+  listContent: {
+    paddingBottom: 20,
   },
   commentItem: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.03)',
-  },
-  commentAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  commentAvatarText: {
-    color: colors.textPrimary,
-    fontSize: 12,
-    fontWeight: '700',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   commentMeta: {
+    marginLeft: 10,
     flex: 1,
   },
   commentAuthor: {
-    color: colors.textPrimary,
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
     marginBottom: 2,
   },
   commentBodyText: {
-    color: colors.textSecondary,
-    fontSize: 13.5,
+    fontSize: 13,
     lineHeight: 18,
+  },
+  emptyCommentsBox: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  emptyCommentsText: {
+    fontSize: 13,
+  },
+  lostFoundBody: {
+    padding: 18,
+    margin: 16,
+    borderRadius: 16,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  locationText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  doneBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
   },
   inputBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: colors.cardBorder,
-    backgroundColor: colors.surface,
+    gap: 8,
   },
   input: {
     flex: 1,
-    backgroundColor: colors.surfaceLight,
-    color: colors.textPrimary,
+    borderWidth: 1,
     borderRadius: 20,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    fontSize: 14,
+    fontSize: 13.5,
   },
   sendBtn: {
-    backgroundColor: colors.primary,
     width: 36,
     height: 36,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 8,
-  },
-  sendBtnDisabled: {
-    opacity: 0.4,
   },
 });

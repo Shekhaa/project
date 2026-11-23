@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -53,6 +53,19 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
   const [expandedReplies, setExpandedReplies] = useState<Record<number, boolean>>({});
+  const touchStartY = useRef<number>(0);
+
+  const handleTouchStart = (e: any) => {
+    touchStartY.current = e.nativeEvent?.pageY || e.clientY || 0;
+  };
+
+  const handleTouchEnd = (e: any) => {
+    const endY = e.nativeEvent?.pageY || e.clientY || 0;
+    const deltaY = endY - touchStartY.current;
+    if (deltaY > 40) {
+      onClose();
+    }
+  };
 
   const toggleReplies = (commentId: number) => {
     setExpandedReplies((prev) => ({
@@ -368,11 +381,29 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
             { backgroundColor: colors.surface, borderColor: colors.cardBorder },
           ]}
         >
-          {/* Drag handle pill */}
-          <View style={[styles.dragHandle, { backgroundColor: colors.hairlineStrong }]} />
+          {/* Instagram-style Drag Handle Bar (Tap or swipe down to close) */}
+          <TouchableOpacity
+            style={styles.dragHandleBar}
+            activeOpacity={0.7}
+            onPress={onClose}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            accessibilityLabel="Tap or swipe down to close comments"
+          >
+            <View
+              style={[
+                styles.dragHandle,
+                { backgroundColor: colors.hairlineStrong || '#52525b' },
+              ]}
+            />
+          </TouchableOpacity>
 
           {/* Header */}
-          <View style={[styles.sheetHeader, { borderBottomColor: colors.cardBorder }]}>
+          <View
+            style={[styles.sheetHeader, { borderBottomColor: colors.cardBorder }]}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
             <Text style={[styles.sheetTitle, { color: colors.textPrimary }]}>Comments</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <X size={20} color={colors.textPrimary} />
@@ -561,13 +592,17 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'column',
   },
+  dragHandleBar: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+  } as any,
   dragHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
+    width: 48,
+    height: 5,
+    borderRadius: 3,
     alignSelf: 'center',
-    marginTop: 10,
-    marginBottom: 6,
   },
   sheetHeader: {
     flexDirection: 'row',

@@ -121,8 +121,35 @@ class ContactReporterView(APIView):
             ConversationMember.objects.create(conversation=conversation, user=request.user, is_admin=True)
             ConversationMember.objects.create(conversation=conversation, user=item.author)
 
-        # Send automated reference message
-        intro_text = f"Hi! I'm reaching out regarding your [{item.item_type}] post: '{item.description[:60]}' at {item.location}."
+        # Send automated reference message with postcard payload so photo and details are shared in the chat
+        import json
+        image_url = ""
+        if item.image:
+            try:
+                image_url = request.build_absolute_uri(item.image.url)
+            except Exception:
+                image_url = item.image.url if hasattr(item.image, "url") else ""
+
+        author_display = (
+            item.author.get_full_name()
+            if hasattr(item.author, "get_full_name") and item.author.get_full_name()
+            else item.author.username
+        )
+        card_payload = {
+            "kind": "LOST_FOUND",
+            "id": str(item.id),
+            "author_name": author_display,
+            "content": item.description,
+            "location": item.location,
+            "item_type": item.item_type,
+            "media_type": "IMAGE" if image_url else "NONE",
+            "media_url": image_url,
+        }
+
+        intro_text = (
+            f"Hi! I'm reaching out regarding your [{item.item_type}] notice: '{item.description[:60]}' at {item.location}.\n"
+            f"[CAMPUS_POST_CARD:{json.dumps(card_payload)}]"
+        )
         Message.objects.create(
             conversation=conversation,
             sender=request.user,

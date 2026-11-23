@@ -18,14 +18,21 @@ import { UserAvatar } from '../common/UserAvatar';
 import { getFullMediaUrl } from '../../config/api';
 
 export interface SharedPostCardData {
-  id: number;
+  id: number | string;
+  kind?: 'POST' | 'LOST_FOUND';
   author_name: string;
+  author_avatar?: string;
   community_name?: string;
   content: string;
   media_type?: string;
   media_url?: string;
+  media_urls?: string[];
+  video_url?: string;
+  attachments?: any[];
   likes_count?: number;
   comments_count?: number;
+  location?: string;
+  item_type?: 'LOST' | 'FOUND';
 }
 
 interface MessageBubbleProps {
@@ -267,48 +274,207 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             onPress={() => onPostCardPress && onPostCardPress(cardData)}
             activeOpacity={0.9}
           >
-            <View style={styles.postCardHeader}>
-              <UserAvatar name={cardData.author_name} size={24} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.postCardAuthor, { color: colors.textPrimary }]} numberOfLines={1}>
-                  {cardData.author_name}
-                </Text>
-                {cardData.community_name && (
-                  <Text style={[styles.postCardComm, { color: colors.textMuted }]} numberOfLines={1}>
-                    🎓 {cardData.community_name}
+            {cardData.kind === 'LOST_FOUND' ? (
+              // Lost & Found Notice Postcard
+              <>
+                <View style={styles.postCardHeader}>
+                  <View
+                    style={{
+                      paddingHorizontal: 8,
+                      paddingVertical: 2,
+                      borderRadius: 6,
+                      backgroundColor:
+                        cardData.item_type === 'LOST'
+                          ? 'rgba(239, 68, 68, 0.18)'
+                          : 'rgba(34, 197, 94, 0.18)',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: '800',
+                        color: cardData.item_type === 'LOST' ? '#ef4444' : '#22c55e',
+                      }}
+                    >
+                      {cardData.item_type === 'LOST' ? '🔍 LOST ITEM' : '📦 FOUND ITEM'}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.postCardAuthor,
+                      { color: colors.textPrimary, flex: 1, marginLeft: 6 },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    by {cardData.author_name}
                   </Text>
-                )}
-              </View>
-              <ExternalLink size={14} color={colors.primary} />
-            </View>
+                  <ExternalLink size={14} color={colors.primary} />
+                </View>
 
-            {cardData.media_type === 'IMAGE' && cardData.media_url ? (
-              <Image
-                source={{ uri: cardData.media_url }}
-                style={styles.postCardThumb}
-                resizeMode="cover"
-              />
-            ) : null}
+                {cardData.media_url ? (
+                  <Image
+                    source={{ uri: getFullMediaUrl(cardData.media_url) }}
+                    style={styles.postCardThumb}
+                    resizeMode="cover"
+                  />
+                ) : null}
 
-            {cardData.content ? (
-              <Text style={[styles.postCardSnippet, { color: colors.textSecondary }]} numberOfLines={2}>
-                {cardData.content}
-              </Text>
-            ) : null}
+                {cardData.content ? (
+                  <Text
+                    style={[styles.postCardSnippet, { color: colors.textSecondary }]}
+                    numberOfLines={2}
+                  >
+                    {cardData.content}
+                  </Text>
+                ) : null}
 
-            <View style={[styles.postCardFooter, { borderTopColor: colors.cardBorder }]}>
-              <View style={styles.postCardStats}>
-                <Heart size={12} color="#f43f5e" fill="#f43f5e" />
-                <Text style={[styles.postCardStatText, { color: colors.textMuted }]}>
-                  {cardData.likes_count || 0}
-                </Text>
-                <MessageCircle size={12} color={colors.textSecondary} style={{ marginLeft: 6 }} />
-                <Text style={[styles.postCardStatText, { color: colors.textMuted }]}>
-                  {cardData.comments_count || 0}
-                </Text>
-              </View>
-              <Text style={[styles.postCardCta, { color: colors.primary }]}>View Post ↗</Text>
-            </View>
+                <View style={[styles.postCardFooter, { borderTopColor: colors.cardBorder }]}>
+                  <Text
+                    style={[styles.postCardStatText, { color: colors.textMuted }]}
+                    numberOfLines={1}
+                  >
+                    📍 {cardData.location || 'Campus'}
+                  </Text>
+                  <Text style={[styles.postCardCta, { color: colors.primary }]}>
+                    View Photo ↗
+                  </Text>
+                </View>
+              </>
+            ) : (
+              // Regular Campus Post / Confession Postcard
+              <>
+                <View style={styles.postCardHeader}>
+                  <UserAvatar
+                    name={cardData.author_name}
+                    size={24}
+                    uri={cardData.author_avatar}
+                  />
+                  <View style={{ flex: 1, marginLeft: 6 }}>
+                    <Text
+                      style={[styles.postCardAuthor, { color: colors.textPrimary }]}
+                      numberOfLines={1}
+                    >
+                      {cardData.author_name}
+                    </Text>
+                    {cardData.community_name && (
+                      <Text
+                        style={[styles.postCardComm, { color: colors.textMuted }]}
+                        numberOfLines={1}
+                      >
+                        🎓 {cardData.community_name}
+                      </Text>
+                    )}
+                  </View>
+                  <ExternalLink size={14} color={colors.primary} />
+                </View>
+
+                {/* Video thumbnail with play badge or image */}
+                {cardData.video_url || cardData.media_type === 'VIDEO' ? (
+                  <View
+                    style={[
+                      styles.postCardThumb,
+                      {
+                        backgroundColor: '#000000',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                      },
+                    ]}
+                  >
+                    <View
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 22,
+                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                        borderWidth: 1.5,
+                        borderColor: '#ffffff',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Play
+                        size={20}
+                        color="#ffffff"
+                        fill="#ffffff"
+                        style={{ marginLeft: 2 }}
+                      />
+                    </View>
+                    <Text
+                      style={{
+                        position: 'absolute',
+                        bottom: 8,
+                        right: 8,
+                        fontSize: 10,
+                        fontWeight: '700',
+                        color: '#ffffff',
+                        backgroundColor: 'rgba(0,0,0,0.6)',
+                        paddingHorizontal: 6,
+                        paddingVertical: 2,
+                        borderRadius: 4,
+                      }}
+                    >
+                      🎬 Video
+                    </Text>
+                  </View>
+                ) : cardData.media_url ? (
+                  <View style={{ position: 'relative' }}>
+                    <Image
+                      source={{ uri: getFullMediaUrl(cardData.media_url) }}
+                      style={styles.postCardThumb}
+                      resizeMode="cover"
+                    />
+                    {cardData.media_urls && cardData.media_urls.length > 1 && (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          top: 8,
+                          right: 8,
+                          backgroundColor: 'rgba(0,0,0,0.65)',
+                          borderRadius: 10,
+                          paddingHorizontal: 6,
+                          paddingVertical: 2,
+                        }}
+                      >
+                        <Text
+                          style={{ fontSize: 10, fontWeight: '700', color: '#ffffff' }}
+                        >
+                          1/{cardData.media_urls.length} 📷
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ) : null}
+
+                {cardData.content ? (
+                  <Text
+                    style={[styles.postCardSnippet, { color: colors.textSecondary }]}
+                    numberOfLines={2}
+                  >
+                    {cardData.content}
+                  </Text>
+                ) : null}
+
+                <View style={[styles.postCardFooter, { borderTopColor: colors.cardBorder }]}>
+                  <View style={styles.postCardStats}>
+                    <Heart size={12} color="#f43f5e" fill="#f43f5e" />
+                    <Text style={[styles.postCardStatText, { color: colors.textMuted }]}>
+                      {cardData.likes_count || 0}
+                    </Text>
+                    <MessageCircle
+                      size={12}
+                      color={colors.textSecondary}
+                      style={{ marginLeft: 6 }}
+                    />
+                    <Text style={[styles.postCardStatText, { color: colors.textMuted }]}>
+                      {cardData.comments_count || 0}
+                    </Text>
+                  </View>
+                  <Text style={[styles.postCardCta, { color: colors.primary }]}>
+                    View Post & Comments ↗
+                  </Text>
+                </View>
+              </>
+            )}
           </TouchableOpacity>
         )}
 

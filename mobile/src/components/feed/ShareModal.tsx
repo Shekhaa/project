@@ -73,14 +73,41 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     try {
       setSendingTo(conv.id);
 
+      // Extract video and media attachments for rich postcard rendering in chat
+      const videoAttachment = (post.attachments || []).find(
+        (a) => a.file_type === 'VIDEO' || a.mime_type?.startsWith('video/')
+      );
+      const videoUrl = videoAttachment
+        ? videoAttachment.file_url
+        : post.media_type === 'VIDEO'
+        ? post.media_url
+        : undefined;
+
+      const imageAttachments = (post.attachments || []).filter(
+        (a) => a.file_type === 'IMAGE' || a.mime_type?.startsWith('image/')
+      );
+      const mediaUrls =
+        imageAttachments.length > 0
+          ? imageAttachments.map((a) => a.file_url)
+          : post.images && post.images.length > 0
+          ? post.images.map((img) => img.image_url)
+          : post.media_url
+          ? [post.media_url]
+          : [];
+
       // Create structured CAMPUS_POST_CARD payload
       const cardPayload = {
+        kind: 'POST',
         id: post.id,
         author_name: post.author_name,
+        author_avatar: post.author_avatar,
         community_name: post.community_name,
         content: post.content,
-        media_type: post.media_type,
-        media_url: post.media_url,
+        media_type: videoUrl ? 'VIDEO' : mediaUrls.length > 0 ? 'IMAGE' : post.media_type,
+        media_url: videoUrl || (mediaUrls.length > 0 ? mediaUrls[0] : post.media_url),
+        media_urls: mediaUrls,
+        video_url: videoUrl,
+        attachments: post.attachments || [],
         likes_count: post.likes_count,
         comments_count: post.comments_count,
       };

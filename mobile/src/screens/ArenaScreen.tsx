@@ -17,6 +17,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { lostFoundService, LostFoundItem } from '../services/lostFoundService';
 import { Post, postService } from '../services/postService';
 import { CommentsModal } from '../components/feed/CommentsModal';
+import { ShareModal } from '../components/feed/ShareModal';
 import { ImageCropperModal } from '../components/media/ImageCropperModal';
 import {
   MapPin,
@@ -96,6 +97,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
   const [croppingImageUri, setCroppingImageUri] = useState<string | null>(null);
   const [submittingConfession, setSubmittingConfession] = useState(false);
   const [activeCommentsPost, setActiveCommentsPost] = useState<Post | null>(null);
+  const [sharePost, setSharePost] = useState<Post | null>(null);
 
   const [banner, setBanner] = useState<{ kind: 'error' | 'notice'; text: string } | null>(null);
 
@@ -826,11 +828,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
 
                       <TouchableOpacity
                         style={styles.reactionBtn}
-                        onPress={() => {
-                          const msg = 'Link copied to clipboard!';
-                          setBanner({ kind: 'notice', text: msg });
-                        }}
+                        onPress={() => setSharePost(item)}
                         activeOpacity={0.7}
+                        accessibilityLabel="Share confession"
                       >
                         <Share2 size={16} color={colors.textMuted} />
                       </TouchableOpacity>
@@ -1142,6 +1142,13 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
         onRequireVerify={onRequireVerify}
         onClose={() => setActiveCommentsPost(null)}
         onOpenProfile={onOpenProfile}
+      />
+
+      {/* Share Modal for Confessions & Arena Posts */}
+      <ShareModal
+        visible={!!sharePost}
+        post={sharePost}
+        onClose={() => setSharePost(null)}
       />
     </View>
   );

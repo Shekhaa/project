@@ -25,7 +25,7 @@ import { NotificationsModal } from '../components/notifications/NotificationsMod
 import { notificationService, NotificationItem } from '../services/notificationService';
 import { api } from '../config/api';
 import { showCrossPlatformAlert } from '../utils/mediaUtils';
-import { Plus, Bell, Sparkles, SlidersHorizontal, Check, X, Sun, Moon } from 'lucide-react-native';
+import { Plus, Bell, Sparkles, SlidersHorizontal, Check, X, Sun, Moon, RotateCw } from 'lucide-react-native';
 
 const SCOPE_TABS: Array<{
   key: 'ALL' | 'COLLEGE' | 'FOLLOWING' | 'SAVED' | 'MEDIA' | 'RESOURCES';
@@ -410,6 +410,26 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
               <Sun size={isCompactViewport ? 15 : 17} color="#f59e0b" />
             ) : (
               <Moon size={isCompactViewport ? 15 : 17} color={colors.primary} />
+            )}
+          </TouchableOpacity>
+
+          {/* Quick 1-Tap Refresh Button */}
+          <TouchableOpacity
+            style={[
+              styles.iconBtn,
+              { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+              isCompactViewport && { width: 32, height: 32, borderRadius: 16 },
+              refreshing && { opacity: 0.7 },
+            ]}
+            onPress={() => loadData(true)}
+            activeOpacity={0.7}
+            disabled={refreshing}
+            accessibilityLabel="Refresh feed"
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <RotateCw size={isCompactViewport ? 15 : 17} color={colors.textPrimary} />
             )}
           </TouchableOpacity>
 

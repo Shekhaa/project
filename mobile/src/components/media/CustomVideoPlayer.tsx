@@ -22,6 +22,7 @@ import {
 } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { getFullMediaUrl } from '../../config/api';
+import { activeVideoManager } from '../../services/activeVideoManager';
 
 interface CustomVideoPlayerProps {
   url: string;
@@ -54,6 +55,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const { colors } = useTheme();
   const videoRef = useRef<any>(null);
   const containerRef = useRef<any>(null);
+  const playerId = useRef(`vid_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`).current;
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -90,9 +92,16 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     if (isPlaying) {
       videoRef.current.pause();
       setIsPlaying(false);
+      activeVideoManager.pause(playerId);
       setControlsVisible(true);
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     } else {
+      activeVideoManager.play(playerId, () => {
+        if (videoRef.current && !videoRef.current.paused) {
+          videoRef.current.pause();
+          setIsPlaying(false);
+        }
+      });
       videoRef.current
         .play()
         .then(() => {
@@ -104,10 +113,13 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           if (videoRef.current) {
             videoRef.current.muted = true;
             setIsMuted(true);
-            videoRef.current.play().then(() => {
-              setIsPlaying(true);
-              scheduleHideControls();
-            }).catch(() => setHasError(true));
+            videoRef.current
+              .play()
+              .then(() => {
+                setIsPlaying(true);
+                scheduleHideControls();
+              })
+              .catch(() => setHasError(true));
           }
         });
     }
@@ -212,10 +224,36 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
   useEffect(() => {
     return () => {
+      activeVideoManager.unregister(playerId);
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
       if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
     };
-  }, []);
+  }, [playerId]);
+
+  // Auto-pause when video is scrolled out of viewport (guarantees zero background/multi video playback)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof IntersectionObserver === 'undefined') return;
+    const elem = containerRef.current;
+    if (!elem) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting || entry.intersectionRatio < 0.25) {
+            if (videoRef.current && !videoRef.current.paused) {
+              videoRef.current.pause();
+              setIsPlaying(false);
+              activeVideoManager.pause(playerId);
+            }
+          }
+        }
+      },
+      { threshold: [0, 0.25] }
+    );
+
+    observer.observe(elem);
+    return () => observer.disconnect();
+  }, [playerId]);
 
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
   // Natural 9:16 vertical detection: clamps between 9:16 (0.5625) and 16:9 (1.777)
@@ -262,8 +300,19 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             cursor: 'pointer',
           }}
           onClick={handleTogglePlay}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
+          onPlay={() => {
+            setIsPlaying(true);
+            activeVideoManager.play(playerId, () => {
+              if (videoRef.current && !videoRef.current.paused) {
+                videoRef.current.pause();
+                setIsPlaying(false);
+              }
+            });
+          }}
+          onPause={() => {
+            setIsPlaying(false);
+            activeVideoManager.pause(playerId);
+          }}
           onTimeUpdate={() => {
             if (videoRef.current) {
               setCurrentTime(videoRef.current.currentTime);
@@ -323,18 +372,45 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           </View>
         )}
 
-        {/* Big Center Play Button (Shown when paused) */}
-        {!isPlaying && !hasError && !buffering && (
-          <TouchableOpacity
-            style={styles.bigPlayButton}
-            onPress={handleTogglePlay}
-            activeOpacity={0.85}
-            accessibilityLabel="Play video"
-          >
-            <View style={styles.playIconCircle}>
-              <Play size={28} color="#ffffff" fill="#ffffff" style={{ marginLeft: 3 }} />
-            </View>
-          </TouchableOpacity>
+        {/* Screen-Level Twitter/X Style Overlay: Left -10s, Center Play/Pause, Right +10s */}
+        {(controlsVisible || !isPlaying) && !hasError && !buffering && (
+          <View style={styles.screenLevelOverlay} pointerEvents="box-none">
+            {/* Left -10s Rewind Button */}
+            <TouchableOpacity
+              style={styles.screenSkipBtn}
+              onPress={(e) => handleSkip(-10, e)}
+              activeOpacity={0.8}
+              accessibilityLabel="Rewind 10 seconds"
+            >
+              <RotateCcw size={20} color="#ffffff" />
+              <Text style={styles.screenSkipText}>10s</Text>
+            </TouchableOpacity>
+
+            {/* Center Play / Pause Button */}
+            <TouchableOpacity
+              style={styles.screenCenterPlayBtn}
+              onPress={handleTogglePlay}
+              activeOpacity={0.85}
+              accessibilityLabel={isPlaying ? 'Pause video' : 'Play video'}
+            >
+              {isPlaying ? (
+                <Pause size={28} color="#ffffff" fill="#ffffff" />
+              ) : (
+                <Play size={28} color="#ffffff" fill="#ffffff" style={{ marginLeft: 3 }} />
+              )}
+            </TouchableOpacity>
+
+            {/* Right +10s Forward Button */}
+            <TouchableOpacity
+              style={styles.screenSkipBtn}
+              onPress={(e) => handleSkip(10, e)}
+              activeOpacity={0.8}
+              accessibilityLabel="Forward 10 seconds"
+            >
+              <RotateCw size={20} color="#ffffff" />
+              <Text style={styles.screenSkipText}>10s</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* Bottom Controls Bar */}
@@ -519,6 +595,43 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     letterSpacing: 0.5,
   },
+  screenLevelOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 32,
+    zIndex: 8,
+  },
+  screenSkipBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backdropFilter: 'blur(6px)',
+  } as any,
+  screenSkipText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
+    marginTop: -2,
+    fontVariant: ['tabular-nums'],
+  },
+  screenCenterPlayBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backdropFilter: 'blur(8px)',
+  } as any,
   bigPlayButton: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
