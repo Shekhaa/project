@@ -67,6 +67,14 @@ const safeBase64Encode = (str: string): string => {
   return output;
 };
 
+// Dynamic native WebView import for seamless In-App OAuth on Android/iOS
+let NativeWebView: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    NativeWebView = require('react-native-webview').WebView;
+  } catch {}
+}
+
 interface AuthScreenProps {
   onLoginSuccess: (user: any) => void;
   onDismiss?: () => void;
@@ -101,6 +109,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
   // ==========================================
   // 2. MICROSOFT SSO & ID CARD VERIFICATION STATE
   // ==========================================
+  const [inAppOAuthVisible, setInAppOAuthVisible] = useState(false);
   const [ssoTokenModal, setSsoTokenModal] = useState(false);
   const [manualTokenInput, setManualTokenInput] = useState('');
   const [ssoLoading, setSsoLoading] = useState(false);
@@ -239,13 +248,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
       try {
         const res = await authService.loginWithMicrosoft(tokenToUse);
         setSsoTokenModal(false);
+        setInAppOAuthVisible(false);
         setManualTokenInput('');
         if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history?.replaceState) {
           window.history.replaceState(null, '', window.location.pathname);
         }
         if (Platform.OS !== 'web') {
           Alert.alert(
-            'University Identity Verified!',
+            'University Identity Verified! 🎓',
             `Welcome, ${res.user.full_name || 'Student'}!\nVerified Email: ${res.user.email}\nCollege: ${res.detected_student?.college_name || 'Graphic Era University'}`
           );
         }
@@ -273,11 +283,52 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         window.location.href = authUrl;
       } else {
-        await Linking.openURL(authUrl);
-        setSsoTokenModal(true);
+        // Native APK: Launch Seamless In-App OAuth Sheet (Zero copy-paste required)
+        setSsoError(null);
+        setInAppOAuthVisible(true);
       }
     } catch {
       setSsoTokenModal(true);
+    }
+  };
+
+  const handleOAuthNavigationChange = async (navState: any) => {
+    const url = navState.url;
+    if (!url) return;
+
+    // Intercept redirect when url contains id_token or access_token
+    if (url.includes('id_token=') || url.includes('access_token=')) {
+      setInAppOAuthVisible(false);
+      setSsoLoading(true);
+      try {
+        const hash = url.split('#')[1] || url.split('?')[1] || '';
+        const params = new URLSearchParams(hash);
+        const token = params.get('id_token') || params.get('access_token');
+        if (token) {
+          const res = await authService.loginWithMicrosoft(token);
+          if (Platform.OS !== 'web') {
+            Alert.alert(
+              'University Identity Verified! 🎓',
+              `Welcome, ${res.user.full_name || 'Student'}!\nVerified Email: ${res.user.email}\nCollege: ${res.detected_student?.college_name || 'Graphic Era University'}`
+            );
+          }
+          onLoginSuccess(res.user);
+        } else {
+          setSsoError('Could not parse identity token from university response.');
+        }
+      } catch (err: any) {
+        const errMsg =
+          err.response?.data?.error ||
+          err.response?.data?.detail ||
+          err.message ||
+          'Microsoft verification failed. Please try again.';
+        setSsoError(errMsg);
+        if (Platform.OS !== 'web') {
+          Alert.alert('SSO Verification Failed', errMsg);
+        }
+      } finally {
+        setSsoLoading(false);
+      }
     }
   };
 
@@ -1230,6 +1281,91 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
           </View>
         </View>
       </Modal>
+      )}
+
+      {/* ========================================================= */}
+      {/* SEAMLESS IN-APP MICROSOFT SSO (NATIVE ANDROID / IOS)      */}
+      {/* ========================================================= */}
+      {inAppOAuthVisible && (
+        <Modal
+          visible={inAppOAuthVisible}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setInAppOAuthVisible(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: colors.background }}>
+            {/* Header with Title and Cancel button */}
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingHorizontal: 16,
+                paddingVertical: 14,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.cardBorder,
+                backgroundColor: colors.surface,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={styles.msLogoGridSmall}>
+                  <View style={[styles.msLogoCellSmall, { backgroundColor: '#F25022' }]} />
+                  <View style={[styles.msLogoCellSmall, { backgroundColor: '#7FBA00' }]} />
+                  <View style={[styles.msLogoCellSmall, { backgroundColor: '#00A4EF' }]} />
+                  <View style={[styles.msLogoCellSmall, { backgroundColor: '#FFB900' }]} />
+                </View>
+                <Text style={{ color: colors.textPrimary, fontSize: 14, fontWeight: '700' }}>
+                  Graphic Era Official Login
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setInAppOAuthVisible(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Embedded Native WebView with domStorage & token auto-capture */}
+            {NativeWebView ? (
+              <NativeWebView
+                source={{ uri: buildMicrosoftAuthUrl() }}
+                onNavigationStateChange={handleOAuthNavigationChange}
+                startInLoadingState={true}
+                renderLoading={() => (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      backgroundColor: colors.background,
+                    }}
+                  >
+                    <ActivityIndicator size="large" color={colors.primary} />
+                    <Text style={{ color: colors.textSecondary, marginTop: 12, fontSize: 13 }}>
+                      Connecting to Graphic Era Microsoft portal...
+                    </Text>
+                  </View>
+                )}
+                incognito={false}
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+                sharedCookiesEnabled={true}
+              />
+            ) : (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={{ color: colors.textSecondary, marginTop: 12, textAlign: 'center' }}>
+                  Loading university sign-in portal...
+                </Text>
+              </View>
+            )}
+          </View>
+        </Modal>
       )}
 
       {/* ========================================================= */}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import { MessageBubble, SharedPostCardData } from '../components/chat/MessageBub
 import { SharedPostViewerModal } from '../components/chat/SharedPostViewerModal';
 import { DirectorySearchModal } from '../components/chat/DirectorySearchModal';
 import { EphemeralGroupModal } from '../components/chat/EphemeralGroupModal';
+import { GroupDetailsModal } from '../components/chat/GroupDetailsModal';
 import { AttachmentPickerModal, StagedAttachment } from '../components/media/AttachmentPickerModal';
 import {
   VoiceRecordingBar,
@@ -139,6 +140,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [inviteLinkModalVisible, setInviteLinkModalVisible] = useState(false);
   const [joinViaInviteModalVisible, setJoinViaInviteModalVisible] = useState(false);
 
+  // Group Details & Shared Media Modal
+  const [groupDetailsModalVisible, setGroupDetailsModalVisible] = useState(false);
+
+  // In-Chat Search State (Legacy search function for notes & texts)
+  const [isSearchingInChat, setIsSearchingInChat] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+
   const flatListRef = useRef<FlatList>(null);
 
   const recipientReplied = messages.some(
@@ -226,6 +234,16 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       return () => backHandlerRegistry.pop('chat-join-invite-modal');
     }
   }, [joinViaInviteModalVisible]);
+
+  useEffect(() => {
+    if (groupDetailsModalVisible) {
+      backHandlerRegistry.push('chat-group-details-modal', () => {
+        setGroupDetailsModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('chat-group-details-modal');
+    }
+  }, [groupDetailsModalVisible]);
 
   useEffect(() => {
     if (attachmentPickerVisible) {
@@ -716,6 +734,35 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       activeConv.recipient?.email?.split('@')[0] ||
       'Campus Chat';
 
+    const handleJumpToMessage = (messageId: string) => {
+      const idx = messages.findIndex((m) => String(m.id) === String(messageId));
+      if (idx !== -1 && flatListRef.current) {
+        try {
+          flatListRef.current.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
+        } catch {
+          flatListRef.current.scrollToEnd({ animated: true });
+        }
+      }
+    };
+
+    // Filter messages when user searches inside the active conversation
+    const displayedMessages = messages.filter((m) => {
+      if (!chatSearchQuery.trim()) return true;
+      const q = chatSearchQuery.trim().toLowerCase();
+      if (m.text && m.text.toLowerCase().includes(q)) return true;
+      if (m.sender_name && m.sender_name.toLowerCase().includes(q)) return true;
+      if (
+        m.attachments &&
+        m.attachments.some(
+          (a) =>
+            (a.file_name && a.file_name.toLowerCase().includes(q)) ||
+            (a.caption && a.caption.toLowerCase().includes(q))
+        )
+      )
+        return true;
+      return false;
+    });
+
     return (
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -727,6 +774,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             style={styles.backBtn}
             onPress={() => {
               setActiveConv(null);
+              setIsSearchingInChat(false);
+              setChatSearchQuery('');
               loadInbox();
             }}
           >
@@ -735,8 +784,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
           <TouchableOpacity
             style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
-            disabled={activeConv.is_group || !activeConv.recipient?.id}
-            onPress={() => activeConv.recipient?.id && onOpenProfile?.(activeConv.recipient.id)}
+            onPress={() => setGroupDetailsModalVisible(true)}
             activeOpacity={0.7}
           >
             <UserAvatar
@@ -764,14 +812,26 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 {activeConv.is_ephemeral
                   ? `Self-destructing (${activeConv.duration || 24}h)`
                   : activeConv.is_group
-                  ? 'Campus Group'
-                  : 'Direct Message'}
+                  ? 'Campus Group • Tap for Info & Media'
+                  : 'Direct Message • Tap for Info & Media'}
               </Text>
             </View>
           </TouchableOpacity>
 
           {/* Header Action Buttons */}
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            {/* Search in Chat Button */}
+            <TouchableOpacity
+              style={styles.headerActionBtn}
+              onPress={() => {
+                setIsSearchingInChat((prev) => !prev);
+                if (isSearchingInChat) setChatSearchQuery('');
+              }}
+              accessibilityLabel="Search in chat"
+            >
+              <Search size={18} color={isSearchingInChat ? colors.primary : colors.textSecondary} />
+            </TouchableOpacity>
+
             {activeConv.is_group && (
               <TouchableOpacity
                 style={styles.headerActionBtn}
@@ -794,6 +854,62 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           </View>
         </View>
 
+        {/* In-Chat Search Bar (Legacy Chat Search for Notes/Texts) */}
+        {isSearchingInChat && (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              backgroundColor: isDark ? colors.surfaceLight : '#f1f5f9',
+              borderBottomWidth: 1,
+              borderBottomColor: colors.cardBorder,
+              gap: 8,
+            }}
+          >
+            <Search size={15} color={colors.textMuted} />
+            <TextInput
+              style={{
+                flex: 1,
+                fontSize: 13,
+                color: colors.textPrimary,
+                paddingVertical: 3,
+              }}
+              placeholder="Search chat notes, assignments, topics..."
+              placeholderTextColor={colors.textTertiary}
+              value={chatSearchQuery}
+              onChangeText={setChatSearchQuery}
+              autoFocus
+            />
+            {chatSearchQuery.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setChatSearchQuery('')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={15} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* Search match indicator */}
+        {isSearchingInChat && chatSearchQuery.trim().length > 0 && (
+          <View
+            style={{
+              paddingHorizontal: 14,
+              paddingVertical: 4,
+              backgroundColor: isDark ? 'rgba(94, 106, 210, 0.15)' : 'rgba(94, 106, 210, 0.08)',
+              borderBottomWidth: 1,
+              borderBottomColor: colors.cardBorder,
+            }}
+          >
+            <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '600' }}>
+              Showing {displayedMessages.length} match(es) for &quot;{chatSearchQuery}&quot;
+            </Text>
+          </View>
+        )}
+
         {/* Message List */}
         {loadingMessages ? (
           <View style={styles.centerBox}>
@@ -802,7 +918,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         ) : (
           <FlatList
             ref={flatListRef}
-            data={messages}
+            data={displayedMessages}
             keyExtractor={(item) => String(item.id)}
             renderItem={({ item }) => {
               const isMe =
@@ -1181,6 +1297,21 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             targetIdOrSlug={activeConv.id}
             canReset={true}
             onClose={() => setInviteLinkModalVisible(false)}
+          />
+        )}
+
+        {/* GROUP DETAILS & SHARED MEDIA MODAL */}
+        {activeConv && (
+          <GroupDetailsModal
+            visible={groupDetailsModalVisible}
+            conversation={activeConv}
+            messages={messages}
+            currentUser={currentUser}
+            onClose={() => setGroupDetailsModalVisible(false)}
+            onAddMembersPress={() => setAddMembersModalVisible(true)}
+            onInviteLinkPress={() => setInviteLinkModalVisible(true)}
+            onPostCardPress={(card) => setSelectedPostCard(card)}
+            onJumpToMessage={handleJumpToMessage}
           />
         )}
       </KeyboardAvoidingView>
