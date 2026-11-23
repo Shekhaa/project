@@ -63,6 +63,7 @@ function AppMain() {
   const [activeTab, setActiveTab] = useState<TabType>('FEED');
   const [selectedCommunityConv, setSelectedCommunityConv] = useState<any | null>(null);
   const [composerTrigger, setComposerTrigger] = useState(0);
+  const [feedRefreshTrigger, setFeedRefreshTrigger] = useState(0);
   const [viewingProfileUserId, setViewingProfileUserId] = useState<number | null>(null);
   const [authModalVisible, setAuthModalVisible] = useState(false);
   const [verifyModalVisible, setVerifyModalVisible] = useState(false);
@@ -115,6 +116,11 @@ function AppMain() {
   }, [activeTab, authModalVisible, verifyModalVisible, viewingProfileUserId]);
 
   const navigateToTab = (tab: TabType) => {
+    if (tab === 'FEED' && activeTab === 'FEED') {
+      // Tap Home when already on Feed -> Instagram style scroll to top & refresh
+      setFeedRefreshTrigger((prev) => prev + 1);
+      return;
+    }
     if (!currentUser && tab !== 'FEED') {
       setAuthModalVisible(true);
       return;
@@ -312,6 +318,7 @@ function AppMain() {
         {displayedTab === 'FEED' && (
           <FeedScreen
             composerTrigger={composerTrigger}
+            feedRefreshTrigger={feedRefreshTrigger}
             currentUser={currentUser}
             canParticipate={canParticipate}
             onRequireAuth={handleRequireAuth}

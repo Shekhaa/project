@@ -476,7 +476,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Top Header */}
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
-        <View>
+        <TouchableOpacity onPress={handleRefresh} activeOpacity={0.75}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Flame size={20} color={colors.ephemeralFire || '#f97316'} />
             <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>The Arena</Text>
@@ -486,7 +486,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
               ? 'Campus Recovery • 1-Click Pickup'
               : '100% Anonymous Campus Confessions'}
           </Text>
-        </View>
+        </TouchableOpacity>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <TouchableOpacity

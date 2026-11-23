@@ -111,6 +111,7 @@ export const postService = {
       if (options.scope) params.scope = options.scope;
       if (options.level) params.level = options.level;
       if (options.ids && options.ids.length > 0) params.ids = options.ids.join(',');
+      if ((options as any)._t) params._t = (options as any)._t;
     }
     const res = await api.get('/posts/feed/', { params });
     if (res.data && res.data.results) {

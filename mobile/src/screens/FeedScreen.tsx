@@ -47,6 +47,7 @@ interface FeedScreenProps {
   onRequireAuth?: () => void;
   onRequireVerify?: (reason?: string) => void;
   composerTrigger?: number;
+  feedRefreshTrigger?: number;
   onNavigateToChat?: (conversationId?: string | number) => void;
   onOpenProfile?: (userId: number) => void;
 }
@@ -57,6 +58,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   onRequireAuth,
   onRequireVerify,
   composerTrigger,
+  feedRefreshTrigger,
   onNavigateToChat,
   onOpenProfile,
 }) => {
@@ -71,6 +73,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshBannerVisible, setRefreshBannerVisible] = useState(false);
+  const flatListRef = useRef<FlatList>(null);
 
   // Restore persisted feed scope from AsyncStorage on mount (for signed-in users)
   useEffect(() => {
@@ -282,11 +286,15 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         return;
       }
 
-      const feedQuery = selectedCommunityId
+      const feedQuery: any = selectedCommunityId
         ? { communityId: selectedCommunityId }
         : selectedScope && selectedScope !== 'ALL'
         ? { scope: selectedScope }
-        : undefined;
+        : {};
+
+      if (isRefresh) {
+        feedQuery._t = Date.now();
+      }
 
       const feedData = await postService.getFeed(feedQuery, 1);
       setPosts(feedData.results || []);
@@ -305,10 +313,23 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     loadData();
   }, [loadData, currentUser?.id]);
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
+    try {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    } catch {}
+    setRefreshBannerVisible(true);
     loadCommunities();
     await loadData(true);
-  };
+    setTimeout(() => {
+      setRefreshBannerVisible(false);
+    }, 1400);
+  }, [loadCommunities, loadData]);
+
+  useEffect(() => {
+    if (feedRefreshTrigger) {
+      handleRefresh();
+    }
+  }, [feedRefreshTrigger, handleRefresh]);
 
   const handleLoadMore = async () => {
     if (loadingMore || !hasMore || loading || refreshing) return;
@@ -439,10 +460,15 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     <View style={[styles.headerArea, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
       {/* Top Navbar */}
       <View style={[styles.navBar, isCompactViewport && { paddingHorizontal: 12 }]}>
-        <View style={styles.brandRow}>
+        <TouchableOpacity
+          style={styles.brandRow}
+          onPress={handleRefresh}
+          activeOpacity={0.75}
+          accessibilityLabel="Refresh feed"
+        >
           <Text style={[styles.brandTitle, { color: colors.textPrimary }, isCompactViewport && { fontSize: 16 }]}>Campus</Text>
           <Text style={[styles.brandAccent, { color: colors.brandAccent }, isCompactViewport && { fontSize: 16 }]}>Connect</Text>
-        </View>
+        </TouchableOpacity>
 
         <View style={[styles.navActions, isCompactViewport && { gap: 6 }]}>
           {/* Quick 1-Tap Dual-Mode Theme Switcher: Dark <-> Light */}
@@ -473,7 +499,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
               isCompactViewport && { width: 32, height: 32, borderRadius: 16 },
               refreshing && { opacity: 0.7 },
             ]}
-            onPress={() => loadData(true)}
+            onPress={handleRefresh}
             activeOpacity={0.7}
             disabled={refreshing}
             accessibilityLabel="Refresh feed"
@@ -707,6 +733,20 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {renderHeader()}
 
+      {refreshBannerVisible && (
+        <View
+          style={[
+            styles.refreshBanner,
+            { backgroundColor: isDark ? 'rgba(0, 112, 243, 0.95)' : '#0070f3' },
+          ]}
+        >
+          <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
+          <Text style={styles.refreshBannerText}>
+            {refreshing ? 'Updating campus feed...' : '✨ Feed up to date'}
+          </Text>
+        </View>
+      )}
+
       {loading && posts.length === 0 ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -726,6 +766,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         </View>
       ) : (
         <FlatList
+          ref={flatListRef}
           data={posts}
           keyExtractor={(item) => String(item.id)}
           renderItem={({ item }) => (
@@ -1037,6 +1078,27 @@ const styles = StyleSheet.create({
   readOnlyCtaText: {
     color: '#ffffff',
     fontSize: 11.5,
+    fontWeight: '700',
+  },
+  refreshBanner: {
+    position: 'absolute',
+    top: 60,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    zIndex: 999,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  refreshBannerText: {
+    color: '#ffffff',
+    fontSize: 12.5,
     fontWeight: '700',
   },
   iconBtn: {

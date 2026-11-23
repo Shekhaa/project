@@ -26,6 +26,12 @@
       "bundler": "metro",
       "favicon": "./assets/icon.png"
     },
-    "scheme": "campusconnect"
+    "scheme": "campusconnect",
+    "extra": {
+      "eas": {
+        "projectId": "bae01e6a-d98e-4a4a-a56f-6f33054c65f5"
+      }
+    },
+    "owner": "alex_dev23"
   }
 }
