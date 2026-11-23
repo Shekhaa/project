@@ -40,6 +40,7 @@ import {
   computeCanParticipate,
   consumeMsOAuthMode,
 } from './src/services/authService';
+import { notificationService } from './src/services/notificationService';
 import { setAuthExpiredListener } from './src/config/api';
 import { showCrossPlatformAlert } from './src/utils/mediaUtils';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -123,6 +124,25 @@ function AppMain() {
       setAuthExpiredListener(null);
     };
   }, []);
+
+  // Register and listen for native push notifications when signed in
+  useEffect(() => {
+    if (currentUser) {
+      notificationService.registerForNativePushNotifications().catch(() => {});
+      const unsubscribe = notificationService.attachNativeResponseListener((data) => {
+        if (data?.conversation_id) {
+          navigateToTab('CHAT');
+        } else if (data?.post_id) {
+          navigateToTab('FEED');
+        }
+      });
+      return () => {
+        if (typeof unsubscribe === 'function') {
+          unsubscribe();
+        }
+      };
+    }
+  }, [currentUser]);
 
   const checkInitialSession = async () => {
     try {

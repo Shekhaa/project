@@ -15,6 +15,7 @@ import {
 import {
   AlertCircle,
   AtSign,
+  BarChart2,
   Building2,
   ChevronLeft,
   ChevronRight,
@@ -23,6 +24,7 @@ import {
   Globe,
   Image as ImageIcon,
   Lock,
+  Plus,
   Search,
   Sparkles,
   UserCheck,
@@ -104,6 +106,9 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [croppingImage, setCroppingImage] = useState<StagedAttachment | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [showPollBuilder, setShowPollBuilder] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState('');
+  const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
 
   // Hidden file input refs for Web
   const imageInputRef = useRef<any>(null);
@@ -217,6 +222,9 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     setMentionDismissed(false);
     setStagedFiles([]);
     setActiveImageIndex(0);
+    setShowPollBuilder(false);
+    setPollQuestion('');
+    setPollOptions(['', '']);
     setImageQuality('HIGH');
     setDocSizeError(null);
     setIsAnonymous(false);
@@ -490,12 +498,24 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   };
 
   const handleSubmit = async () => {
-    if (!content.trim() && stagedFiles.length === 0) {
+    if (!content.trim() && stagedFiles.length === 0 && !showPollBuilder) {
       showCrossPlatformAlert(
         'Empty Post',
-        'Please write something or attach photos, videos, or documents.'
+        'Please write something, attach media, or create a poll.'
       );
       return;
+    }
+
+    if (showPollBuilder) {
+      if (!pollQuestion.trim()) {
+        showCrossPlatformAlert('Poll Question Required', 'Please enter a question for your poll.');
+        return;
+      }
+      const validOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
+      if (validOptions.length < 2) {
+        showCrossPlatformAlert('Poll Options Required', 'Please provide at least 2 options for your poll.');
+        return;
+      }
     }
 
     // Strict 20 MB per-document validation before publishing
@@ -530,6 +550,12 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
       formData.append('content', content.trim());
       formData.append('is_anonymous', String(isAnonymous));
       formData.append('media_type', determinedMediaType);
+
+      if (showPollBuilder && pollQuestion.trim()) {
+        const validOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
+        formData.append('poll_question', pollQuestion.trim());
+        formData.append('poll_options', JSON.stringify(validOptions));
+      }
 
       let appendedFirstDoc = false;
       stagedFiles.forEach((item, index) => {
@@ -1291,7 +1317,130 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
               </View>
               <Text style={[styles.toolBtnText, { color: colors.textPrimary }]}>Doc</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.toolBtn,
+                {
+                  backgroundColor: showPollBuilder ? colors.primary + '18' : colors.surface,
+                  borderColor: showPollBuilder ? colors.primary : colors.cardBorder,
+                },
+              ]}
+              onPress={() => setShowPollBuilder((prev) => !prev)}
+            >
+              <View style={[styles.toolIconBox, { backgroundColor: 'rgba(99, 102, 241, 0.15)' }]}>
+                <BarChart2 size={17} color={colors.primary} />
+              </View>
+              <Text
+                style={[
+                  styles.toolBtnText,
+                  {
+                    color: showPollBuilder ? colors.primary : colors.textPrimary,
+                    fontWeight: showPollBuilder ? '700' : '600',
+                  },
+                ]}
+              >
+                Poll
+              </Text>
+            </TouchableOpacity>
           </View>
+
+          {/* Interactive Campus Poll Builder */}
+          {showPollBuilder && (
+            <View
+              style={[
+                styles.pollBuilderCard,
+                { backgroundColor: colors.surface, borderColor: colors.primary },
+              ]}
+            >
+              <View style={styles.pollBuilderHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <BarChart2 size={16} color={colors.primary} />
+                  <Text style={[styles.pollBuilderTitle, { color: colors.textPrimary }]}>
+                    Campus Poll
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowPollBuilder(false);
+                    setPollQuestion('');
+                    setPollOptions(['', '']);
+                  }}
+                  style={{ padding: 4 }}
+                >
+                  <X size={16} color={colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+
+              <TextInput
+                style={[
+                  styles.pollQuestionInput,
+                  {
+                    backgroundColor: colors.surfaceLight,
+                    borderColor: colors.cardBorder,
+                    color: colors.textPrimary,
+                  },
+                ]}
+                placeholder="Ask a question (e.g. Attendance mandatory tomorrow?)"
+                placeholderTextColor={colors.textMuted}
+                value={pollQuestion}
+                onChangeText={setPollQuestion}
+                maxLength={255}
+              />
+
+              <View style={{ gap: 8, marginTop: 8 }}>
+                {pollOptions.map((opt, idx) => (
+                  <View key={idx} style={styles.pollOptionRow}>
+                    <TextInput
+                      style={[
+                        styles.pollOptionInput,
+                        {
+                          backgroundColor: colors.surfaceLight,
+                          borderColor: colors.cardBorder,
+                          color: colors.textPrimary,
+                        },
+                      ]}
+                      placeholder={`Option ${idx + 1}`}
+                      placeholderTextColor={colors.textMuted}
+                      value={opt}
+                      onChangeText={(val) => {
+                        const next = [...pollOptions];
+                        next[idx] = val;
+                        setPollOptions(next);
+                      }}
+                      maxLength={120}
+                    />
+                    {pollOptions.length > 2 && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          const next = pollOptions.filter((_, i) => i !== idx);
+                          setPollOptions(next);
+                        }}
+                        style={styles.pollRemoveOptionBtn}
+                      >
+                        <X size={15} color={colors.danger} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+              </View>
+
+              {pollOptions.length < 5 && (
+                <TouchableOpacity
+                  style={[
+                    styles.pollAddOptionBtn,
+                    { borderColor: colors.cardBorder, backgroundColor: colors.surfaceLight },
+                  ]}
+                  onPress={() => setPollOptions((prev) => [...prev, ''])}
+                >
+                  <Plus size={14} color={colors.primary} />
+                  <Text style={[styles.pollAddOptionText, { color: colors.primary }]}>
+                    + Add Option
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
           <Text style={[styles.docHintNote, { color: colors.textMuted }]}>
             Documents upload in original quality • Max {MAX_DOCUMENT_MB} MB per document
           </Text>
@@ -1699,5 +1848,61 @@ const styles = StyleSheet.create({
   anonSubtitle: {
     fontSize: 11,
     lineHeight: 15,
+  },
+  pollBuilderCard: {
+    borderWidth: 1.5,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+  },
+  pollBuilderHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  pollBuilderTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  pollQuestionInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  pollOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pollOptionInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+  },
+  pollRemoveOptionBtn: {
+    padding: 6,
+    borderRadius: 6,
+  },
+  pollAddOptionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    marginTop: 8,
+  },
+  pollAddOptionText: {
+    fontSize: 12.5,
+    fontWeight: '700',
   },
 });

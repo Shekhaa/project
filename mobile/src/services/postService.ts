@@ -1,6 +1,25 @@
 import { api } from '../config/api';
 import { AttachmentItem } from './chatService';
 
+export interface PollOption {
+  id: number;
+  text: string;
+  order: number;
+  votes_count: number;
+  percentage: number;
+}
+
+export interface Poll {
+  id: number;
+  question: string;
+  is_closed: boolean;
+  total_votes: number;
+  has_voted: boolean;
+  user_voted_option_id?: number | null;
+  options: PollOption[];
+  created_at: string;
+}
+
 export interface Post {
   id: number;
   author?: number;
@@ -18,6 +37,7 @@ export interface Post {
   document_size?: string;
   attachments?: AttachmentItem[];
   images?: Array<{ id: number; image: string; uploaded_at?: string }>;
+  poll?: Poll | null;
   is_anonymous: boolean;
   author_name: string;
   author_username?: string;
@@ -183,6 +203,12 @@ export const postService = {
   // Archive a post (Author or Admin)
   async archivePost(postId: number): Promise<{ message: string; id: number }> {
     const res = await api.post(`/posts/${postId}/archive/`);
+    return res.data;
+  },
+
+  // 1-Tap Campus Poll Voting
+  async votePoll(postId: number, optionId: number): Promise<Poll> {
+    const res = await api.post<Poll>(`/posts/${postId}/poll/vote/`, { option_id: optionId });
     return res.data;
   },
 };

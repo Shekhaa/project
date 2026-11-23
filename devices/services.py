@@ -28,6 +28,7 @@ class DeviceService:
                 "browser": data.get("browser"),
                 "app_version": data.get("app_version"),
                 "ip_address": data.get("ip_address"),
+                "push_token": data.get("push_token") or None,
                 "is_primary": is_primary,
                 "is_active": True,
             }

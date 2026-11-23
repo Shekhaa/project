@@ -8,14 +8,14 @@ from .serializers import NotificationSerializer
 
 def create_notification(recipient, sender, notification_type, title, message, data=None):
     """
-    Helper function to dispatch in-app notifications.
+    Helper function to dispatch in-app notifications and trigger lockscreen push notifications.
     Prevents self-notification (e.g. user liking their own post).
     """
     if not recipient:
         return None
     if sender and recipient.id == sender.id:
         return None
-    return Notification.objects.create(
+    notif = Notification.objects.create(
         recipient=recipient,
         sender=sender,
         notification_type=notification_type,
@@ -23,6 +23,23 @@ def create_notification(recipient, sender, notification_type, title, message, da
         message=message,
         data=data or {}
     )
+
+    # Dispatch native lockscreen push notification to user's registered devices
+    try:
+        from .push_service import PushNotificationService
+        push_data = dict(data or {})
+        push_data["notification_type"] = notification_type
+        push_data["notification_id"] = notif.id
+        PushNotificationService.notify_user(
+            user=recipient,
+            title=title or "Campus Connect",
+            body=message,
+            data=push_data
+        )
+    except Exception as e:
+        pass
+
+    return notif
 
 
 def resolve_mentioned_users(text, actor_user=None, exclude_ids=None, limit=10):

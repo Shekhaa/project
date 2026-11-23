@@ -135,3 +135,42 @@ class PostMediaAndMentionTests(TestCase):
         )
         self.assertEqual(res_blocked.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Notification.objects.filter(recipient=self.alexander, notification_type="TAG").count(), 0)
+
+    def test_poll_creation_and_voting(self):
+        import json
+        payload = {
+            "content": "Check out this campus poll!",
+            "visibility": "COLLEGE",
+            "poll_question": "Tomorrow 8:45 AM Lab: Attendance mandatory?",
+            "poll_options": json.dumps(["Yes, attend", "No, mass bunk", "First 30 mins"]),
+        }
+        res = self.client.post("/api/posts/create/", payload, format="multipart")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        data = res.json()
+        self.assertIn("poll", data)
+        poll_data = data["poll"]
+        self.assertIsNotNone(poll_data)
+        self.assertEqual(poll_data["question"], "Tomorrow 8:45 AM Lab: Attendance mandatory?")
+        self.assertEqual(len(poll_data["options"]), 3)
+        self.assertEqual(poll_data["total_votes"], 0)
+        self.assertFalse(poll_data["has_voted"])
+
+        post_id = data["id"]
+        option_id = poll_data["options"][1]["id"]
+
+        # Alex votes on option 2
+        alex_client = APIClient()
+        alex_client.force_authenticate(user=self.alex)
+        vote_res = alex_client.post(f"/api/posts/{post_id}/poll/vote/", {"option_id": option_id}, format="json")
+        self.assertEqual(vote_res.status_code, status.HTTP_200_OK)
+        v_data = vote_res.json()
+        self.assertEqual(v_data["total_votes"], 1)
+        self.assertTrue(v_data["has_voted"])
+        self.assertEqual(v_data["user_voted_option_id"], option_id)
+        opt2 = next(o for o in v_data["options"] if o["id"] == option_id)
+        self.assertEqual(opt2["votes_count"], 1)
+        self.assertEqual(opt2["percentage"], 100.0)
+
+        # Author receives notification of the vote
+        self.assertTrue(Notification.objects.filter(recipient=self.author, notification_type="ACCEPTED_ANSWER").exists())
+

@@ -15,6 +15,7 @@ class DeviceSerializer(serializers.ModelSerializer):
             "browser",
             "app_version",
             "ip_address",
+            "push_token",
             "is_primary",
             "is_active",
             "last_login",
@@ -32,4 +33,5 @@ class RegisterDeviceInputSerializer(serializers.Serializer):
     os_version = serializers.CharField(required=False, allow_blank=True, default="")
     browser = serializers.CharField(required=False, allow_blank=True, default="")
     app_version = serializers.CharField(required=False, allow_blank=True, default="")
+    push_token = serializers.CharField(required=False, allow_blank=True, default="")
     is_primary = serializers.BooleanField(required=False, default=False)

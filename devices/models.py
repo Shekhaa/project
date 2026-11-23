@@ -19,6 +19,7 @@ class Device(models.Model):
     browser = models.CharField(max_length=100, blank=True, null=True)
     app_version = models.CharField(max_length=30, blank=True, null=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
+    push_token = models.CharField(max_length=255, blank=True, null=True, db_index=True)
     is_primary = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     last_login = models.DateTimeField(auto_now=True)

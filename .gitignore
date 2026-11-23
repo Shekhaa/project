@@ -41,3 +41,13 @@ yarn-error.log*
 *.swo
 .DS_Store
 Thumbs.db
+
+# Agent & Graphify metadata
+.agents/
+.claude/
+.cursor/
+.gemini/
+CLAUDE.md
+GEMINI.md
+graphify-out/
+.gitattributes

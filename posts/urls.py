@@ -9,6 +9,7 @@ from .views import (
     DeletePostView,
     ArchivePostView,
     UserPostsView,
+    PollVoteView,
 )
 
 urlpatterns = [
@@ -18,6 +19,7 @@ urlpatterns = [
     path("user/<int:user_id>/", UserPostsView.as_view(), name="user-posts"),
     path("<int:pk>/", PostDetailView.as_view(), name="post-detail"),
     path("<int:post_id>/like/", ToggleLikeView.as_view(), name="post-toggle-like"),
+    path("<int:post_id>/poll/vote/", PollVoteView.as_view(), name="post-poll-vote"),
     path("<int:post_id>/comments/", PostCommentsView.as_view(), name="post-comments"),
     path("<int:post_id>/delete/", DeletePostView.as_view(), name="post-delete"),
     path("<int:post_id>/archive/", ArchivePostView.as_view(), name="post-archive"),

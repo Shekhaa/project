@@ -29,6 +29,7 @@ import { MediaGrid } from '../media/MediaGrid';
 import { MediaDeckCarousel, UnifiedMediaItem } from '../media/MediaDeckCarousel';
 import { DocumentCard } from '../media/DocumentCard';
 import { ImageViewerModal } from '../media/ImageViewerModal';
+import { PollCard } from './PollCard';
 import { UserAvatar } from '../common/UserAvatar';
 import { getFullMediaUrl } from '../../config/api';
 import { showCrossPlatformAlert } from '../../utils/mediaUtils';
@@ -339,6 +340,19 @@ const PostCardComponent: React.FC<PostCardProps> = ({
       {unifiedMediaDeck.length > 0 && (
         <View style={styles.mediaGridWrapper}>
           <MediaDeckCarousel media={unifiedMediaDeck} />
+        </View>
+      )}
+
+      {/* 4. 1-Tap Campus Poll */}
+      {post.poll && (
+        <View style={{ marginHorizontal: 12 }}>
+          <PollCard
+            poll={post.poll}
+            postId={post.id}
+            canVote={canParticipate}
+            onRequireAuth={onRequireAuth}
+            onRequireVerify={onRequireVerify}
+          />
         </View>
       )}
 

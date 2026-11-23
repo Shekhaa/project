@@ -13,8 +13,9 @@ from communities.models import Community, CommunityMember
 from notifications.views import create_notification, resolve_mentioned_users
 from attachments.services import AttachmentService
 from profiles.models import Connection, Follow, UserBlock, StudentProfile
-from .models import Post, PostImage, PostLike, Comment
-from .serializers import PostSerializer, CommentSerializer, ANONYMOUS_MASCOTS
+from django.db import transaction
+from .models import Post, PostImage, PostLike, Comment, Poll, PollOption, PollVote
+from .serializers import PostSerializer, CommentSerializer, ANONYMOUS_MASCOTS, PollSerializer, PollOptionSerializer
 from .pagination import FeedPagination
 
 User = get_user_model()
@@ -91,7 +92,7 @@ class FeedView(generics.ListAPIView):
                 .exclude(author__profile__is_private_account=True)
                 .exclude(author__profile__is_flagged_fake=True)
                 .select_related("author", "author__profile", "author__profile__college", "community")
-                .prefetch_related("images", "attachments")
+                .prefetch_related("images", "attachments", "poll__options", "poll__votes")
                 .order_by("-created_at")
             )
             return annotate_post_metrics(qs, user=None)
@@ -171,7 +172,7 @@ class FeedView(generics.ListAPIView):
                 is_deleted=False
             )
             .select_related("author", "author__profile", "author__profile__college", "community")
-            .prefetch_related("images", "attachments")
+            .prefetch_related("images", "attachments", "poll__options", "poll__votes")
             .order_by("-created_at")
         )
 
@@ -203,7 +204,7 @@ class CommunityFeedView(generics.ListAPIView):
         qs = (
             Post.objects.filter(community=community, is_deleted=False)
             .select_related("author", "author__profile", "author__profile__college", "community")
-            .prefetch_related("images", "attachments")
+            .prefetch_related("images", "attachments", "poll__options", "poll__votes")
             .order_by("-created_at")
         )
         return annotate_post_metrics(qs, user=self.request.user)
@@ -334,6 +335,26 @@ class CreatePostView(APIView):
             post.media_type = "DOCUMENT"
             post.save(update_fields=["document", "document_name", "document_size", "media_type"])
 
+        # Handle 1-Tap Campus Poll creation
+        poll_question = str(request.data.get("poll_question", "") or "").strip()
+        raw_options = request.data.get("poll_options")
+        if poll_question and raw_options:
+            import json
+            options_list = []
+            if isinstance(raw_options, str):
+                try:
+                    options_list = json.loads(raw_options)
+                except Exception:
+                    options_list = [opt.strip() for opt in raw_options.split("\n") if opt.strip()]
+            elif isinstance(raw_options, list):
+                options_list = raw_options
+
+            valid_opts = [str(o).strip()[:120] for o in options_list if str(o).strip()]
+            if len(valid_opts) >= 2:
+                poll = Poll.objects.create(post=post, question=poll_question[:255])
+                for idx, opt_text in enumerate(valid_opts[:6]):
+                    PollOption.objects.create(poll=poll, text=opt_text, order=idx)
+
         # Parse @mentions in post caption (exact username priority, excluding blocked users)
         if post.content:
             sender_name = (
@@ -369,7 +390,7 @@ class PostDetailView(APIView):
         base_qs = (
             Post.objects.filter(id=pk, is_deleted=False)
             .select_related("author", "author__profile", "author__profile__college", "community")
-            .prefetch_related("images", "attachments")
+            .prefetch_related("images", "attachments", "poll__options", "poll__votes")
         )
         post = get_object_or_404(annotate_post_metrics(base_qs, user=user if is_auth else None))
         author_prof = getattr(post.author, "profile", None)
@@ -701,7 +722,64 @@ class UserPostsView(generics.ListAPIView):
 
         qs = (
             qs.select_related("author", "author__profile", "community")
-            .prefetch_related("images", "attachments")
+            .prefetch_related("images", "attachments", "poll__options", "poll__votes")
             .order_by("-created_at")
         )
         return annotate_post_metrics(qs, user=viewer)
+
+
+class PollVoteView(APIView):
+    """
+    POST /api/posts/<post_id>/poll/vote/
+    Body: {"option_id": 123}
+    Allows students to vote in a 1-tap campus poll (or change their vote).
+    Returns the refreshed Poll payload with updated vote counts and percentages.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, post_id):
+        post = get_object_or_404(Post, id=post_id, is_deleted=False)
+        poll = getattr(post, "poll", None)
+        if not poll:
+            return Response({"error": "This post does not contain a poll."}, status=status.HTTP_404_NOT_FOUND)
+
+        if poll.is_closed:
+            return Response({"error": "This poll is now closed for voting."}, status=status.HTTP_400_BAD_REQUEST)
+
+        option_id = request.data.get("option_id")
+        if not option_id:
+            return Response({"error": "Please provide an option_id to vote."}, status=status.HTTP_400_BAD_REQUEST)
+
+        option = PollOption.objects.filter(id=option_id, poll=poll).first()
+        if not option:
+            return Response({"error": "Invalid option selected."}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            vote, created = PollVote.objects.update_or_create(
+                poll=poll,
+                user=request.user,
+                defaults={"option": option}
+            )
+
+        # Notify poll author if voter is someone else
+        if created and poll.post.author_id != request.user.id:
+            try:
+                voter_name = (
+                    "A student"
+                    if getattr(getattr(request.user, "profile", None), "is_private_account", False)
+                    else (request.user.full_name or getattr(getattr(request.user, "profile", None), "username", None) or "A student")
+                )
+                create_notification(
+                    recipient=poll.post.author,
+                    sender=request.user,
+                    notification_type="ACCEPTED_ANSWER",
+                    title="New Vote on your Poll 📊",
+                    message=f"{voter_name} voted on your poll: '{poll.question[:35]}...'",
+                    data={"post_id": post.id}
+                )
+            except Exception:
+                pass
+
+        serializer = PollSerializer(poll, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+

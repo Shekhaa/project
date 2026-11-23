@@ -111,6 +111,101 @@ class NotificationService {
       }
     }
   }
+
+  /**
+   * Registers for native lockscreen push notifications via Expo.
+   * Completely Web-Safe: silently handles web platforms where expo-notifications
+   * native modules are unavailable.
+   */
+  async registerForNativePushNotifications(): Promise<string | null> {
+    if (Platform.OS === 'web') {
+      return null;
+    }
+
+    try {
+      const Notifications = require('expo-notifications');
+      const Device = require('expo-device');
+
+      if (!Device.isDevice) {
+        return null;
+      }
+
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: true,
+        }),
+      });
+
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== 'granted') {
+        return null;
+      }
+
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('campus_connect_alerts', {
+          name: 'Campus Connect Alerts',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#6366F1',
+        });
+      }
+
+      const tokenData = await Notifications.getExpoPushTokenAsync();
+      const token = tokenData.data;
+
+      if (token) {
+        await this.syncPushTokenWithBackend(token);
+      }
+
+      return token;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  /**
+   * Syncs the device push token with the Django backend devices API
+   */
+  async syncPushTokenWithBackend(pushToken: string): Promise<void> {
+    try {
+      await api.post('/devices/register/', {
+        device_uuid: Platform.OS + '_' + (Platform.Version || 'unknown'),
+        device_name: `${Platform.OS.toUpperCase()} Device`,
+        os: Platform.OS,
+        os_version: String(Platform.Version),
+        push_token: pushToken,
+      });
+    } catch (e) {
+      // Non-blocking sync
+    }
+  }
+
+  /**
+   * Attaches lockscreen tap listener to deep link into posts or chats
+   */
+  attachNativeResponseListener(onNotificationTap: (payload: any) => void) {
+    if (Platform.OS === 'web') return () => {};
+
+    try {
+      const Notifications = require('expo-notifications');
+      const subscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
+        const data = response?.notification?.request?.content?.data || {};
+        onNotificationTap(data);
+      });
+      return () => subscription.remove();
+    } catch {
+      return () => {};
+    }
+  }
 }
 
 export const notificationService = new NotificationService();

@@ -147,3 +147,65 @@ class Comment(models.Model):
 
     def __str__(self):
         return f"Comment by {self.user.email} on Post #{self.post.id}"
+
+
+class Poll(models.Model):
+    post = models.OneToOneField(
+        Post,
+        on_delete=models.CASCADE,
+        related_name="poll"
+    )
+    question = models.CharField(max_length=255)
+    is_closed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Poll for Post #{self.post_id}: {self.question[:40]}"
+
+
+class PollOption(models.Model):
+    poll = models.ForeignKey(
+        Poll,
+        on_delete=models.CASCADE,
+        related_name="options"
+    )
+    text = models.CharField(max_length=120)
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return f"Option #{self.id} for Poll #{self.poll_id}: {self.text}"
+
+
+class PollVote(models.Model):
+    poll = models.ForeignKey(
+        Poll,
+        on_delete=models.CASCADE,
+        related_name="votes"
+    )
+    option = models.ForeignKey(
+        PollOption,
+        on_delete=models.CASCADE,
+        related_name="votes"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="poll_votes"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["poll", "user"], name="unique_student_poll_vote")
+        ]
+        indexes = [
+            models.Index(fields=["poll", "option"]),
+            models.Index(fields=["poll", "user"]),
+        ]
+
+    def __str__(self):
+        return f"Vote by User #{self.user_id} on Poll #{self.poll_id}"
+
