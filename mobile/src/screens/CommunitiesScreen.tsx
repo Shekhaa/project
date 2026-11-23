@@ -53,6 +53,7 @@ import { AddMembersModal } from '../components/chat/AddMembersModal';
 import { InviteLinkModal } from '../components/chat/InviteLinkModal';
 import { JoinByInviteModal } from '../components/chat/JoinByInviteModal';
 import { UserAvatar } from '../components/common/UserAvatar';
+import { backHandlerRegistry } from '../services/backHandlerRegistry';
 
 interface CommunitiesScreenProps {
   currentUser?: any;
@@ -187,6 +188,67 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   useEffect(() => {
     loadCommunities();
   }, []);
+
+  // Back button handling in CommunitiesScreen: Step back from active community to list, or close modals
+  useEffect(() => {
+    if (activeCommunity) {
+      backHandlerRegistry.push('communities-active-room', () => {
+        setActiveCommunity(null);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('communities-active-room');
+    }
+  }, [activeCommunity]);
+
+  useEffect(() => {
+    if (createCommunityModalVisible) {
+      backHandlerRegistry.push('communities-create-modal', () => {
+        setCreateCommunityModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('communities-create-modal');
+    }
+  }, [createCommunityModalVisible]);
+
+  useEffect(() => {
+    if (membersModalVisible) {
+      backHandlerRegistry.push('communities-members-modal', () => {
+        setMembersModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('communities-members-modal');
+    }
+  }, [membersModalVisible]);
+
+  useEffect(() => {
+    if (reportModalVisible) {
+      backHandlerRegistry.push('communities-report-modal', () => {
+        setReportModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('communities-report-modal');
+    }
+  }, [reportModalVisible]);
+
+  useEffect(() => {
+    if (moreMenuVisible) {
+      backHandlerRegistry.push('communities-more-menu', () => {
+        setMoreMenuVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('communities-more-menu');
+    }
+  }, [moreMenuVisible]);
+
+  useEffect(() => {
+    if (attachmentPickerVisible) {
+      backHandlerRegistry.push('communities-attachment-modal', () => {
+        setAttachmentPickerVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('communities-attachment-modal');
+    }
+  }, [attachmentPickerVisible]);
 
   // Cancel active recording / clear draft & banners / pause audio when switching hub or tab
   useEffect(() => {

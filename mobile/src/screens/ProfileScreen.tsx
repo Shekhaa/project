@@ -30,10 +30,12 @@ import { postService, Post } from '../services/postService';
 import { PostCard } from '../components/feed/PostCard';
 import { CommentsModal } from '../components/feed/CommentsModal';
 import { StudentProfileModal } from '../components/profile/StudentProfileModal';
+import { AvatarZoomModal } from '../components/profile/AvatarZoomModal';
 import { SocialListModal, SocialModalType } from '../components/profile/SocialListModal';
 import { UserAvatar } from '../components/common/UserAvatar';
 import { CollegeCatalogItem, CollegePickerModal, getCollegeCity } from '../components/common/CollegePickerModal';
 import { processWebImageForUpload, showCrossPlatformAlert } from '../utils/mediaUtils';
+import { backHandlerRegistry } from '../services/backHandlerRegistry';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ShieldCheck,
@@ -285,6 +287,80 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [notifLikes, setNotifLikes] = useState(true);
   const [notifComments, setNotifComments] = useState(true);
   const [notifMessages, setNotifMessages] = useState(true);
+
+  // Avatar Zoom Modal State
+  const [avatarZoomVisible, setAvatarZoomVisible] = useState(false);
+
+  // BackHandler Registry Integration for Profile Screen Modals
+  useEffect(() => {
+    if (avatarZoomVisible) {
+      backHandlerRegistry.push('profile-avatar-zoom', () => { setAvatarZoomVisible(false); return true; });
+      return () => backHandlerRegistry.pop('profile-avatar-zoom');
+    }
+  }, [avatarZoomVisible]);
+
+  useEffect(() => {
+    if (settingsModalVisible) {
+      backHandlerRegistry.push('profile-settings', () => { setSettingsModalVisible(false); return true; });
+      return () => backHandlerRegistry.pop('profile-settings');
+    }
+  }, [settingsModalVisible]);
+
+  useEffect(() => {
+    if (socialModalVisible) {
+      backHandlerRegistry.push('profile-social', () => { setSocialModalVisible(false); return true; });
+      return () => backHandlerRegistry.pop('profile-social');
+    }
+  }, [socialModalVisible]);
+
+  useEffect(() => {
+    if (viewingStudentId) {
+      backHandlerRegistry.push('profile-viewing-student', () => { setViewingStudentId(null); return true; });
+      return () => backHandlerRegistry.pop('profile-viewing-student');
+    }
+  }, [viewingStudentId]);
+
+  useEffect(() => {
+    if (savedModalVisible) {
+      backHandlerRegistry.push('profile-saved', () => { setSavedModalVisible(false); return true; });
+      return () => backHandlerRegistry.pop('profile-saved');
+    }
+  }, [savedModalVisible]);
+
+  useEffect(() => {
+    if (blockedModalVisible) {
+      backHandlerRegistry.push('profile-blocked', () => { setBlockedModalVisible(false); return true; });
+      return () => backHandlerRegistry.pop('profile-blocked');
+    }
+  }, [blockedModalVisible]);
+
+  useEffect(() => {
+    if (accountInfoModalVisible) {
+      backHandlerRegistry.push('profile-account-info', () => { setAccountInfoModalVisible(false); return true; });
+      return () => backHandlerRegistry.pop('profile-account-info');
+    }
+  }, [accountInfoModalVisible]);
+
+  useEffect(() => {
+    if (preferencesModalVisible) {
+      backHandlerRegistry.push('profile-preferences', () => { setPreferencesModalVisible(false); return true; });
+      return () => backHandlerRegistry.pop('profile-preferences');
+    }
+  }, [preferencesModalVisible]);
+
+  useEffect(() => {
+    if (notifModalVisible) {
+      backHandlerRegistry.push('profile-notif', () => { setNotifModalVisible(false); return true; });
+      return () => backHandlerRegistry.pop('profile-notif');
+    }
+  }, [notifModalVisible]);
+
+  useEffect(() => {
+    if (switcherModalVisible) {
+      backHandlerRegistry.push('profile-switcher', () => { setSwitcherModalVisible(false); return true; });
+      return () => backHandlerRegistry.pop('profile-switcher');
+    }
+  }, [switcherModalVisible]);
 
   // Initial load for shape & notification settings
   useEffect(() => {
@@ -933,12 +1009,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 borderColor: avatarShape === 'SQUARE' ? colors.primary : colors.cardBorder,
               },
             ]}
-            onPress={() => {
-              setActiveSettingsSection('PROFILE');
-              setSettingsModalVisible(true);
-            }}
+            onPress={() => setAvatarZoomVisible(true)}
+            onLongPress={() => setAvatarZoomVisible(true)}
+            delayLongPress={280}
             activeOpacity={0.8}
-            accessibilityLabel="Edit profile and photo"
+            accessibilityLabel="View full size profile photo"
           >
             <UserAvatar
               uri={profile?.profile_picture || currentUser.profile_picture || currentUser.avatar}
@@ -1242,8 +1317,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         )}
       </View>
 
-      {/* Invite Classmates Card (Verified Students & Admins) */}
-      {effectiveCanParticipate && (
+      {/* Invite Classmates Card (Temporarily hidden from Profile tab frontend) */}
+      {false && effectiveCanParticipate && (
         <View style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
           <View style={styles.sectionHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -3276,6 +3351,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         onSelect={(college) => setBatchCollegeId(college.id)}
         onClose={() => setBatchCollegePickerVisible(false)}
         title="Select College for Batch Invite Code"
+      />
+      <AvatarZoomModal
+        visible={avatarZoomVisible}
+        imageUrl={profile?.profile_picture || currentUser.profile_picture || currentUser.avatar}
+        name={currentUser.full_name || profile?.username || currentUser.email}
+        username={profile?.username || currentUser.username}
+        collegeName={profile?.college_name || currentUser.college?.name}
+        onClose={() => setAvatarZoomVisible(false)}
       />
     </ScrollView>
   );

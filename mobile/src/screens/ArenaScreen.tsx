@@ -12,6 +12,7 @@ import {
   Image,
   ScrollView,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { lostFoundService, LostFoundItem } from '../services/lostFoundService';
@@ -19,6 +20,7 @@ import { Post, postService } from '../services/postService';
 import { CommentsModal } from '../components/feed/CommentsModal';
 import { ShareModal } from '../components/feed/ShareModal';
 import { ImageCropperModal } from '../components/media/ImageCropperModal';
+import { backHandlerRegistry } from '../services/backHandlerRegistry';
 import {
   MapPin,
   Plus,
@@ -38,6 +40,7 @@ import {
   Building2,
   GraduationCap,
   Sparkles,
+  RotateCw,
 } from 'lucide-react-native';
 
 interface ArenaScreenProps {
@@ -132,6 +135,21 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
     }
   }, [confessionScope]);
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (activeSlab === 'LOST_FOUND') {
+        await loadLfItems();
+      } else {
+        await loadConfessions();
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [activeSlab, loadLfItems, loadConfessions]);
+
   useEffect(() => {
     if (activeSlab === 'LOST_FOUND') {
       loadLfItems();
@@ -139,6 +157,47 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
       loadConfessions();
     }
   }, [activeSlab, loadLfItems, loadConfessions]);
+
+  // Back button handling for Arena modals
+  useEffect(() => {
+    if (lfModalVisible) {
+      backHandlerRegistry.push('ArenaLfModal', () => {
+        setLfModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('ArenaLfModal');
+    }
+  }, [lfModalVisible]);
+
+  useEffect(() => {
+    if (confessionModalVisible) {
+      backHandlerRegistry.push('ArenaConfessionModal', () => {
+        setConfessionModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('ArenaConfessionModal');
+    }
+  }, [confessionModalVisible]);
+
+  useEffect(() => {
+    if (activeCommentsPost) {
+      backHandlerRegistry.push('ArenaCommentsModal', () => {
+        setActiveCommentsPost(null);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('ArenaCommentsModal');
+    }
+  }, [activeCommentsPost]);
+
+  useEffect(() => {
+    if (sharePost) {
+      backHandlerRegistry.push('ArenaShareModal', () => {
+        setSharePost(null);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('ArenaShareModal');
+    }
+  }, [sharePost]);
 
   // Camera Capture for Lost & Found (Opens ImageCropperModal Crop Studio)
   const handleCaptureLfPhoto = async () => {
@@ -304,6 +363,34 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
     }
   };
 
+  const handleDeleteLf = async (itemId: string) => {
+    const doDelete = async () => {
+      try {
+        await lostFoundService.deleteItem(itemId);
+        setLfItems((prev) => prev.filter((it) => it.id !== itemId));
+        setBanner({ kind: 'notice', text: 'Lost & Found notice deleted successfully.' });
+      } catch (err: any) {
+        const msg = err?.response?.data?.error || 'Failed to delete notice.';
+        setBanner({ kind: 'error', text: msg });
+      }
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      if (window.confirm('Are you sure you want to delete this notice?')) {
+        await doDelete();
+      }
+    } else {
+      Alert.alert(
+        'Delete Notice',
+        'Are you sure you want to delete this Lost & Found notice from campus?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: doDelete },
+        ]
+      );
+    }
+  };
+
   // --- Confessions Actions ---
   const handleOpenConfessionModal = () => {
     if (!currentUser) {
@@ -401,16 +488,36 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={[styles.actionBtn, { backgroundColor: colors.primary }]}
-          onPress={activeSlab === 'LOST_FOUND' ? handleOpenReportModal : handleOpenConfessionModal}
-          activeOpacity={0.85}
-        >
-          <Plus size={15} color={colors.onPrimary} style={{ marginRight: 4 }} />
-          <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>
-            {activeSlab === 'LOST_FOUND' ? 'Report Item' : 'Spill Tea 🎭'}
-          </Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            style={[
+              styles.refreshBtn,
+              { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
+              refreshing && { opacity: 0.7 },
+            ]}
+            onPress={handleRefresh}
+            activeOpacity={0.7}
+            disabled={refreshing}
+            accessibilityLabel="Refresh arena"
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <RotateCw size={15} color={colors.textPrimary} />
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: colors.primary }]}
+            onPress={activeSlab === 'LOST_FOUND' ? handleOpenReportModal : handleOpenConfessionModal}
+            activeOpacity={0.85}
+          >
+            <Plus size={15} color={colors.onPrimary} style={{ marginRight: 4 }} />
+            <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>
+              {activeSlab === 'LOST_FOUND' ? 'Report Item' : 'Spill Tea 🎭'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Two Slabs / Sub-Tabs Bar */}
@@ -582,6 +689,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
               data={lfItems}
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.listContent}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={handleRefresh}
+                  tintColor={colors.primary}
+                  colors={[colors.primary]}
+                />
+              }
               renderItem={({ item }) => (
                 <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
                   {/* Top Badge & Reporter */}
@@ -620,24 +735,47 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
                     <Text style={[styles.locationText, { color: colors.textSecondary }]}>{item.location}</Text>
                   </View>
 
-                  {/* Claim / Contact Button */}
+                  {/* Claim / Contact / Delete Action Row */}
                   {item.is_mine ? (
-                    <View
-                      style={[
-                        styles.contactBtn,
-                        {
-                          backgroundColor: colors.surfaceLight,
-                          borderColor: colors.cardBorder,
-                          opacity: 0.8,
-                        },
-                      ]}
-                    >
-                      <View style={styles.actionBtnInner}>
-                        <HelpCircle size={15} color={colors.textMuted} style={{ marginRight: 6 }} />
-                        <Text style={[styles.contactBtnText, { color: colors.textMuted }]}>
-                          Your Notice · Active on Campus
-                        </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View
+                        style={[
+                          styles.contactBtn,
+                          {
+                            flex: 1,
+                            backgroundColor: colors.surfaceLight,
+                            borderColor: colors.cardBorder,
+                            opacity: 0.85,
+                          },
+                        ]}
+                      >
+                        <View style={styles.actionBtnInner}>
+                          <HelpCircle size={15} color={colors.textMuted} style={{ marginRight: 6 }} />
+                          <Text style={[styles.contactBtnText, { color: colors.textMuted }]} numberOfLines={1}>
+                            Your Notice · Active
+                          </Text>
+                        </View>
                       </View>
+
+                      {/* Delete Button for Author */}
+                      <TouchableOpacity
+                        style={[
+                          styles.contactBtn,
+                          {
+                            backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                            borderColor: 'rgba(239, 68, 68, 0.35)',
+                            paddingHorizontal: 12,
+                          },
+                        ]}
+                        onPress={() => handleDeleteLf(item.id)}
+                        activeOpacity={0.8}
+                        accessibilityLabel="Delete your notice"
+                      >
+                        <View style={styles.actionBtnInner}>
+                          <Trash2 size={15} color="#ef4444" style={{ marginRight: 5 }} />
+                          <Text style={[styles.contactBtnText, { color: '#ef4444' }]}>Delete</Text>
+                        </View>
+                      </TouchableOpacity>
                     </View>
                   ) : item.item_type === 'FOUND' ? (
                     <TouchableOpacity
@@ -750,6 +888,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
               data={confessions}
               keyExtractor={(item) => String(item.id)}
               contentContainerStyle={styles.listContent}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={handleRefresh}
+                  tintColor={colors.primary}
+                  colors={[colors.primary]}
+                />
+              }
               renderItem={({ item }) => {
                 const mascotIcon =
                   item.anonymous_alias?.includes('Owl') ? '🦉' :
@@ -1182,6 +1328,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     paddingVertical: 8,
     borderRadius: 20,
+  },
+  refreshBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
   },
   actionBtnText: {
     fontSize: 12.5,

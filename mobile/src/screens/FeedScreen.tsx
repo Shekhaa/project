@@ -23,6 +23,7 @@ import { CommentsModal } from '../components/feed/CommentsModal';
 import { ShareModal } from '../components/feed/ShareModal';
 import { NotificationsModal } from '../components/notifications/NotificationsModal';
 import { notificationService, NotificationItem } from '../services/notificationService';
+import { backHandlerRegistry } from '../services/backHandlerRegistry';
 import { api } from '../config/api';
 import { showCrossPlatformAlert } from '../utils/mediaUtils';
 import { Plus, Bell, Sparkles, SlidersHorizontal, Check, X, Sun, Moon, RotateCw } from 'lucide-react-native';
@@ -111,6 +112,57 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const [activeSharePost, setActiveSharePost] = useState<Post | null>(null);
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+
+  // Universal Android Hardware & Browser Back Navigation
+  useEffect(() => {
+    if (activeCommentsPost) {
+      backHandlerRegistry.push('FeedCommentsModal', () => {
+        setActiveCommentsPost(null);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('FeedCommentsModal');
+    }
+  }, [activeCommentsPost]);
+
+  useEffect(() => {
+    if (activeSharePost) {
+      backHandlerRegistry.push('FeedShareModal', () => {
+        setActiveSharePost(null);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('FeedShareModal');
+    }
+  }, [activeSharePost]);
+
+  useEffect(() => {
+    if (composerVisible) {
+      backHandlerRegistry.push('FeedComposerModal', () => {
+        setComposerVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('FeedComposerModal');
+    }
+  }, [composerVisible]);
+
+  useEffect(() => {
+    if (filterModalVisible) {
+      backHandlerRegistry.push('FeedFilterModal', () => {
+        setFilterModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('FeedFilterModal');
+    }
+  }, [filterModalVisible]);
+
+  useEffect(() => {
+    if (notificationsVisible) {
+      backHandlerRegistry.push('FeedNotificationsModal', () => {
+        setNotificationsVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('FeedNotificationsModal');
+    }
+  }, [notificationsVisible]);
 
   const handleOpenComposer = () => {
     if (!currentUser) {

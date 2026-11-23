@@ -39,6 +39,7 @@ import { InviteLinkModal } from '../components/chat/InviteLinkModal';
 import { JoinByInviteModal } from '../components/chat/JoinByInviteModal';
 import { MessageRequestsModal } from '../components/chat/MessageRequestsModal';
 import { UserAvatar } from '../components/common/UserAvatar';
+import { backHandlerRegistry } from '../services/backHandlerRegistry';
 import {
   Search,
   Plus,
@@ -154,6 +155,87 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   useEffect(() => {
     loadInbox();
   }, []);
+
+  // Back button handling in ChatScreen: Step back from active conversation to inbox, or close open modals
+  useEffect(() => {
+    if (activeConv) {
+      backHandlerRegistry.push('chat-active-conv', () => {
+        setActiveConv(null);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('chat-active-conv');
+    }
+  }, [activeConv]);
+
+  useEffect(() => {
+    if (directoryModalVisible) {
+      backHandlerRegistry.push('chat-directory-modal', () => {
+        setDirectoryModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('chat-directory-modal');
+    }
+  }, [directoryModalVisible]);
+
+  useEffect(() => {
+    if (ephemeralModalVisible) {
+      backHandlerRegistry.push('chat-ephemeral-modal', () => {
+        setEphemeralModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('chat-ephemeral-modal');
+    }
+  }, [ephemeralModalVisible]);
+
+  useEffect(() => {
+    if (messageRequestsVisible) {
+      backHandlerRegistry.push('chat-requests-modal', () => {
+        setMessageRequestsVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('chat-requests-modal');
+    }
+  }, [messageRequestsVisible]);
+
+  useEffect(() => {
+    if (addMembersModalVisible) {
+      backHandlerRegistry.push('chat-add-members-modal', () => {
+        setAddMembersModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('chat-add-members-modal');
+    }
+  }, [addMembersModalVisible]);
+
+  useEffect(() => {
+    if (inviteLinkModalVisible) {
+      backHandlerRegistry.push('chat-invite-link-modal', () => {
+        setInviteLinkModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('chat-invite-link-modal');
+    }
+  }, [inviteLinkModalVisible]);
+
+  useEffect(() => {
+    if (joinViaInviteModalVisible) {
+      backHandlerRegistry.push('chat-join-invite-modal', () => {
+        setJoinViaInviteModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('chat-join-invite-modal');
+    }
+  }, [joinViaInviteModalVisible]);
+
+  useEffect(() => {
+    if (attachmentPickerVisible) {
+      backHandlerRegistry.push('chat-attachment-modal', () => {
+        setAttachmentPickerVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('chat-attachment-modal');
+    }
+  }, [attachmentPickerVisible]);
 
   useEffect(() => {
     if (initialConversation) {

@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework import generics, status
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from accounts.permissions import IsCampusVerified
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
@@ -20,19 +20,24 @@ def get_user_college(user):
 class LostFoundListView(generics.ListAPIView):
     """
     GET /api/lost-found/
-    Stream of active Lost & Found posts scoped exclusively to the student's college.
+    Stream of active Lost & Found posts.
     Query params: ?type=LOST or ?type=FOUND or ?q=search_term
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
     serializer_class = LostFoundPostSerializer
 
     def get_queryset(self):
-        college = get_user_college(self.request.user)
-        if not college:
-            return LostFoundPost.objects.none()
+        college = None
+        if self.request.user and self.request.user.is_authenticated:
+            college = get_user_college(self.request.user)
 
-        qs = LostFoundPost.objects.filter(college=college).select_related("author", "author__profile", "college")
-        
+        if college:
+            qs = LostFoundPost.objects.filter(college=college)
+        else:
+            qs = LostFoundPost.objects.all()
+
+        qs = qs.select_related("author", "author__profile", "college")
+
         item_type = self.request.query_params.get("type")
         if item_type in ["LOST", "FOUND"]:
             qs = qs.filter(item_type=item_type)
@@ -96,6 +101,19 @@ class ResolveLostFoundPostView(APIView):
         post = get_object_or_404(LostFoundPost, id=item_id, author=request.user)
         post.mark_resolved()
         return Response({"message": "Item marked as resolved/returned successfully."})
+
+
+class DeleteLostFoundPostView(APIView):
+    """
+    DELETE /api/lost-found/<uuid:item_id>/
+    Allows the author of the Lost & Found notice to permanently delete it.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, item_id):
+        post = get_object_or_404(LostFoundPost, id=item_id, author=request.user)
+        post.delete()
+        return Response({"message": "Lost & Found post deleted successfully."}, status=status.HTTP_200_OK)
 
 
 class ContactReporterView(APIView):

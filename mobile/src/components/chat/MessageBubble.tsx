@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { Message } from '../../services/chatService';
-import { ExternalLink, Heart, MessageCircle, Play } from 'lucide-react-native';
+import { ExternalLink, Heart, MessageCircle, Play, AlertCircle } from 'lucide-react-native';
 import { MediaGrid } from '../media/MediaGrid';
 import { DocumentCard } from '../media/DocumentCard';
 import { AudioPlayerPill, splitMediaAttachments } from '../media/VoiceNotePlayer';
@@ -33,6 +33,7 @@ export interface SharedPostCardData {
   comments_count?: number;
   location?: string;
   item_type?: 'LOST' | 'FOUND';
+  is_deleted?: boolean;
 }
 
 interface MessageBubbleProps {
@@ -270,11 +271,44 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             style={[
               styles.postCard,
               { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+              cardData.is_deleted && { opacity: 0.75 },
             ]}
             onPress={() => onPostCardPress && onPostCardPress(cardData)}
             activeOpacity={0.9}
           >
-            {cardData.kind === 'LOST_FOUND' ? (
+            {cardData.is_deleted ? (
+              // Tombstone when post was deleted by owner
+              <View style={{ padding: 12, alignItems: 'center' }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    marginBottom: 4,
+                  }}
+                >
+                  <AlertCircle size={15} color="#ef4444" />
+                  <Text
+                    style={{
+                      fontSize: 12.5,
+                      fontWeight: '700',
+                      color: colors.textPrimary,
+                    }}
+                  >
+                    Content Deleted by Owner
+                  </Text>
+                </View>
+                <Text
+                  style={{
+                    fontSize: 11.5,
+                    color: colors.textMuted,
+                    textAlign: 'center',
+                  }}
+                >
+                  This {cardData.kind === 'LOST_FOUND' ? 'notice' : 'post'} is no longer available.
+                </Text>
+              </View>
+            ) : cardData.kind === 'LOST_FOUND' ? (
               // Lost & Found Notice Postcard
               <>
                 <View style={styles.postCardHeader}>

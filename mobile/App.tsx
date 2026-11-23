@@ -41,6 +41,7 @@ import {
   consumeMsOAuthMode,
 } from './src/services/authService';
 import { notificationService } from './src/services/notificationService';
+import { backHandlerRegistry } from './src/services/backHandlerRegistry';
 import { setAuthExpiredListener } from './src/config/api';
 import { showCrossPlatformAlert } from './src/utils/mediaUtils';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -72,6 +73,15 @@ function AppMain() {
   // Back Button Support (Android Hardware + Web Browser history)
   useEffect(() => {
     const onBackPress = () => {
+      // 1. Pop topmost modal from registry (Comments, Composer, Share, Profile, ImageViewer, etc.)
+      if (backHandlerRegistry.handleBack()) {
+        return true;
+      }
+      // 2. Check root-level modals
+      if (viewingProfileUserId) {
+        setViewingProfileUserId(null);
+        return true;
+      }
       if (verifyModalVisible) {
         setVerifyModalVisible(false);
         return true;
@@ -80,6 +90,7 @@ function AppMain() {
         setAuthModalVisible(false);
         return true;
       }
+      // 3. Step back to Home FEED from other tabs
       if (activeTab !== 'FEED') {
         setActiveTab('FEED');
         return true;
@@ -101,7 +112,7 @@ function AppMain() {
     }
 
     return () => backSubscription.remove();
-  }, [activeTab, authModalVisible, verifyModalVisible]);
+  }, [activeTab, authModalVisible, verifyModalVisible, viewingProfileUserId]);
 
   const navigateToTab = (tab: TabType) => {
     if (!currentUser && tab !== 'FEED') {

@@ -16,9 +16,26 @@ export interface LostFoundItem {
 export const lostFoundService = {
   // Get all active lost & found items
   async getItems(type?: 'LOST' | 'FOUND'): Promise<LostFoundItem[]> {
-    const params = type ? { type } : {};
-    const res = await api.get('/lost-found/', { params });
-    return res.data.results || res.data;
+    try {
+      const params = type ? { type } : {};
+      const res = await api.get('/lost-found/', { params });
+      if (res.data && Array.isArray(res.data.results)) {
+        return res.data.results;
+      }
+      if (Array.isArray(res.data)) {
+        return res.data;
+      }
+      return [];
+    } catch (e) {
+      console.log('Error fetching lost & found items', e);
+      return [];
+    }
+  },
+
+  // Delete Lost & Found Notice (Author only)
+  async deleteItem(itemId: string) {
+    const res = await api.delete(`/lost-found/${itemId}/`);
+    return res.data;
   },
 
   // Frictionless post (description + location + optional photo)

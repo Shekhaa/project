@@ -10,10 +10,13 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import { AtSign, CornerDownRight, Send, X } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { Comment, Post, postService } from '../../services/postService';
+import { backHandlerRegistry } from '../../services/backHandlerRegistry';
 import { UserAvatar } from '../common/UserAvatar';
 import {
   MentionCandidate,
@@ -53,19 +56,59 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
   const [expandedReplies, setExpandedReplies] = useState<Record<number, boolean>>({});
-  const touchStartY = useRef<number>(0);
 
-  const handleTouchStart = (e: any) => {
-    touchStartY.current = e.nativeEvent?.pageY || e.clientY || 0;
-  };
+  const translateY = useRef(new Animated.Value(0)).current;
 
-  const handleTouchEnd = (e: any) => {
-    const endY = e.nativeEvent?.pageY || e.clientY || 0;
-    const deltaY = endY - touchStartY.current;
-    if (deltaY > 40) {
+  const handleDismissWithAnimation = () => {
+    Animated.timing(translateY, {
+      toValue: 650,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => {
+      translateY.setValue(0);
       onClose();
-    }
+    });
   };
+
+  // Android hardware back & browser popstate registration
+  useEffect(() => {
+    if (visible) {
+      translateY.setValue(0);
+      backHandlerRegistry.push('CommentsModal', () => {
+        handleDismissWithAnimation();
+        return true;
+      });
+      return () => {
+        backHandlerRegistry.pop('CommentsModal');
+      };
+    }
+  }, [visible]);
+
+  // Real-time Instagram-style PanResponder drag to dismiss
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return gestureState.dy > 5;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          translateY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 120 || gestureState.vy > 0.6) {
+          handleDismissWithAnimation();
+        } else {
+          Animated.spring(translateY, {
+            toValue: 0,
+            bounciness: 4,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
 
   const toggleReplies = (commentId: number) => {
     setExpandedReplies((prev) => ({
@@ -373,39 +416,50 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={[styles.backdrop, { backgroundColor: colors.modalOverlay }]}
       >
-        <TouchableOpacity style={styles.dismissOverlay} onPress={onClose} activeOpacity={1} />
+        <TouchableOpacity
+          style={styles.dismissOverlay}
+          onPress={handleDismissWithAnimation}
+          activeOpacity={1}
+        />
 
-        <View
+        <Animated.View
           style={[
             styles.sheetContainer,
-            { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.cardBorder,
+              transform: [{ translateY }],
+            },
           ]}
         >
-          {/* Instagram-style Drag Handle Bar (Tap or swipe down to close) */}
-          <TouchableOpacity
-            style={styles.dragHandleBar}
-            activeOpacity={0.7}
-            onPress={onClose}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-            accessibilityLabel="Tap or swipe down to close comments"
-          >
-            <View
-              style={[
-                styles.dragHandle,
-                { backgroundColor: colors.hairlineStrong || '#52525b' },
-              ]}
-            />
-          </TouchableOpacity>
+          {/* Instagram-style Drag Handle Bar (Follows finger down in real-time) */}
+          <View {...panResponder.panHandlers} style={styles.dragHandleBar}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handleDismissWithAnimation}
+              hitSlop={{ top: 12, bottom: 12, left: 30, right: 30 }}
+              accessibilityLabel="Tap or swipe down to close comments"
+            >
+              <View
+                style={[
+                  styles.dragHandle,
+                  { backgroundColor: colors.hairlineStrong || '#52525b' },
+                ]}
+              />
+            </TouchableOpacity>
+          </View>
 
           {/* Header */}
           <View
+            {...panResponder.panHandlers}
             style={[styles.sheetHeader, { borderBottomColor: colors.cardBorder }]}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
           >
             <Text style={[styles.sheetTitle, { color: colors.textPrimary }]}>Comments</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <TouchableOpacity
+              onPress={handleDismissWithAnimation}
+              style={styles.closeBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
               <X size={20} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
@@ -570,7 +624,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
               </TouchableOpacity>
             </View>
           )}
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
   );

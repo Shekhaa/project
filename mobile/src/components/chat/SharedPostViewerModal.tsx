@@ -19,7 +19,8 @@ import { CustomVideoPlayer } from '../media/CustomVideoPlayer';
 import { MediaDeckCarousel, UnifiedMediaItem } from '../media/MediaDeckCarousel';
 import { UserAvatar } from '../common/UserAvatar';
 import { getFullMediaUrl } from '../../config/api';
-import { X, Heart, MessageCircle, Send, MapPin, ExternalLink, ShieldCheck } from 'lucide-react-native';
+import { backHandlerRegistry } from '../../services/backHandlerRegistry';
+import { X, Heart, MessageCircle, Send, MapPin, ExternalLink, ShieldCheck, AlertCircle } from 'lucide-react-native';
 
 interface SharedPostViewerModalProps {
   cardData: SharedPostCardData | null;
@@ -36,8 +37,19 @@ export const SharedPostViewerModal: React.FC<SharedPostViewerModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [isDeleted, setIsDeleted] = useState(false);
 
   const isLostFound = cardData?.kind === 'LOST_FOUND';
+
+  useEffect(() => {
+    if (cardData) {
+      backHandlerRegistry.push('SharedPostViewerModal', () => {
+        onClose();
+        return true;
+      });
+      return () => backHandlerRegistry.pop('SharedPostViewerModal');
+    }
+  }, [cardData]);
 
   useEffect(() => {
     if (cardData && !isLostFound && typeof cardData.id === 'number') {
@@ -46,20 +58,35 @@ export const SharedPostViewerModal: React.FC<SharedPostViewerModalProps> = ({
       setPost(null);
       setComments([]);
       setNewComment('');
+      setIsDeleted(false);
     }
   }, [cardData, isLostFound]);
 
   const loadFullPost = async (postId: number) => {
     try {
       setLoading(true);
+      setIsDeleted(false);
       const [postRes, commentsRes] = await Promise.all([
-        postService.getPost(postId).catch(() => null),
+        postService.getPost(postId).catch((err: any) => {
+          if (err?.response?.status === 404 || err?.response?.data?.is_deleted) {
+            setIsDeleted(true);
+          }
+          return null;
+        }),
         postService.getComments(postId).catch(() => []),
       ]);
-      if (postRes) setPost(postRes);
+      if (postRes) {
+        if (postRes.is_deleted) {
+          setIsDeleted(true);
+        } else {
+          setPost(postRes);
+        }
+      } else {
+        setIsDeleted(true);
+      }
       setComments(commentsRes || []);
     } catch (e) {
-      console.log('Error loading shared post details', e);
+      setIsDeleted(true);
     } finally {
       setLoading(false);
     }
@@ -148,7 +175,69 @@ export const SharedPostViewerModal: React.FC<SharedPostViewerModalProps> = ({
           <View style={{ width: 28 }} />
         </View>
 
-        {isLostFound ? (
+        {isDeleted ? (
+          // Content Deleted Tombstone
+          <View
+            style={[
+              styles.lostFoundBody,
+              { backgroundColor: colors.surface, alignItems: 'center', paddingVertical: 48 },
+            ]}
+          >
+            <View
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: 30,
+                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginBottom: 16,
+              }}
+            >
+              <AlertCircle size={30} color="#ef4444" />
+            </View>
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: '800',
+                color: colors.textPrimary,
+                marginBottom: 8,
+              }}
+            >
+              Content Unavailable
+            </Text>
+            <Text
+              style={{
+                fontSize: 13,
+                color: colors.textMuted,
+                textAlign: 'center',
+                paddingHorizontal: 24,
+                marginBottom: 24,
+                lineHeight: 18,
+              }}
+            >
+              This {isLostFound ? 'notice' : 'post'} was deleted by the owner and is no longer
+              available on campus.
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.doneBtn,
+                {
+                  backgroundColor: colors.surfaceLight,
+                  borderColor: colors.cardBorder,
+                  borderWidth: 1,
+                  paddingHorizontal: 28,
+                },
+              ]}
+              onPress={onClose}
+              activeOpacity={0.8}
+            >
+              <Text style={{ color: colors.textPrimary, fontSize: 13, fontWeight: '700' }}>
+                Close
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : isLostFound ? (
           // Lost & Found Notice Details (No comments chain, direct item inspect)
           <View style={[styles.lostFoundBody, { backgroundColor: colors.surface }]}>
             <View style={styles.authorRow}>

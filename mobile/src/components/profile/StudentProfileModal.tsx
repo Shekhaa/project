@@ -16,6 +16,8 @@ import { chatService } from '../../services/chatService';
 import { postService, Post } from '../../services/postService';
 import { UserAvatar } from '../common/UserAvatar';
 import { showCrossPlatformAlert } from '../../utils/mediaUtils';
+import { AvatarZoomModal } from './AvatarZoomModal';
+import { backHandlerRegistry } from '../../services/backHandlerRegistry';
 import {
   X,
   Shield,
@@ -59,6 +61,19 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   const [actionLoading, setActionLoading] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
+  const [avatarZoomVisible, setAvatarZoomVisible] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      backHandlerRegistry.push('student-profile-modal', () => {
+        onClose();
+        return true;
+      });
+      return () => {
+        backHandlerRegistry.pop('student-profile-modal');
+      };
+    }
+  }, [visible, onClose]);
 
   const isVerifyRequiredErr = (err: any) =>
     err?.response?.status === 403 || err?.response?.data?.code === 'CAMPUS_VERIFICATION_REQUIRED';
@@ -333,8 +348,15 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                 </View>
 
                 <View style={styles.heroBody}>
-                  {/* Large Student Avatar */}
-                  <View style={[styles.avatarCircle, { borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : colors.cardBorder }]}>
+                  {/* Large Student Avatar - Tap or Long-Press to zoom */}
+                  <TouchableOpacity
+                    style={[styles.avatarCircle, { borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : colors.cardBorder }]}
+                    onPress={() => setAvatarZoomVisible(true)}
+                    onLongPress={() => setAvatarZoomVisible(true)}
+                    delayLongPress={280}
+                    activeOpacity={0.85}
+                    accessibilityLabel="View full size profile photo"
+                  >
                     <UserAvatar
                       uri={profile.profile_picture || profile.avatar}
                       name={profile.full_name}
@@ -345,7 +367,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                         <Lock size={12} color={colors.textSecondary} />
                       </View>
                     )}
-                  </View>
+                  </TouchableOpacity>
 
                   {/* Name & Institutional Verification Badge */}
                   <View style={styles.nameRow}>
@@ -642,6 +664,16 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
           )}
         </View>
       </View>
+      {profile && (
+        <AvatarZoomModal
+          visible={avatarZoomVisible}
+          imageUrl={profile.profile_picture || profile.avatar}
+          name={profile.full_name}
+          username={profile.username}
+          collegeName={profile.college_name}
+          onClose={() => setAvatarZoomVisible(false)}
+        />
+      )}
     </Modal>
   );
 };
