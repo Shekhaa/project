@@ -49,6 +49,24 @@ import { profileService } from '../services/profileService';
 import { CollegeCatalogItem, CollegePickerModal, getCollegeCity } from '../components/common/CollegePickerModal';
 import { showCrossPlatformAlert } from '../utils/mediaUtils';
 
+// Safe Base64 encoding helper for cross-platform JWT simulation (Web + Native Hermes)
+const safeBase64Encode = (str: string): string => {
+  try {
+    if (typeof btoa !== 'undefined') return btoa(str);
+  } catch {}
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+  let output = '';
+  for (
+    let block = 0, charCode, idx = 0, map = chars;
+    str.charAt(idx | 0) || ((map = '='), idx % 1);
+    output += map.charAt(63 & (block >> (8 - (idx % 1) * 8)))
+  ) {
+    charCode = str.charCodeAt((idx += 3 / 4));
+    block = (block << 8) | charCode;
+  }
+  return output;
+};
+
 interface AuthScreenProps {
   onLoginSuccess: (user: any) => void;
   onDismiss?: () => void;
@@ -119,24 +137,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
 
   // Safe Base64 encoding helper for cross-platform JWT simulation
   const createDevStudentToken = (email: string, name: string) => {
-    const encodeB64 = (str: string) => {
-      try {
-        if (typeof btoa !== 'undefined') return btoa(str);
-      } catch {}
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
-      let output = '';
-      for (
-        let block = 0, charCode, idx = 0, map = chars;
-        str.charAt(idx | 0) || ((map = '='), idx % 1);
-        output += map.charAt(63 & (block >> (8 - (idx % 1) * 8)))
-      ) {
-        charCode = str.charCodeAt((idx += 3 / 4));
-        block = (block << 8) | charCode;
-      }
-      return output;
-    };
-    const header = encodeB64(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).replace(/=/g, '');
-    const claims = encodeB64(
+    const header = safeBase64Encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).replace(/=/g, '');
+    const claims = safeBase64Encode(
       JSON.stringify({
         email,
         name,
@@ -1057,7 +1059,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                         <TouchableOpacity
                           key={idx}
                           style={[styles.presetCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                          onPress={() => handleScanAndLogin('data:image/jpeg;base64,' + btoa(p.rawText), true)}
+                          onPress={() => handleScanAndLogin('data:image/jpeg;base64,' + safeBase64Encode(p.rawText), true)}
                           disabled={idScanLoading}
                         >
                           <View style={styles.presetTop}>

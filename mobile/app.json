@@ -20,7 +20,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0b0f19"
       },
-      "package": "com.campusconnect.app"
+      "package": "com.campusconnect.app",
+      "usesCleartextTraffic": true
     },
     "web": {
       "bundler": "metro",
