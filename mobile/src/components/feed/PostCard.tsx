@@ -33,6 +33,7 @@ import { PollCard } from './PollCard';
 import { UserAvatar } from '../common/UserAvatar';
 import { getFullMediaUrl } from '../../config/api';
 import { showCrossPlatformAlert } from '../../utils/mediaUtils';
+import { computeCanParticipate } from '../../services/authService';
 
 interface PostCardProps {
   post: Post;
@@ -44,6 +45,9 @@ interface PostCardProps {
   onArchivePost?: (postId: number) => void;
   onAuthorPress?: (authorId: number) => void;
   onBookmarkToggle?: (postId: number, isBookmarked: boolean) => void;
+  onRequireAuth?: () => void;
+  onRequireVerify?: (reason?: string) => void;
+  canParticipate?: boolean;
 }
 
 const PostCardComponent: React.FC<PostCardProps> = ({
@@ -56,11 +60,17 @@ const PostCardComponent: React.FC<PostCardProps> = ({
   onArchivePost,
   onAuthorPress,
   onBookmarkToggle,
+  onRequireAuth,
+  onRequireVerify,
+  canParticipate,
 }) => {
   const { colors, isDark } = useTheme();
   const [menuVisible, setMenuVisible] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
+
+  const isUserCanParticipate =
+    canParticipate !== undefined ? canParticipate : computeCanParticipate(currentUser);
 
   useEffect(() => {
     let isMounted = true;
@@ -349,7 +359,8 @@ const PostCardComponent: React.FC<PostCardProps> = ({
           <PollCard
             poll={post.poll}
             postId={post.id}
-            canVote={canParticipate}
+            currentUser={currentUser}
+            canVote={isUserCanParticipate}
             onRequireAuth={onRequireAuth}
             onRequireVerify={onRequireVerify}
           />

@@ -660,6 +660,9 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             <PostCard
               post={item}
               currentUser={currentUser}
+              canParticipate={canParticipate}
+              onRequireAuth={onRequireAuth}
+              onRequireVerify={onRequireVerify}
               onLike={handleLikePost}
               onCommentPress={(p) => setActiveCommentsPost(p)}
               onSharePress={(p) => setActiveSharePost(p)}

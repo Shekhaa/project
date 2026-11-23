@@ -14,6 +14,7 @@ import { Poll, PollOption, postService } from '../../services/postService';
 interface PollCardProps {
   poll: Poll;
   postId: number;
+  currentUser?: any;
   canVote?: boolean;
   onRequireAuth?: () => void;
   onRequireVerify?: (reason?: string) => void;
@@ -23,6 +24,7 @@ interface PollCardProps {
 export const PollCard: React.FC<PollCardProps> = ({
   poll: initialPoll,
   postId,
+  currentUser,
   canVote = true,
   onRequireAuth,
   onRequireVerify,
@@ -39,6 +41,11 @@ export const PollCard: React.FC<PollCardProps> = ({
 
   const handleVote = async (option: PollOption) => {
     if (poll.is_closed) return;
+
+    if (!currentUser) {
+      onRequireAuth?.();
+      return;
+    }
 
     if (!canVote) {
       onRequireVerify?.('Verify your student ID or enter an invite code to vote in campus polls.');
