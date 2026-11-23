@@ -353,14 +353,14 @@ const PostCardComponent: React.FC<PostCardProps> = ({
         </View>
       )}
 
-      {/* 4. 1-Tap Campus Poll */}
+      {/* 4. 1-Tap Campus Poll - Any signed-in Gmail student can vote immediately */}
       {post.poll && (
         <View style={{ marginHorizontal: 12 }}>
           <PollCard
             poll={post.poll}
             postId={post.id}
             currentUser={currentUser}
-            canVote={isUserCanParticipate}
+            canVote={Boolean(currentUser)}
             onRequireAuth={onRequireAuth}
             onRequireVerify={onRequireVerify}
           />
