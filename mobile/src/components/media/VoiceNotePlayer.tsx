@@ -14,6 +14,12 @@ import { useTheme } from '../../theme/ThemeContext';
 import { AttachmentItem } from '../../services/chatService';
 import { getFullMediaUrl } from '../../config/api';
 
+let ExpoAudio: any = null;
+try {
+  const av = require('expo-av');
+  ExpoAudio = av.Audio;
+} catch {}
+
 // Global single-active audio coordinator so playing a new voice note pauses any previous one
 let activePauseHandler: (() => void) | null = null;
 
@@ -240,6 +246,7 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
   const [trackWidth, setTrackWidth] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const soundRef = useRef<any>(null);
   const durationRef = useRef<number>(hintedDuration);
 
   const speed = SPEED_STEPS[speedIndex];
@@ -256,6 +263,9 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
     const audio = audioRef.current;
     if (audio && !audio.paused) {
       audio.pause();
+    }
+    if (soundRef.current) {
+      soundRef.current.pauseAsync().catch(() => {});
     }
     setIsPlaying(false);
   });
@@ -283,6 +293,12 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
           audioRef.current.src = '';
         } catch {}
         audioRef.current = null;
+      }
+      if (soundRef.current) {
+        try {
+          soundRef.current.unloadAsync().catch(() => {});
+        } catch {}
+        soundRef.current = null;
       }
     };
   }, [fullUrl]);
@@ -369,6 +385,48 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
     if (!fullUrl || hasAudioError) return;
 
     if (Platform.OS !== 'web') {
+      if (ExpoAudio) {
+        if (isPlaying && soundRef.current) {
+          await soundRef.current.pauseAsync().catch(() => {});
+          setIsPlaying(false);
+          unregisterActiveAudio(stablePauseRef.current);
+          return;
+        }
+        try {
+          registerActiveAudio(stablePauseRef.current);
+          setIsLoading(true);
+          if (!soundRef.current) {
+            const { sound } = await ExpoAudio.Sound.createAsync(
+              { uri: fullUrl },
+              { shouldPlay: true, rate: speed, shouldCorrectPitch: true },
+              (status: any) => {
+                if (!status || !status.isLoaded) return;
+                setIsPlaying(status.isPlaying);
+                if (status.durationMillis) syncDuration(status.durationMillis / 1000);
+                if (typeof status.positionMillis === 'number') setCurrentTime(status.positionMillis / 1000);
+                if (status.didJustFinish) {
+                  setIsPlaying(false);
+                  setCurrentTime(0);
+                  unregisterActiveAudio(stablePauseRef.current);
+                }
+              }
+            );
+            soundRef.current = sound;
+          } else {
+            await soundRef.current.setRateAsync(speed, true).catch(() => {});
+            await soundRef.current.playAsync().catch(() => {});
+          }
+          setIsPlaying(true);
+          setIsLoading(false);
+        } catch {
+          setIsPlaying(false);
+          setIsLoading(false);
+          setHasAudioError(true);
+          unregisterActiveAudio(stablePauseRef.current);
+        }
+        return;
+      }
+
       Linking.openURL(fullUrl).catch(() => {
         Alert.alert('Cannot Play Voice Note', 'Unable to open this voice note URL.');
       });

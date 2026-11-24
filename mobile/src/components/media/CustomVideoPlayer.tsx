@@ -24,6 +24,14 @@ import { useTheme } from '../../theme/ThemeContext';
 import { getFullMediaUrl } from '../../config/api';
 import { activeVideoManager } from '../../services/activeVideoManager';
 
+let ExpoVideo: any = null;
+let ResizeMode: any = { CONTAIN: 'contain', COVER: 'cover', STRETCH: 'stretch' };
+try {
+  const av = require('expo-av');
+  ExpoVideo = av.Video;
+  if (av.ResizeMode) ResizeMode = av.ResizeMode;
+} catch {}
+
 interface CustomVideoPlayerProps {
   url: string;
   poster?: string;
@@ -54,6 +62,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 }) => {
   const { colors } = useTheme();
   const videoRef = useRef<any>(null);
+  const nativeVideoRef = useRef<any>(null);
   const containerRef = useRef<any>(null);
   const playerId = useRef(`vid_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`).current;
 
@@ -527,7 +536,258 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
     );
   }
 
-  // Native Mobile Fallback with High-Tech Deck Card
+  // Native Mobile Hardware-Accelerated Video Player (Twitter/Instagram Inline Feed Experience)
+  if (ExpoVideo) {
+    const handleTogglePlayNative = async (e?: any) => {
+      e?.stopPropagation?.();
+      if (!nativeVideoRef.current) return;
+      if (isPlaying) {
+        await nativeVideoRef.current.pauseAsync().catch(() => {});
+        setIsPlaying(false);
+        activeVideoManager.pause(playerId);
+        setControlsVisible(true);
+        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      } else {
+        activeVideoManager.play(playerId, () => {
+          if (nativeVideoRef.current) {
+            nativeVideoRef.current.pauseAsync().catch(() => {});
+            setIsPlaying(false);
+          }
+        });
+        await nativeVideoRef.current.playAsync().catch(() => setHasError(true));
+        setIsPlaying(true);
+        scheduleHideControls();
+      }
+    };
+
+    const handleToggleMuteNative = async (e?: any) => {
+      e?.stopPropagation?.();
+      if (!nativeVideoRef.current) return;
+      const nextMuted = !isMuted;
+      await nativeVideoRef.current.setIsMutedAsync(nextMuted).catch(() => {});
+      setIsMuted(nextMuted);
+      showControlsTemporarily();
+    };
+
+    const handleSkipNative = async (seconds: number, e?: any) => {
+      e?.stopPropagation?.();
+      if (!nativeVideoRef.current) return;
+      const cur = currentTime || 0;
+      const dur = duration || 999999;
+      const targetSec = Math.max(0, Math.min(dur, cur + seconds));
+      await nativeVideoRef.current.setPositionAsync(targetSec * 1000).catch(() => {});
+      setCurrentTime(targetSec);
+      showControlsTemporarily();
+      setSkipFeedback(seconds > 0 ? '+10s' : '-10s');
+      if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+      feedbackTimerRef.current = setTimeout(() => setSkipFeedback(null), 700);
+    };
+
+    const handleSeekNative = async (e: any) => {
+      e?.stopPropagation?.();
+      if (!nativeVideoRef.current || !duration) return;
+      const locationX = e.nativeEvent?.locationX || 0;
+      const pct = Math.max(0, Math.min(1, locationX / 300));
+      const targetTime = pct * duration;
+      await nativeVideoRef.current.setPositionAsync(targetTime * 1000).catch(() => {});
+      setCurrentTime(targetTime);
+      showControlsTemporarily();
+    };
+
+    const handleToggleFullscreenNative = async (e?: any) => {
+      e?.stopPropagation?.();
+      if (nativeVideoRef.current?.presentFullscreenPlayer) {
+        try {
+          await nativeVideoRef.current.presentFullscreenPlayer();
+        } catch {}
+      }
+    };
+
+    const handleRetryNative = async () => {
+      setHasError(false);
+      setBuffering(true);
+      if (nativeVideoRef.current) {
+        await nativeVideoRef.current.replayAsync().catch(() => {});
+      }
+    };
+
+    return (
+      <View
+        ref={containerRef}
+        style={[
+          styles.container,
+          {
+            aspectRatio: isFullscreen ? undefined : effectiveRatio,
+            maxHeight: effectiveMaxHeight,
+            borderRadius: isFullscreen ? 0 : borderRadius,
+            backgroundColor: '#000000',
+          },
+        ]}
+      >
+        <ExpoVideo
+          ref={nativeVideoRef}
+          source={{ uri: fullUrl }}
+          posterSource={poster ? { uri: poster } : undefined}
+          usePoster={Boolean(poster)}
+          resizeMode={ResizeMode.CONTAIN}
+          isLooping={loop}
+          isMuted={isMuted}
+          shouldPlay={isPlaying}
+          onPlaybackStatusUpdate={(status: any) => {
+            if (!status || !status.isLoaded) {
+              if (status?.error) setHasError(true);
+              return;
+            }
+            setIsPlaying(status.isPlaying);
+            setBuffering(status.isBuffering);
+            if (status.durationMillis && status.durationMillis > 0) {
+              setDuration(status.durationMillis / 1000);
+            }
+            if (typeof status.positionMillis === 'number') {
+              setCurrentTime(status.positionMillis / 1000);
+            }
+            if (status.didJustFinish) {
+              setIsPlaying(false);
+              setControlsVisible(true);
+              onEnded?.();
+            }
+          }}
+          style={StyleSheet.absoluteFillObject}
+        />
+
+        {/* Tap video surface to toggle controls */}
+        <TouchableOpacity
+          style={StyleSheet.absoluteFillObject}
+          activeOpacity={1}
+          onPress={showControlsTemporarily}
+        />
+
+        {/* Buffering Indicator */}
+        {buffering && (
+          <View style={styles.centerOverlay} pointerEvents="none">
+            <ActivityIndicator size="large" color="#ffffff" />
+          </View>
+        )}
+
+        {/* Fast-Forward / Rewind Visual Splash Badge */}
+        {skipFeedback && (
+          <View style={styles.skipFeedbackBadge} pointerEvents="none">
+            <Text style={styles.skipFeedbackText}>{skipFeedback}</Text>
+          </View>
+        )}
+
+        {/* Error Fallback with Retry */}
+        {hasError && (
+          <View style={styles.errorOverlay}>
+            <AlertCircle size={32} color="#ef4444" style={{ marginBottom: 8 }} />
+            <Text style={styles.errorText}>Video failed to play</Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={handleRetryNative} activeOpacity={0.8}>
+              <RotateCcw size={14} color="#ffffff" style={{ marginRight: 6 }} />
+              <Text style={styles.retryBtnText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Screen-Level Twitter/X Style Overlay: Left -10s, Center Play/Pause, Right +10s */}
+        {(controlsVisible || !isPlaying) && !hasError && !buffering && (
+          <View style={styles.screenLevelOverlay} pointerEvents="box-none">
+            {/* Left -10s Rewind Button */}
+            <TouchableOpacity
+              style={styles.screenSkipBtn}
+              onPress={(e) => handleSkipNative(-10, e)}
+              activeOpacity={0.8}
+              accessibilityLabel="Rewind 10 seconds"
+            >
+              <RotateCcw size={20} color="#ffffff" />
+              <Text style={styles.screenSkipText}>10s</Text>
+            </TouchableOpacity>
+
+            {/* Center Play / Pause Button */}
+            <TouchableOpacity
+              style={styles.screenCenterPlayBtn}
+              onPress={handleTogglePlayNative}
+              activeOpacity={0.85}
+              accessibilityLabel={isPlaying ? 'Pause video' : 'Play video'}
+            >
+              {isPlaying ? (
+                <Pause size={28} color="#ffffff" fill="#ffffff" />
+              ) : (
+                <Play size={28} color="#ffffff" fill="#ffffff" style={{ marginLeft: 3 }} />
+              )}
+            </TouchableOpacity>
+
+            {/* Right +10s Forward Button */}
+            <TouchableOpacity
+              style={styles.screenSkipBtn}
+              onPress={(e) => handleSkipNative(10, e)}
+              activeOpacity={0.8}
+              accessibilityLabel="Forward 10 seconds"
+            >
+              <RotateCw size={20} color="#ffffff" />
+              <Text style={styles.screenSkipText}>10s</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Bottom Controls Bar */}
+        {controlsVisible && !hasError && (
+          <View style={styles.nativeBottomControlsBar}>
+            {/* Scrubber Progress Bar */}
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={handleSeekNative}
+              style={styles.nativeScrubberTrack}
+            >
+              <View style={styles.nativeScrubberBg}>
+                <View
+                  style={[
+                    styles.nativeScrubberFill,
+                    { width: `${progressPercent}%`, backgroundColor: colors.primary || '#6366F1' },
+                  ]}
+                >
+                  <View style={styles.nativeScrubberThumb} />
+                </View>
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.controlsRow}>
+              {/* Play / Pause small button */}
+              <TouchableOpacity onPress={handleTogglePlayNative} style={styles.ctrlBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                {isPlaying ? (
+                  <Pause size={17} color="#ffffff" fill="#ffffff" />
+                ) : (
+                  <Play size={17} color="#ffffff" fill="#ffffff" />
+                )}
+              </TouchableOpacity>
+
+              {/* Mute / Unmute Button */}
+              <TouchableOpacity onPress={handleToggleMuteNative} style={styles.ctrlBtn} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
+                {isMuted ? (
+                  <VolumeX size={17} color="#ffffff" />
+                ) : (
+                  <Volume2 size={17} color="#ffffff" />
+                )}
+              </TouchableOpacity>
+
+              {/* Time display: 0:14 / 1:20 */}
+              <Text style={styles.timeText}>
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </Text>
+
+              <View style={{ flex: 1 }} />
+
+              {/* Fullscreen Button */}
+              <TouchableOpacity onPress={handleToggleFullscreenNative} style={styles.ctrlBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Maximize2 size={16} color="#ffffff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  // Native Mobile Fallback with High-Tech Deck Card (if expo-av not linked)
   return (
     <View
       style={[
@@ -747,5 +1007,44 @@ const styles = StyleSheet.create({
   nativePlayBtnText: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  nativeBottomControlsBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    paddingTop: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    zIndex: 15,
+  },
+  nativeScrubberTrack: {
+    width: '100%',
+    height: 18,
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  nativeScrubberBg: {
+    width: '100%',
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 2,
+    overflow: 'visible',
+    position: 'relative',
+  },
+  nativeScrubberFill: {
+    height: '100%',
+    borderRadius: 2,
+    position: 'relative',
+  },
+  nativeScrubberThumb: {
+    position: 'absolute',
+    right: -5,
+    top: -4,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#ffffff',
   },
 });
