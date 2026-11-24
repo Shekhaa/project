@@ -125,7 +125,7 @@ class Message(models.Model):
         related_name="sent_chat_messages"
     )
     text = models.TextField(blank=True, default="")
-    attachment = models.FileField(upload_to="chat_attachments/", blank=True, null=True)
+    attachment = models.FileField(upload_to="chat_attachments/", blank=True, null=True, max_length=500)
     is_read = models.BooleanField(default=False)
     is_anonymous = models.BooleanField(default=False, db_index=True)
     anonymous_alias = models.CharField(max_length=50, blank=True, default="")

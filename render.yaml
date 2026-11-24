@@ -19,6 +19,14 @@ services:
           property: connectionString
       - key: BACKEND_URL
         value: "https://campus-connect-api-us3i.onrender.com"
+      - key: CLOUDINARY_CLOUD_NAME
+        value: "cvwywt63"
+      - key: CLOUDINARY_API_KEY
+        value: "167684133529433"
+      - key: CLOUDINARY_API_SECRET
+        value: "uPjSxrttG6NvH8xbU5vedPMYPB0"
+      - key: CLOUDINARY_MEDIA_FOLDER
+        value: "campus_connect"
 
 databases:
   - name: campus-connect-db

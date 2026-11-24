@@ -22,7 +22,7 @@ class StudentProfile(models.Model):
     # Public Profile
     username = models.CharField(max_length=50, unique=True, db_index=True)
     bio = models.TextField(blank=True, max_length=500)
-    profile_picture = models.ImageField(upload_to="profile_pictures/", blank=True, null=True)
+    profile_picture = models.ImageField(upload_to="profile_pictures/", blank=True, null=True, max_length=500)
     gender = models.CharField(max_length=20, choices=GENDER_CHOICES)
     show_gender = models.BooleanField(
         default=True,
@@ -41,7 +41,7 @@ class StudentProfile(models.Model):
     profile_completed = models.BooleanField(default=False, db_index=True)
 
     # College ID Card OCR & Fraud Prevention
-    id_card_image = models.ImageField(upload_to="id_cards/", blank=True, null=True)
+    id_card_image = models.ImageField(upload_to="id_cards/", blank=True, null=True, max_length=500)
     id_card_verified = models.BooleanField(default=False)
     id_card_ocr_data = models.JSONField(blank=True, null=True)
     id_card_hash = models.CharField(max_length=64, blank=True, null=True, db_index=True)

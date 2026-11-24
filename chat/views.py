@@ -1,5 +1,8 @@
+import logging
 from datetime import timedelta
 from rest_framework.views import APIView
+
+logger = logging.getLogger(__name__)
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -405,14 +408,18 @@ class SendMessageView(APIView):
         ).update(is_hidden=False)
 
         att_first = attachment if (attachment and not attachments) else None
-        msg = Message.objects.create(
-            conversation=conv,
-            sender=request.user,
-            text=text,
-            attachment=att_first,
-            is_anonymous=is_anon,
-            anonymous_alias=anon_alias if is_anon else "",
-        )
+        try:
+            msg = Message.objects.create(
+                conversation=conv,
+                sender=request.user,
+                text=text,
+                attachment=att_first,
+                is_anonymous=is_anon,
+                anonymous_alias=anon_alias if is_anon else "",
+            )
+        except Exception as err:
+            logger.exception("Failed to create message: %s", err)
+            return Response({"error": "Failed to save message. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         if is_anon and not conv.is_anonymous:
             conv.is_anonymous = True
@@ -433,6 +440,13 @@ class SendMessageView(APIView):
                     msg.delete()
                     msg_err = err.message if hasattr(err, "message") else str(err)
                     return Response({"error": msg_err}, status=status.HTTP_400_BAD_REQUEST)
+                except Exception as err:
+                    logger.exception("Failed to process attachment '%s': %s", getattr(att_file, 'name', 'unnamed'), err)
+                    msg.delete()
+                    return Response(
+                        {"error": f"Failed to upload '{getattr(att_file, 'name', 'attachment')}': {str(err)}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
         conv.save()  # update updated_at timestamp
 

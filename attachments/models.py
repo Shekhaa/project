@@ -57,7 +57,7 @@ class MediaAttachment(models.Model):
     )
     
     # Physical File & Names
-    file = models.FileField(upload_to=attachment_upload_path)
+    file = models.FileField(upload_to=attachment_upload_path, max_length=500)
     file_name = models.CharField(max_length=255, help_text="Original sanitized filename")
     stored_name = models.CharField(max_length=255, blank=True, default="")
     
