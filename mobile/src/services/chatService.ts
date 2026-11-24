@@ -224,6 +224,7 @@ export const chatService = {
 
     const res = await api.post(`/chat/${conversationId}/send/`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
       onUploadProgress: (progressEvent) => {
         if (progressEvent.total && onProgress) {
           const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);

@@ -312,12 +312,9 @@ function AppMain() {
   }
 
   // Authenticated non-staff with incomplete profile -> Mandatory Onboarding Screen
-  // Fully verified Microsoft SSO students have complete institutional records and enter feed directly
   const isProfileIncomplete =
     currentUser &&
     !currentUser.profile_completed &&
-    currentUser.verification_tier !== 'FULLY_VERIFIED' &&
-    currentUser.verification_method !== 'MICROSOFT_SSO' &&
     !currentUser.is_staff &&
     !currentUser.is_superuser;
 

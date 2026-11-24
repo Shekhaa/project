@@ -58,8 +58,11 @@ class CloudinaryMediaStorage(Storage):
         sub_dir = posixpath.dirname(clean_name)
         folder = posixpath.join(self.folder_prefix, sub_dir) if sub_dir else self.folder_prefix
         base_name = posixpath.basename(clean_name)
-        public_id, _ = os.path.splitext(base_name)
         resource_type = self._determine_resource_type(base_name)
+        if resource_type == "raw":
+            public_id = base_name
+        else:
+            public_id, _ = os.path.splitext(base_name)
 
         if hasattr(content, 'seek'):
             content.seek(0)
@@ -114,7 +117,10 @@ class CloudinaryMediaStorage(Storage):
 
         if self.cloud_name:
             resource_type = self._determine_resource_type(name_str)
-            return f"https://res.cloudinary.com/{self.cloud_name}/{resource_type}/upload/{self.folder_prefix}/{name_str}"
+            # Use q_auto,f_auto for images and videos to enable fast progressive CDN delivery & streaming
+            transform = "q_auto,f_auto" if resource_type in ("image", "video") else ""
+            prefix = f"{transform}/" if transform else ""
+            return f"https://res.cloudinary.com/{self.cloud_name}/{resource_type}/upload/{prefix}{self.folder_prefix}/{name_str}"
 
         # Local relative fallback
         media_url = getattr(settings, 'MEDIA_URL', '/media/')

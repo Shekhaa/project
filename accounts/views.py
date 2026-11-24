@@ -34,10 +34,7 @@ def _build_user_auth_payload(request, user):
     from config.media_utils import resolve_media_url
     prof = getattr(user, "profile", None)
     avatar_url = resolve_media_url(request, prof.profile_picture) if (prof and prof.profile_picture) else None
-    is_ms_or_verified = (
-        getattr(user, "verification_tier", "") == "FULLY_VERIFIED"
-        or (prof and getattr(prof, "verification_method", "") == "MICROSOFT_SSO")
-    )
+    profile_done = prof.profile_completed if prof else getattr(user, "profile_completed", False)
     return {
         "id": user.id,
         "email": user.email,
@@ -54,7 +51,7 @@ def _build_user_auth_payload(request, user):
         "verification_method": prof.verification_method if prof else None,
         "can_participate": user.can_participate,
         "badge_label": user.badge_label,
-        "profile_completed": True if is_ms_or_verified else user.profile_completed,
+        "profile_completed": profile_done,
     }
 
 
@@ -734,7 +731,7 @@ class MicrosoftSSOView(APIView):
                 branch=branch,
                 academic_year=academic_year,
                 verified=True,
-                profile_completed=True,
+                profile_completed=False,
                 id_card_verified=True,
                 verification_method="MICROSOFT_SSO",
             )
@@ -743,9 +740,6 @@ class MicrosoftSSOView(APIView):
             if not profile.verified:
                 profile.verified = True
                 profile_fields.append("verified")
-            if not profile.profile_completed:
-                profile.profile_completed = True
-                profile_fields.append("profile_completed")
             if not profile.id_card_verified:
                 profile.id_card_verified = True
                 profile_fields.append("id_card_verified")

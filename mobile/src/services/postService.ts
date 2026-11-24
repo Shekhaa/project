@@ -163,7 +163,8 @@ export const postService = {
   }) {
     const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
     const res = await api.post('/posts/create/', data, isFormData ? {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
     } : undefined);
     return res.data;
   },
