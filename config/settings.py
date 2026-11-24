@@ -196,6 +196,25 @@ MEDIA_URL = '/media/'
 _media_root_env = os.getenv('CC_MEDIA_ROOT')
 MEDIA_ROOT = Path(_media_root_env) if _media_root_env else (BASE_DIR / 'media')
 
+# Cloudinary 25GB Free Permanent Object Storage
+CLOUDINARY_CLOUD_NAME = os.getenv('CLOUDINARY_CLOUD_NAME', 'cvwywt63').strip()
+CLOUDINARY_API_KEY = os.getenv('CLOUDINARY_API_KEY', '167684133529433').strip()
+CLOUDINARY_API_SECRET = os.getenv('CLOUDINARY_API_SECRET', 'uPjSxrttG6NvH8xbU5vedPMYPB0').strip()
+CLOUDINARY_MEDIA_FOLDER = os.getenv('CLOUDINARY_MEDIA_FOLDER', 'campus_connect').strip()
+
+# Storage Configuration for Django 5.0+ and legacy backends
+STORAGES = {
+    "default": {
+        "BACKEND": "config.storage_backends.CloudinaryMediaStorage"
+        if (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_SECRET)
+        else "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+DEFAULT_FILE_STORAGE = STORAGES["default"]["BACKEND"]
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Email Delivery Configuration (Brevo / Resend HTTP API or SMTP with local Console fallback)
