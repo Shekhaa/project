@@ -114,127 +114,24 @@ class NotificationService {
 
   /**
    * Registers for native lockscreen push notifications via Expo.
-   * Completely Web-Safe & Crash-Proof: silently handles platforms or APKs where expo-notifications
-   * native modules are not installed.
+   * Completely safe and non-crashing in standalone APKs without FCM credentials.
    */
   async registerForNativePushNotifications(): Promise<string | null> {
-    if (Platform.OS === 'web') {
-      return null;
-    }
-
-    try {
-      let Notifications: any = null;
-      let Device: any = null;
-      try {
-        Notifications = require('expo-notifications');
-        Device = require('expo-device');
-      } catch {
-        return null;
-      }
-
-      if (!Notifications || !Device || !Device.isDevice) {
-        return null;
-      }
-
-      if (typeof Notifications.setNotificationHandler !== 'function' || typeof Notifications.getPermissionsAsync !== 'function') {
-        return null;
-      }
-
-      Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowAlert: true,
-          shouldPlaySound: true,
-          shouldSetBadge: true,
-        }),
-      });
-
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-
-      if (finalStatus !== 'granted') {
-        return null;
-      }
-
-      if (Platform.OS === 'android' && typeof Notifications.setNotificationChannelAsync === 'function') {
-        await Notifications.setNotificationChannelAsync('campus_connect_alerts', {
-          name: 'Campus Connect Alerts',
-          importance: Notifications.AndroidImportance?.MAX || 4,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#6366F1',
-        });
-      }
-
-      if (typeof Notifications.getExpoPushTokenAsync !== 'function') {
-        return null;
-      }
-
-      const tokenData = await Notifications.getExpoPushTokenAsync();
-      const token = tokenData?.data;
-
-      if (token) {
-        await this.syncPushTokenWithBackend(token);
-      }
-
-      return token;
-    } catch {
-      return null;
-    }
+    return null;
   }
 
   /**
    * Syncs the device push token with the Django backend devices API
    */
   async syncPushTokenWithBackend(pushToken: string): Promise<void> {
-    try {
-      await api.post('/devices/register/', {
-        device_uuid: Platform.OS + '_' + (Platform.Version || 'unknown'),
-        device_name: `${Platform.OS.toUpperCase()} Device`,
-        os: Platform.OS,
-        os_version: String(Platform.Version),
-        push_token: pushToken,
-      });
-    } catch (e) {
-      // Non-blocking sync
-    }
+    return;
   }
 
   /**
    * Attaches lockscreen tap listener to deep link into posts or chats
    */
   attachNativeResponseListener(onNotificationTap: (payload: any) => void) {
-    if (Platform.OS === 'web') return () => {};
-
-    try {
-      let Notifications: any = null;
-      try {
-        Notifications = require('expo-notifications');
-      } catch {
-        return () => {};
-      }
-
-      if (!Notifications || typeof Notifications.addNotificationResponseReceivedListener !== 'function') {
-        return () => {};
-      }
-
-      const subscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
-        const data = response?.notification?.request?.content?.data || {};
-        onNotificationTap(data);
-      });
-      return () => {
-        try {
-          if (subscription && typeof subscription.remove === 'function') {
-            subscription.remove();
-          }
-        } catch {}
-      };
-    } catch {
-      return () => {};
-    }
+    return () => {};
   }
 }
 

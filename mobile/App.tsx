@@ -20,6 +20,19 @@ LogBox.ignoreLogs([
   'Touch Bank',
 ]);
 
+// Global native unhandled exception barrier: prevents Android release APK force-close
+if (typeof (global as any).ErrorUtils !== 'undefined') {
+  const previousHandler = (global as any).ErrorUtils.getGlobalHandler();
+  (global as any).ErrorUtils.setGlobalHandler((error: any, isFatal?: boolean) => {
+    console.warn('Captured Global Exception (prevented process exit):', error, isFatal);
+    if (!isFatal && previousHandler) {
+      try {
+        previousHandler(error, isFatal);
+      } catch {}
+    }
+  });
+}
+
 if (Platform.OS === 'web' && typeof console !== 'undefined') {
   const originalWarn = console.warn;
   console.warn = (...args: any[]) => {
@@ -33,6 +46,7 @@ if (Platform.OS === 'web' && typeof console !== 'undefined') {
   };
 }
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Home, Building2, MessageSquare, User as UserIcon, Search, Flame } from 'lucide-react-native';
 import {
   authService,
@@ -165,8 +179,10 @@ function AppMain() {
     try {
       const session = await authService.getStoredSession();
       let activeUser: User | null = session?.user || null;
-      if (activeUser) {
+      if (activeUser && typeof activeUser.id === 'number') {
         setCurrentUser(activeUser);
+      } else {
+        activeUser = null;
       }
 
       // Handle Microsoft Entra ID web redirect fragment (#id_token= or #access_token=) centrally
@@ -215,7 +231,7 @@ function AppMain() {
         authService
           .getCurrentUser()
           .then((freshUser) => {
-            if (freshUser) {
+            if (freshUser && typeof freshUser.id === 'number') {
               setCurrentUser(freshUser);
             }
           })
@@ -223,6 +239,10 @@ function AppMain() {
       }
     } catch (e) {
       console.log('Session check error', e);
+      try {
+        await AsyncStorage.multiRemove(['access_token', 'refresh_token', 'user_info']);
+      } catch {}
+      setCurrentUser(null);
     } finally {
       setLoading(false);
     }
@@ -292,7 +312,16 @@ function AppMain() {
   }
 
   // Authenticated non-staff with incomplete profile -> Mandatory Onboarding Screen
-  if (currentUser && !currentUser.profile_completed && !currentUser.is_staff && !currentUser.is_superuser) {
+  // Fully verified Microsoft SSO students have complete institutional records and enter feed directly
+  const isProfileIncomplete =
+    currentUser &&
+    !currentUser.profile_completed &&
+    currentUser.verification_tier !== 'FULLY_VERIFIED' &&
+    currentUser.verification_method !== 'MICROSOFT_SSO' &&
+    !currentUser.is_staff &&
+    !currentUser.is_superuser;
+
+  if (isProfileIncomplete) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
@@ -364,7 +393,7 @@ function AppMain() {
           <LostFoundScreen
             currentUser={currentUser}
             canParticipate={canParticipate}
-            onRequireAuth={() => setAuthMode('login')}
+            onRequireAuth={handleRequireAuth}
             onRequireVerify={handleRequireVerify}
             onOpenProfile={(uid) => setViewingProfileUserId(uid)}
           />
@@ -604,6 +633,13 @@ class RootErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundar
     this.setState({ hasError: false, error: null });
   };
 
+  handleResetSession = async () => {
+    try {
+      await AsyncStorage.multiRemove(['access_token', 'refresh_token', 'user_info']);
+    } catch {}
+    this.setState({ hasError: false, error: null });
+  };
+
   render() {
     if (this.state.hasError) {
       return (
@@ -615,10 +651,16 @@ class RootErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundar
             {this.state.error?.message || 'An unexpected error occurred.'}
           </Text>
           <TouchableOpacity
-            style={{ backgroundColor: '#6366F1', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10 }}
+            style={{ backgroundColor: '#6366F1', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10, width: '100%', maxWidth: 280, alignItems: 'center' }}
             onPress={this.handleReload}
           >
             <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>Reload Campus Connect</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ marginTop: 14, paddingHorizontal: 16, paddingVertical: 10, alignItems: 'center' }}
+            onPress={this.handleResetSession}
+          >
+            <Text style={{ color: '#cbd5e1', fontSize: 13, fontWeight: '600' }}>Clear Saved Session & Start Fresh</Text>
           </TouchableOpacity>
         </SafeAreaView>
       );

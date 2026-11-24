@@ -110,6 +110,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
   // 2. MICROSOFT SSO & ID CARD VERIFICATION STATE
   // ==========================================
   const [inAppOAuthVisible, setInAppOAuthVisible] = useState(false);
+  const oauthInterceptingRef = React.useRef(false);
   const [ssoTokenModal, setSsoTokenModal] = useState(false);
   const [manualTokenInput, setManualTokenInput] = useState('');
   const [ssoLoading, setSsoLoading] = useState(false);
@@ -273,6 +274,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
     }
 
     await setMsOAuthMode('login');
+    oauthInterceptingRef.current = false;
     const authUrl = buildMicrosoftAuthUrl();
 
     try {
@@ -290,10 +292,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
 
   const handleOAuthNavigationChange = async (navState: any) => {
     const url = navState.url;
-    if (!url) return;
+    if (!url || oauthInterceptingRef.current) return;
 
     // Intercept redirect when url contains id_token or access_token
     if (url.includes('id_token=') || url.includes('access_token=')) {
+      oauthInterceptingRef.current = true;
       setInAppOAuthVisible(false);
       setSsoLoading(true);
       try {
@@ -301,11 +304,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
         const token = match ? decodeURIComponent(match[1]) : null;
         if (token) {
           const res = await authService.loginWithMicrosoft(token);
-          onLoginSuccess(res.user);
+          if (res?.user) {
+            onLoginSuccess(res.user);
+          } else {
+            setSsoError('Invalid response received from authentication server.');
+          }
         } else {
           setSsoError('Could not parse identity token from university response.');
         }
       } catch (err: any) {
+        oauthInterceptingRef.current = false;
         const data = err.response?.data;
         const errMsg =
           (typeof data?.error === 'string' && data.error) ||

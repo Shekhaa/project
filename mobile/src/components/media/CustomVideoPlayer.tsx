@@ -647,8 +647,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.75)',
     justifyContent: 'center',
     alignItems: 'center',
-    backdropFilter: 'blur(8px)',
-  },
+    ...(Platform.OS === 'web' ? { backdropFilter: 'blur(8px)' } : {}),
+  } as any,
   bottomControlsBar: {
     position: 'absolute',
     bottom: 0,

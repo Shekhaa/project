@@ -3357,7 +3357,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         imageUrl={profile?.profile_picture || currentUser.profile_picture || currentUser.avatar}
         name={currentUser.full_name || profile?.username || currentUser.email}
         username={profile?.username || currentUser.username}
-        collegeName={profile?.college_name || currentUser.college?.name}
+        collegeName={profile?.college_name || (currentUser as any)?.college?.name || 'Graphic Era University'}
         onClose={() => setAvatarZoomVisible(false)}
       />
     </ScrollView>
