@@ -577,11 +577,63 @@ function AppMain() {
   );
 }
 
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class RootErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('RootErrorBoundary caught error:', error, errorInfo);
+  }
+
+  handleReload = async () => {
+    this.setState({ hasError: false, error: null });
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#0b0f19', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <Text style={{ color: '#ef4444', fontSize: 18, fontWeight: '700', marginBottom: 12, textAlign: 'center' }}>
+            Something went wrong
+          </Text>
+          <Text style={{ color: '#94a3b8', fontSize: 13, textAlign: 'center', marginBottom: 24 }}>
+            {this.state.error?.message || 'An unexpected error occurred.'}
+          </Text>
+          <TouchableOpacity
+            style={{ backgroundColor: '#6366F1', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10 }}
+            onPress={this.handleReload}
+          >
+            <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>Reload Campus Connect</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   return (
-    <ThemeProvider>
-      <AppMain />
-    </ThemeProvider>
+    <RootErrorBoundary>
+      <ThemeProvider>
+        <AppMain />
+      </ThemeProvider>
+    </RootErrorBoundary>
   );
 }
 

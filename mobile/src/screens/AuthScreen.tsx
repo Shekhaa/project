@@ -181,11 +181,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
       const res = await authService.loginWithPassword(cleanId, cleanPass);
       onLoginSuccess(res.user);
     } catch (err: any) {
-      const errMsg =
-        err.response?.data?.error ||
-        err.response?.data?.detail ||
-        err.message ||
-        'Invalid login credentials. Please check your username/roll number and password.';
+      const data = err.response?.data;
+      let errMsg = 'Invalid login credentials. Please check your username/roll number and password.';
+      if (typeof data?.error === 'string') {
+        errMsg = data.error;
+      } else if (typeof data?.detail === 'string') {
+        errMsg = data.detail;
+      } else if (typeof err.message === 'string') {
+        errMsg = err.message;
+      }
       setLoginError(errMsg);
     } finally {
       setLoginLoading(false);
@@ -253,23 +257,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
         if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history?.replaceState) {
           window.history.replaceState(null, '', window.location.pathname);
         }
-        if (Platform.OS !== 'web') {
-          Alert.alert(
-            'University Identity Verified! 🎓',
-            `Welcome, ${res.user.full_name || 'Student'}!\nVerified Email: ${res.user.email}\nCollege: ${res.detected_student?.college_name || 'Graphic Era University'}`
-          );
-        }
         onLoginSuccess(res.user);
       } catch (err: any) {
+        const data = err.response?.data;
         const errMsg =
-          err.response?.data?.error ||
-          err.response?.data?.detail ||
-          err.message ||
+          (typeof data?.error === 'string' && data.error) ||
+          (typeof data?.detail === 'string' && data.detail) ||
+          (typeof err.message === 'string' && err.message) ||
           'Microsoft verification failed. Please try again.';
         setSsoError(errMsg);
-        if (Platform.OS !== 'web') {
-          Alert.alert('SSO Verification Failed', errMsg);
-        }
       } finally {
         setSsoLoading(false);
       }
@@ -301,31 +297,22 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
       setInAppOAuthVisible(false);
       setSsoLoading(true);
       try {
-        const hash = url.split('#')[1] || url.split('?')[1] || '';
-        const params = new URLSearchParams(hash);
-        const token = params.get('id_token') || params.get('access_token');
+        const match = url.match(/(?:id_token|access_token)=([^&#]+)/);
+        const token = match ? decodeURIComponent(match[1]) : null;
         if (token) {
           const res = await authService.loginWithMicrosoft(token);
-          if (Platform.OS !== 'web') {
-            Alert.alert(
-              'University Identity Verified! 🎓',
-              `Welcome, ${res.user.full_name || 'Student'}!\nVerified Email: ${res.user.email}\nCollege: ${res.detected_student?.college_name || 'Graphic Era University'}`
-            );
-          }
           onLoginSuccess(res.user);
         } else {
           setSsoError('Could not parse identity token from university response.');
         }
       } catch (err: any) {
+        const data = err.response?.data;
         const errMsg =
-          err.response?.data?.error ||
-          err.response?.data?.detail ||
-          err.message ||
+          (typeof data?.error === 'string' && data.error) ||
+          (typeof data?.detail === 'string' && data.detail) ||
+          (typeof err.message === 'string' && err.message) ||
           'Microsoft verification failed. Please try again.';
         setSsoError(errMsg);
-        if (Platform.OS !== 'web') {
-          Alert.alert('SSO Verification Failed', errMsg);
-        }
       } finally {
         setSsoLoading(false);
       }

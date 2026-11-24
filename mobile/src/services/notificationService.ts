@@ -114,8 +114,8 @@ class NotificationService {
 
   /**
    * Registers for native lockscreen push notifications via Expo.
-   * Completely Web-Safe: silently handles web platforms where expo-notifications
-   * native modules are unavailable.
+   * Completely Web-Safe & Crash-Proof: silently handles platforms or APKs where expo-notifications
+   * native modules are not installed.
    */
   async registerForNativePushNotifications(): Promise<string | null> {
     if (Platform.OS === 'web') {
@@ -123,10 +123,20 @@ class NotificationService {
     }
 
     try {
-      const Notifications = require('expo-notifications');
-      const Device = require('expo-device');
+      let Notifications: any = null;
+      let Device: any = null;
+      try {
+        Notifications = require('expo-notifications');
+        Device = require('expo-device');
+      } catch {
+        return null;
+      }
 
-      if (!Device.isDevice) {
+      if (!Notifications || !Device || !Device.isDevice) {
+        return null;
+      }
+
+      if (typeof Notifications.setNotificationHandler !== 'function' || typeof Notifications.getPermissionsAsync !== 'function') {
         return null;
       }
 
@@ -150,24 +160,28 @@ class NotificationService {
         return null;
       }
 
-      if (Platform.OS === 'android') {
+      if (Platform.OS === 'android' && typeof Notifications.setNotificationChannelAsync === 'function') {
         await Notifications.setNotificationChannelAsync('campus_connect_alerts', {
           name: 'Campus Connect Alerts',
-          importance: Notifications.AndroidImportance.MAX,
+          importance: Notifications.AndroidImportance?.MAX || 4,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#6366F1',
         });
       }
 
+      if (typeof Notifications.getExpoPushTokenAsync !== 'function') {
+        return null;
+      }
+
       const tokenData = await Notifications.getExpoPushTokenAsync();
-      const token = tokenData.data;
+      const token = tokenData?.data;
 
       if (token) {
         await this.syncPushTokenWithBackend(token);
       }
 
       return token;
-    } catch (err) {
+    } catch {
       return null;
     }
   }
@@ -196,12 +210,28 @@ class NotificationService {
     if (Platform.OS === 'web') return () => {};
 
     try {
-      const Notifications = require('expo-notifications');
+      let Notifications: any = null;
+      try {
+        Notifications = require('expo-notifications');
+      } catch {
+        return () => {};
+      }
+
+      if (!Notifications || typeof Notifications.addNotificationResponseReceivedListener !== 'function') {
+        return () => {};
+      }
+
       const subscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
         const data = response?.notification?.request?.content?.data || {};
         onNotificationTap(data);
       });
-      return () => subscription.remove();
+      return () => {
+        try {
+          if (subscription && typeof subscription.remove === 'function') {
+            subscription.remove();
+          }
+        } catch {}
+      };
     } catch {
       return () => {};
     }
