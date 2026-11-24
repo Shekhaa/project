@@ -458,7 +458,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
 
   const renderHeader = () => (
     <View style={[styles.headerArea, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
-      {/* Top Navbar */}
+      <View style={[styles.headerInner, Platform.OS === 'web' && styles.webCenteredContainer]}>
+        {/* Top Navbar */}
       <View style={[styles.navBar, isCompactViewport && { paddingHorizontal: 12 }]}>
         <TouchableOpacity
           style={styles.brandRow}
@@ -687,6 +688,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           </TouchableOpacity>
         </View>
       )}
+      </View>
     </View>
   );
 
@@ -799,7 +801,10 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           maxToRenderPerBatch={5}
           windowSize={7}
           removeClippedSubviews={Platform.OS !== 'web'}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            Platform.OS === 'web' && styles.webListContent,
+          ]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -1001,6 +1006,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.cardBorder,
+  },
+  headerInner: {
+    width: '100%',
+  },
+  webCenteredContainer: {
+    maxWidth: 620,
+    width: '100%',
+    alignSelf: 'center',
   },
   navBar: {
     flexDirection: 'row',
@@ -1311,8 +1324,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   listContent: {
-    paddingTop: 12,
+    paddingTop: 8,
     paddingBottom: 24,
+  },
+  webListContent: {
+    maxWidth: 620,
+    width: '100%',
+    alignSelf: 'center',
   },
   emptyContainer: {
     alignItems: 'center',

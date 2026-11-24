@@ -268,22 +268,13 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                 {post.author_name}
               </Text>
               {!post.is_anonymous && post.author_verification_tier === 'FULLY_VERIFIED' && (
-                <View
-                  style={[
-                    styles.verifiedBadgePill,
-                    {
-                      backgroundColor: `${colors.success}1a`,
-                      borderColor: `${colors.success}44`,
-                    },
-                  ]}
-                >
-                  <ShieldCheck size={12} color={colors.success} />
-                  <Text style={[styles.verifiedBadgeText, { color: colors.success }]}>VERIFIED</Text>
+                <View style={styles.verifiedIconWrap}>
+                  <ShieldCheck size={14} color={colors.success} />
                 </View>
               )}
               {!post.is_anonymous && post.author_verification_tier === 'INVITE_VERIFIED' && (
-                <View style={styles.invitedBadgePill}>
-                  <Text style={styles.invitedBadgeText}>🎓 Invited</Text>
+                <View style={[styles.invitedBadgePill, { backgroundColor: isDark ? 'rgba(94, 106, 210, 0.16)' : '#e0e7ff' }]}>
+                  <Text style={[styles.invitedBadgeText, { color: isDark ? '#a5b4fc' : '#4338ca' }]}>Invited</Text>
                 </View>
               )}
               {post.is_anonymous && (
@@ -309,7 +300,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                   styles.communityBadge,
                   {
                     backgroundColor: colors.surfaceLight,
-                    borderColor: colors.cardBorder,
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.cardBorder,
                   },
                 ]}
               >
@@ -355,7 +346,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
 
       {/* 4. 1-Tap Campus Poll - Any signed-in Gmail student can vote immediately */}
       {post.poll && (
-        <View style={{ marginHorizontal: 12 }}>
+        <View style={{ marginHorizontal: 14, marginVertical: 4 }}>
           <PollCard
             poll={post.poll}
             postId={post.id}
@@ -369,7 +360,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
 
       {/* 5. Academic Documents */}
       {docAttachments.length > 0 ? (
-        <View style={{ marginHorizontal: 12, marginVertical: 6, gap: 6 }}>
+        <View style={{ marginHorizontal: 14, marginVertical: 6, gap: 6 }}>
           {docAttachments.map((doc, idx) => (
             <DocumentCard key={doc.id || idx} attachment={doc} />
           ))}
@@ -580,10 +571,10 @@ const PostCardComponent: React.FC<PostCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
-    marginBottom: 16,
-    marginHorizontal: 12,
+    marginBottom: 12,
+    marginHorizontal: Platform.OS === 'web' ? 0 : 12,
     overflow: 'hidden',
   },
   header: {
@@ -591,8 +582,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 8,
+    paddingTop: 11,
+    paddingBottom: 4,
   },
   authorRow: {
     flexDirection: 'row',
@@ -613,35 +604,19 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
     maxWidth: '70%',
   },
-  verifiedBadgePill: {
-    flexDirection: 'row',
+  verifiedIconWrap: {
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 3,
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 5,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.25)',
-  },
-  verifiedBadgeText: {
-    color: '#10b981',
-    fontSize: 9.5,
-    fontWeight: '700',
-    letterSpacing: 0.4,
+    marginLeft: 1,
   },
   invitedBadgePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(94, 106, 210, 0.14)',
     paddingHorizontal: 6,
     paddingVertical: 1.5,
     borderRadius: 5,
-    borderWidth: 1,
-    borderColor: 'rgba(94, 106, 210, 0.3)',
   },
   invitedBadgeText: {
-    color: '#828fff',
     fontSize: 9.5,
     fontWeight: '700',
     letterSpacing: 0.2,
@@ -659,24 +634,24 @@ const styles = StyleSheet.create({
   metaLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 3,
+    marginTop: 2,
     gap: 5,
   },
   communityBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 1.5,
-    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 5,
     borderWidth: 1,
   },
   communityBadgeText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '600',
   },
   metaDot: {
     fontSize: 10,
   },
   timestamp: {
-    fontSize: 11.5,
+    fontSize: 11,
   },
   moreButton: {
     width: 32,
@@ -687,15 +662,16 @@ const styles = StyleSheet.create({
   },
   content: {
     fontSize: 14.5,
-    lineHeight: 22,
+    lineHeight: 21,
     letterSpacing: -0.15,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingTop: 4,
+    paddingBottom: 6,
   },
   videoWrapper: {
-    marginHorizontal: 12,
-    marginVertical: 6,
-    borderRadius: 14,
+    marginHorizontal: 14,
+    marginVertical: 4,
+    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#000',
   },
@@ -720,12 +696,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   mediaGridWrapper: {
-    marginHorizontal: 12,
-    marginVertical: 6,
+    marginHorizontal: 14,
+    marginVertical: 4,
   },
   imageContainer: {
     width: '100%',
-    marginTop: 6,
+    marginTop: 4,
     overflow: 'hidden',
   },
   postImage: {
@@ -739,7 +715,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     marginHorizontal: 14,
-    marginVertical: 6,
+    marginVertical: 4,
   },
   documentIconBox: {
     width: 44,
@@ -777,9 +753,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderTopWidth: 1,
-    marginTop: 6,
+    marginTop: 4,
   },
   actionGroup: {
     flexDirection: 'row',

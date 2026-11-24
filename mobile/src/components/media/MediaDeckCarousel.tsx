@@ -60,8 +60,10 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
+  const isWeb = Platform.OS === 'web';
+  const maxMediaHeight = isWeb ? 420 : 340;
   const [layoutWidth, setLayoutWidth] = useState<number>(() => {
-    return containerWidth || (Platform.OS === 'web' ? 580 : Dimensions.get('window').width - 32);
+    return containerWidth || (isWeb ? 580 : Dimensions.get('window').width - 24);
   });
   const [singleRatio, setSingleRatio] = useState<number | null>(null);
 
@@ -78,15 +80,19 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
 
   const total = mediaItems.length;
 
-  // Adapt single image aspect ratio (clamped between 4:5 portrait and 16:9 landscape)
+  // Measure and adapt aspect ratio (clamped between 4:5 portrait and 16:9 landscape)
+  // Dynamically adapts both single-image and multi-image deck containers to prevent dead letterbox zones
   useEffect(() => {
-    if (total === 1 && !isItemVideo(mediaItems[0])) {
-      const url = mediaItems[0].file_url || mediaItems[0].uri || '';
+    if (total >= 1) {
+      const firstVisual = mediaItems.find((m) => !isItemVideo(m));
+      if (!firstVisual) return;
+      const url = firstVisual.file_url || firstVisual.uri || '';
       if (!url) return;
       let cancelled = false;
       measureImageSize(url).then((dims) => {
         if (!cancelled && dims && dims.width > 0 && dims.height > 0) {
           const raw = dims.width / dims.height;
+          // Clamp ratio between 4:5 (0.8, tall portrait) and 16:9 (1.777, wide landscape)
           const clamped = Math.max(4 / 5, Math.min(16 / 9, raw));
           setSingleRatio(clamped);
         }
@@ -134,7 +140,7 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
         {isVideo ? (
           <CustomVideoPlayer
             url={single.file_url || single.uri || ''}
-            maxHeight={560}
+            maxHeight={maxMediaHeight}
             borderRadius={12}
           />
         ) : (
@@ -144,8 +150,8 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
             style={[
               styles.singleImageWrapper,
               {
-                aspectRatio: singleRatio || 4 / 3,
-                maxHeight: 520,
+                aspectRatio: singleRatio || 16 / 9,
+                maxHeight: maxMediaHeight,
                 backgroundColor: isDark ? '#000000' : colors.surfaceLight,
                 borderColor: colors.cardBorder,
               },
@@ -154,7 +160,7 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
             <Image
               source={{ uri: single.file_url || single.uri }}
               style={styles.singleImage}
-              resizeMode="contain"
+              resizeMode="cover"
             />
           </TouchableOpacity>
         )}
@@ -174,6 +180,13 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
   }
 
   // Multiple Media Items: Reddit / Twitter Deck Carousel
+  // Dynamically compute slide height based on measured aspect ratio (no letterbox dead space)
+  const deckRatio = singleRatio || 16 / 9;
+  const dynamicDeckHeight = Math.min(
+    maxMediaHeight,
+    Math.max(180, Math.round(layoutWidth / deckRatio))
+  );
+
   return (
     <View
       style={styles.carouselContainer}
@@ -201,7 +214,7 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={handleScrollEnd}
         scrollEventThrottle={16}
-        style={{ width: layoutWidth }}
+        style={{ width: layoutWidth, height: dynamicDeckHeight }}
       >
         {mediaItems.map((item, idx) => {
           const isVideo = isItemVideo(item);
@@ -214,6 +227,7 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
                 styles.slide,
                 {
                   width: layoutWidth,
+                  height: dynamicDeckHeight,
                   backgroundColor: isDark ? '#000000' : '#f8fafc',
                   borderColor: colors.cardBorder,
                 },
@@ -223,7 +237,7 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
                 <View style={styles.videoSlideBox}>
                   <CustomVideoPlayer
                     url={itemUrl}
-                    maxHeight={440}
+                    maxHeight={dynamicDeckHeight}
                     borderRadius={10}
                   />
                 </View>
@@ -236,7 +250,7 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
                   <Image
                     source={{ uri: itemUrl }}
                     style={styles.deckImage}
-                    resizeMode="contain"
+                    resizeMode="cover"
                   />
                 </TouchableOpacity>
               )}
@@ -320,8 +334,6 @@ const styles = StyleSheet.create({
   },
   singleImageWrapper: {
     width: '100%',
-    minHeight: 220,
-    maxHeight: 540,
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
@@ -365,8 +377,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   slide: {
-    height: 440,
-    maxHeight: 520,
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 14,
