@@ -10,6 +10,7 @@ import {
   ScrollView,
   Platform,
   Modal,
+  TextInput,
   useWindowDimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,6 +18,8 @@ import { useTheme } from '../theme/ThemeContext';
 import { colors } from '../theme/colors';
 import { postService, Post } from '../services/postService';
 import { communityService, Community } from '../services/communityService';
+import { authService } from '../services/authService';
+import { UserAvatar } from '../components/common/UserAvatar';
 import { PostCard } from '../components/feed/PostCard';
 import { PostComposerModal } from '../components/feed/PostComposerModal';
 import { CommentsModal } from '../components/feed/CommentsModal';
@@ -26,7 +29,7 @@ import { notificationService, NotificationItem } from '../services/notificationS
 import { backHandlerRegistry } from '../services/backHandlerRegistry';
 import { api } from '../config/api';
 import { showCrossPlatformAlert } from '../utils/mediaUtils';
-import { Plus, Bell, Sparkles, SlidersHorizontal, Check, X, Sun, Moon, RotateCw } from 'lucide-react-native';
+import { Plus, Bell, Sparkles, SlidersHorizontal, Check, X, Sun, Moon, Search } from 'lucide-react-native';
 
 const SCOPE_TABS: Array<{
   key: 'ALL' | 'COLLEGE' | 'FOLLOWING' | 'SAVED' | 'MEDIA' | 'RESOURCES';
@@ -117,7 +120,24 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
+  // Universal Search State (Twitter / Reddit model)
+  const [activeSearchQuery, setActiveSearchQuery] = useState('');
+  const [searchModalVisible, setSearchModalVisible] = useState(false);
+  const [searchInputText, setSearchInputText] = useState('');
+  const [studentSuggestions, setStudentSuggestions] = useState<any[]>([]);
+  const [searchingStudents, setSearchingStudents] = useState(false);
+  const searchDebounceRef = useRef<any>(null);
+
   // Universal Android Hardware & Browser Back Navigation
+  useEffect(() => {
+    if (searchModalVisible) {
+      backHandlerRegistry.push('FeedSearchModal', () => {
+        setSearchModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('FeedSearchModal');
+    }
+  }, [searchModalVisible]);
   useEffect(() => {
     if (activeCommentsPost) {
       backHandlerRegistry.push('FeedCommentsModal', () => {
@@ -292,6 +312,10 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         ? { scope: selectedScope }
         : {};
 
+      if (activeSearchQuery.trim()) {
+        feedQuery.search = activeSearchQuery.trim();
+      }
+
       if (isRefresh) {
         feedQuery._t = Date.now();
       }
@@ -307,7 +331,47 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedCommunityId, selectedScope]);
+  }, [selectedCommunityId, selectedScope, activeSearchQuery]);
+
+  const handleSearchInputChange = (text: string) => {
+    setSearchInputText(text);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (!text.trim()) {
+      setStudentSuggestions([]);
+      return;
+    }
+    searchDebounceRef.current = setTimeout(async () => {
+      try {
+        setSearchingStudents(true);
+        const res: any = await authService.searchStudents(text.trim());
+        const list = Array.isArray(res) ? res : res?.results || [];
+        setStudentSuggestions(list.slice(0, 6));
+      } catch {
+        setStudentSuggestions([]);
+      } finally {
+        setSearchingStudents(false);
+      }
+    }, 250);
+  };
+
+  const handleSelectStudent = (student: any) => {
+    setSearchModalVisible(false);
+    setSearchInputText('');
+    setStudentSuggestions([]);
+    if (!currentUser) {
+      onRequireAuth?.();
+      return;
+    }
+    const targetId = student.id || student.user_id;
+    if (targetId) {
+      onOpenProfile?.(targetId);
+    }
+  };
+
+  const handleExecutePostSearch = () => {
+    setSearchModalVisible(false);
+    setActiveSearchQuery(searchInputText.trim());
+  };
 
   useEffect(() => {
     loadData();
@@ -344,11 +408,14 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         if (savedIds.length === 0) return;
         feedData = await postService.getFeed({ ids: savedIds }, nextPage);
       } else {
-        const feedQuery = selectedCommunityId
+        const feedQuery: any = selectedCommunityId
           ? { communityId: selectedCommunityId }
           : selectedScope && selectedScope !== 'ALL'
           ? { scope: selectedScope }
-          : undefined;
+          : {};
+        if (activeSearchQuery.trim()) {
+          feedQuery.search = activeSearchQuery.trim();
+        }
         feedData = await postService.getFeed(feedQuery, nextPage);
       }
 
@@ -467,8 +534,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           activeOpacity={0.75}
           accessibilityLabel="Refresh feed"
         >
-          <Text style={[styles.brandTitle, { color: colors.textPrimary }, isCompactViewport && { fontSize: 16 }]}>Campus</Text>
-          <Text style={[styles.brandAccent, { color: colors.brandAccent }, isCompactViewport && { fontSize: 16 }]}>Connect</Text>
+          <Text style={[styles.brandTitle, { color: colors.textPrimary }, isCompactViewport && { fontSize: 18 }]}>Vike</Text>
+          <Text style={[styles.brandAccent, { color: colors.primary }, isCompactViewport && { fontSize: 18 }]}>.</Text>
         </TouchableOpacity>
 
         <View style={[styles.navActions, isCompactViewport && { gap: 6 }]}>
@@ -492,24 +559,22 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             )}
           </TouchableOpacity>
 
-          {/* Quick 1-Tap Refresh Button */}
+          {/* Quick Universal Search Button */}
           <TouchableOpacity
             style={[
               styles.iconBtn,
               { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
               isCompactViewport && { width: 32, height: 32, borderRadius: 16 },
-              refreshing && { opacity: 0.7 },
+              Boolean(activeSearchQuery) && styles.iconBtnActive,
             ]}
-            onPress={handleRefresh}
+            onPress={() => {
+              setSearchInputText(activeSearchQuery);
+              setSearchModalVisible(true);
+            }}
             activeOpacity={0.7}
-            disabled={refreshing}
-            accessibilityLabel="Refresh feed"
+            accessibilityLabel="Search students and posts"
           >
-            {refreshing ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <RotateCw size={isCompactViewport ? 15 : 17} color={colors.textPrimary} />
-            )}
+            <Search size={isCompactViewport ? 15 : 17} color={activeSearchQuery ? colors.primary : colors.textPrimary} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -684,6 +749,24 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             }}
           >
             <Text style={styles.clearFilterText}>Reset to Global</Text>
+            <X size={14} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Active Search Pill Bar if search query is active */}
+      {activeSearchQuery.trim().length > 0 && (
+        <View style={[styles.activeFilterBar, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+          <Text style={[styles.activeFilterText, { color: colors.textSecondary }]}>
+            Search: <Text style={styles.activeFilterHighlight}>"{activeSearchQuery}"</Text>
+          </Text>
+          <TouchableOpacity
+            style={styles.clearFilterBtn}
+            onPress={() => {
+              setActiveSearchQuery('');
+            }}
+          >
+            <Text style={styles.clearFilterText}>Clear</Text>
             <X size={14} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
@@ -956,6 +1039,108 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       </Modal>
       )}
 
+      {/* Universal Search Modal (Twitter / Reddit style student & post discovery) */}
+      {searchModalVisible && (
+        <Modal
+          visible={searchModalVisible}
+          transparent
+          animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+          onRequestClose={() => setSearchModalVisible(false)}
+        >
+          <TouchableOpacity
+            style={[styles.filterModalOverlay, { backgroundColor: colors.modalOverlay }]}
+            activeOpacity={1}
+            onPress={() => setSearchModalVisible(false)}
+          >
+            <View
+              style={[
+                styles.searchModalCard,
+                { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+              ]}
+              onStartShouldSetResponder={() => true}
+            >
+              <View style={[styles.filterModalHeader, { borderBottomColor: colors.cardBorder }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Search size={18} color={colors.primary} />
+                  <Text style={[styles.filterModalTitle, { color: colors.textPrimary }]}>Universal Search</Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.closeBtn, { backgroundColor: colors.surfaceLight }]}
+                  onPress={() => setSearchModalVisible(false)}
+                >
+                  <X size={16} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Search Input Box */}
+              <View style={[styles.searchInputRow, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                <Search size={16} color={colors.textMuted} />
+                <TextInput
+                  style={[styles.searchInputField, { color: colors.textPrimary }]}
+                  placeholder="Search students, campus posts, notes..."
+                  placeholderTextColor={colors.textMuted}
+                  value={searchInputText}
+                  onChangeText={handleSearchInputChange}
+                  onSubmitEditing={handleExecutePostSearch}
+                  autoFocus
+                  returnKeyType="search"
+                />
+                {searchInputText.length > 0 && (
+                  <TouchableOpacity onPress={() => handleSearchInputChange('')}>
+                    <X size={16} color={colors.textMuted} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Student Live Matching Suggestions */}
+              {studentSuggestions.length > 0 && (
+                <View style={styles.suggestionsContainer}>
+                  <Text style={[styles.suggestionsHeader, { color: colors.textMuted }]}>
+                    STUDENTS MATCHING "{searchInputText}"
+                  </Text>
+                  {studentSuggestions.map((st) => (
+                    <TouchableOpacity
+                      key={st.id || st.user_id}
+                      style={[styles.studentSuggestionItem, { borderBottomColor: colors.hairline }]}
+                      onPress={() => handleSelectStudent(st)}
+                      activeOpacity={0.75}
+                    >
+                      <UserAvatar
+                        uri={st.avatar || st.profile?.avatar}
+                        name={st.full_name || st.name || st.username}
+                        size={36}
+                      />
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <Text style={[styles.studentSuggestionName, { color: colors.textPrimary }]} numberOfLines={1}>
+                          {st.full_name || st.name || st.username}
+                        </Text>
+                        <Text style={[styles.studentSuggestionCollege, { color: colors.textSecondary }]} numberOfLines={1}>
+                          @{st.username || 'student'} • {st.college_name || st.profile?.college_name || 'Graphic Era'}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Search Posts Action Button */}
+              {searchInputText.trim().length > 0 && (
+                <TouchableOpacity
+                  style={[styles.executeSearchBtn, { backgroundColor: colors.primary }]}
+                  onPress={handleExecutePostSearch}
+                  activeOpacity={0.8}
+                >
+                  <Search size={15} color="#ffffff" style={{ marginRight: 6 }} />
+                  <Text style={styles.executeSearchBtnText}>
+                    Search campus posts for "{searchInputText.trim()}"
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
+
       {/* Dedicated Post Composer & Photo Editor / PDF Modal */}
       <PostComposerModal
         visible={composerVisible}
@@ -1210,6 +1395,67 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: colors.cardBorder,
+  },
+  searchModalCard: {
+    width: '100%',
+    maxWidth: 480,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  searchInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 14,
+  },
+  searchInputField: {
+    flex: 1,
+    fontSize: 14,
+    padding: 0,
+  },
+  suggestionsContainer: {
+    marginTop: 12,
+    maxHeight: 240,
+  },
+  suggestionsHeader: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  studentSuggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+  },
+  studentSuggestionName: {
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  studentSuggestionCollege: {
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  executeSearchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 14,
+  },
+  executeSearchBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   filterModalHeader: {
     flexDirection: 'row',

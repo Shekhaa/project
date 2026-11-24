@@ -1660,7 +1660,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   onPress={() => {
                     setMoreMenuVisible(false);
                     Share.share({
-                      message: `Join ${activeCommunity.name} on Campus Connect!`,
+                      message: `Join ${activeCommunity.name} on Vike!`,
                     });
                   }}
                 >

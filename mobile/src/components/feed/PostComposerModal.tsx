@@ -51,6 +51,8 @@ import {
   MAX_DOCUMENT_MB,
   MAX_VIDEO_BYTES,
   MAX_VIDEO_MB,
+  MAX_IMAGE_BYTES,
+  MAX_IMAGE_MB,
   alertOversizedDocuments,
   clampAspectRatio,
   dataUrlToWebFile,
@@ -262,22 +264,31 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
         quality: preset.jpegQuality,
       });
       if (!result.canceled && result.assets) {
-        const newItems: StagedAttachment[] = result.assets.map((asset: any) => {
+        const newItems: StagedAttachment[] = [];
+        for (const asset of result.assets) {
+          const size = asset.fileSize || 0;
           const fileName = asset.fileName || asset.uri.split('/').pop() || 'photo.jpg';
+          if (size > MAX_IMAGE_BYTES) {
+            showCrossPlatformAlert(
+              `Image Exceeds ${MAX_IMAGE_MB} MB`,
+              `"${fileName}" (${formatFileSize(size)}) exceeds the ${MAX_IMAGE_MB} MB limit.`
+            );
+            continue;
+          }
           const ext = fileName.split('.').pop()?.toLowerCase() || 'jpg';
-          return {
+          newItems.push({
             id: Math.random().toString(36).substring(7),
             uri: asset.uri,
             sourceUri: asset.uri,
             name: fileName,
-            size: asset.fileSize || 0,
-            sizeFormatted: formatFileSize(asset.fileSize || 0),
+            size: size,
+            sizeFormatted: formatFileSize(size),
             type: 'IMAGE',
             extension: ext,
             imageWidth: asset.width,
             imageHeight: asset.height,
-          };
-        });
+          });
+        }
         setStagedFiles((prev) => [...prev, ...newItems]);
       }
     } catch (err: any) {
@@ -289,10 +300,23 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
     const files: File[] = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
+    const validFiles: File[] = [];
+    for (const file of files) {
+      if (file.size > MAX_IMAGE_BYTES) {
+        showCrossPlatformAlert(
+          `Image Exceeds ${MAX_IMAGE_MB} MB`,
+          `"${file.name}" (${formatFileSize(file.size)}) exceeds the ${MAX_IMAGE_MB} MB limit.`
+        );
+      } else {
+        validFiles.push(file);
+      }
+    }
+    if (validFiles.length === 0) return;
+
     setProcessingImages(true);
     try {
       const processedList = await Promise.all(
-        files.map(async (file) => {
+        validFiles.map(async (file) => {
           const processed = await processWebImageForUpload(file, file.name, imageQuality);
           const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
           return {
@@ -498,7 +522,12 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
   };
 
   const handleSubmit = async () => {
-    if (!content.trim() && stagedFiles.length === 0 && !showPollBuilder) {
+    const hasValidPoll =
+      showPollBuilder &&
+      pollQuestion.trim().length > 0 &&
+      pollOptions.map((o) => o.trim()).filter(Boolean).length >= 2;
+
+    if (!content.trim() && stagedFiles.length === 0 && !hasValidPoll) {
       showCrossPlatformAlert(
         'Empty Post',
         'Please write something, attach media, or create a poll.'
@@ -506,7 +535,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
       return;
     }
 
-    if (showPollBuilder) {
+    if (showPollBuilder && !hasValidPoll) {
       if (!pollQuestion.trim()) {
         showCrossPlatformAlert('Poll Question Required', 'Please enter a question for your poll.');
         return;
@@ -547,7 +576,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
       } else if (!isAnonymous && selectedCommunity) {
         formData.append('community', String(selectedCommunity));
       }
-      formData.append('content', content.trim());
+      formData.append('content', content.trim() || (hasValidPoll ? pollQuestion.trim() : ''));
       formData.append('is_anonymous', String(isAnonymous));
       formData.append('media_type', determinedMediaType);
 
@@ -664,8 +693,12 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Create Post</Text>
           {(() => {
+            const hasValidPoll =
+              showPollBuilder &&
+              pollQuestion.trim().length > 0 &&
+              pollOptions.map((o) => o.trim()).filter(Boolean).length >= 2;
             const canPublish =
-              (content.trim().length > 0 || stagedFiles.length > 0) &&
+              (content.trim().length > 0 || stagedFiles.length > 0 || hasValidPoll) &&
               !submitting &&
               !processingImages;
             return (

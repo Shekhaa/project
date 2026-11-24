@@ -2,8 +2,10 @@ import { Alert, Image, Platform } from 'react-native';
 
 export const MAX_DOCUMENT_MB = 20;
 export const MAX_DOCUMENT_BYTES = MAX_DOCUMENT_MB * 1024 * 1024;
-export const MAX_VIDEO_MB = 100;
+export const MAX_VIDEO_MB = 10;
 export const MAX_VIDEO_BYTES = MAX_VIDEO_MB * 1024 * 1024;
+export const MAX_IMAGE_MB = 8;
+export const MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024;
 
 // Vertical photos render down to 9:16 (0.5625) and wide landscape up to 16:9 (1.7778)
 export const MIN_MEDIA_ASPECT_RATIO = 9 / 16;

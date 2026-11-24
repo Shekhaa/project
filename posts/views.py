@@ -95,6 +95,16 @@ class FeedView(generics.ListAPIView):
                 .prefetch_related("images", "attachments", "poll__options", "poll__votes")
                 .order_by("-created_at")
             )
+            search_query = (request.query_params.get("search") or request.query_params.get("q") or "").strip()
+            if search_query:
+                qs = qs.filter(
+                    Q(content__icontains=search_query) |
+                    Q(poll__question__icontains=search_query) |
+                    Q(document_name__icontains=search_query) |
+                    Q(author__first_name__icontains=search_query) |
+                    Q(author__last_name__icontains=search_query) |
+                    Q(author__username__icontains=search_query)
+                )
             return annotate_post_metrics(qs, user=None)
 
         user_community_ids = list(CommunityMember.objects.filter(
@@ -184,6 +194,17 @@ class FeedView(generics.ListAPIView):
         if followed_ids:
             private_filter &= ~Q(author_id__in=followed_ids)
         qs = qs.exclude(private_filter)
+
+        search_query = (request.query_params.get("search") or request.query_params.get("q") or "").strip()
+        if search_query:
+            qs = qs.filter(
+                Q(content__icontains=search_query) |
+                Q(poll__question__icontains=search_query) |
+                Q(document_name__icontains=search_query) |
+                Q(author__first_name__icontains=search_query) |
+                Q(author__last_name__icontains=search_query) |
+                Q(author__username__icontains=search_query)
+            )
 
         return annotate_post_metrics(qs, user=user)
 

@@ -100,6 +100,7 @@ export const postService = {
       scope?: 'GLOBAL' | 'COLLEGE' | 'FOLLOWING' | 'CONNECTIONS' | 'COMMUNITY' | 'MEDIA' | 'RESOURCES' | 'CONFESSIONS' | string;
       level?: 'ALL' | 'GLOBAL' | 'COLLEGE' | 'COURSE' | string;
       ids?: number[];
+      search?: string;
     } | number,
     page: number = 1
   ): Promise<PaginatedPosts> {
@@ -111,6 +112,7 @@ export const postService = {
       if (options.scope) params.scope = options.scope;
       if (options.level) params.level = options.level;
       if (options.ids && options.ids.length > 0) params.ids = options.ids.join(',');
+      if (options.search) params.search = options.search;
       if ((options as any)._t) params._t = (options as any)._t;
     }
     const res = await api.get('/posts/feed/', { params });

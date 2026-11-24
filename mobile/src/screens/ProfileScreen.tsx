@@ -14,6 +14,8 @@ import {
   Switch,
   Image,
   Share,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../theme/colors';
@@ -257,9 +259,54 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [resetEmail, setResetEmail] = useState(currentUser.email);
   const [resetOtp, setResetOtp] = useState('');
   const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
   const [resetOtpSent, setResetOtpSent] = useState(false);
   const [sendingResetOtp, setSendingResetOtp] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
+
+  // Reusable Slide-Down Sheet Animation (matching CommentsModal PanResponder)
+  const sheetTranslateY = React.useRef(new Animated.Value(0)).current;
+
+  const dismissModalWithSlide = (callback: () => void) => {
+    Animated.timing(sheetTranslateY, {
+      toValue: 650,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => {
+      sheetTranslateY.setValue(0);
+      callback();
+    });
+  };
+
+  const sheetPanResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => gestureState.dy > 5,
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          sheetTranslateY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 120 || gestureState.vy > 0.6) {
+          dismissModalWithSlide(() => {
+            setSettingsModalVisible(false);
+            setSavedModalVisible(false);
+            setBlockedModalVisible(false);
+            setAccountInfoModalVisible(false);
+            setPreferencesModalVisible(false);
+            setNotifModalVisible(false);
+          });
+        } else {
+          Animated.spring(sheetTranslateY, {
+            toValue: 0,
+            bounciness: 4,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
 
   // Account Deletion State
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -301,7 +348,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   useEffect(() => {
     if (settingsModalVisible) {
-      backHandlerRegistry.push('profile-settings', () => { setSettingsModalVisible(false); return true; });
+      sheetTranslateY.setValue(0);
+      backHandlerRegistry.push('profile-settings', () => { dismissModalWithSlide(() => setSettingsModalVisible(false)); return true; });
       return () => backHandlerRegistry.pop('profile-settings');
     }
   }, [settingsModalVisible]);
@@ -322,35 +370,40 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   useEffect(() => {
     if (savedModalVisible) {
-      backHandlerRegistry.push('profile-saved', () => { setSavedModalVisible(false); return true; });
+      sheetTranslateY.setValue(0);
+      backHandlerRegistry.push('profile-saved', () => { dismissModalWithSlide(() => setSavedModalVisible(false)); return true; });
       return () => backHandlerRegistry.pop('profile-saved');
     }
   }, [savedModalVisible]);
 
   useEffect(() => {
     if (blockedModalVisible) {
-      backHandlerRegistry.push('profile-blocked', () => { setBlockedModalVisible(false); return true; });
+      sheetTranslateY.setValue(0);
+      backHandlerRegistry.push('profile-blocked', () => { dismissModalWithSlide(() => setBlockedModalVisible(false)); return true; });
       return () => backHandlerRegistry.pop('profile-blocked');
     }
   }, [blockedModalVisible]);
 
   useEffect(() => {
     if (accountInfoModalVisible) {
-      backHandlerRegistry.push('profile-account-info', () => { setAccountInfoModalVisible(false); return true; });
+      sheetTranslateY.setValue(0);
+      backHandlerRegistry.push('profile-account-info', () => { dismissModalWithSlide(() => setAccountInfoModalVisible(false)); return true; });
       return () => backHandlerRegistry.pop('profile-account-info');
     }
   }, [accountInfoModalVisible]);
 
   useEffect(() => {
     if (preferencesModalVisible) {
-      backHandlerRegistry.push('profile-preferences', () => { setPreferencesModalVisible(false); return true; });
+      sheetTranslateY.setValue(0);
+      backHandlerRegistry.push('profile-preferences', () => { dismissModalWithSlide(() => setPreferencesModalVisible(false)); return true; });
       return () => backHandlerRegistry.pop('profile-preferences');
     }
   }, [preferencesModalVisible]);
 
   useEffect(() => {
     if (notifModalVisible) {
-      backHandlerRegistry.push('profile-notif', () => { setNotifModalVisible(false); return true; });
+      sheetTranslateY.setValue(0);
+      backHandlerRegistry.push('profile-notif', () => { dismissModalWithSlide(() => setNotifModalVisible(false)); return true; });
       return () => backHandlerRegistry.pop('profile-notif');
     }
   }, [notifModalVisible]);
@@ -494,7 +547,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   };
 
   const handleCopyInviteCode = async (code: string, collegeShort?: string) => {
-    const shareText = `Join me on Campus Connect${collegeShort ? ` (${collegeShort})` : ''}! Use my campus invite code: ${code}`;
+    const shareText = `Join me on Vike${collegeShort ? ` (${collegeShort})` : ''}! Use my campus invite code: ${code}`;
     if (Platform.OS === 'web') {
       try {
         if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -805,10 +858,24 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     }
   };
 
+  // Strong Password Validator (min 8 characters, letters & numbers)
+  const validateStrongPassword = (pwd: string): string | null => {
+    if (!pwd || pwd.length < 8) {
+      return 'Password must be at least 8 characters long.';
+    }
+    const hasLetter = /[a-zA-Z]/.test(pwd);
+    const hasNumber = /[0-9]/.test(pwd);
+    if (!hasLetter || !hasNumber) {
+      return 'Password must contain both letters and numbers.';
+    }
+    return null;
+  };
+
   // Change Password
   const handleChangePassword = async () => {
-    if (!newPassword || newPassword.length < 6) {
-      showCrossPlatformAlert('Error', 'New password must be at least 6 characters long.');
+    const pwdErr = validateStrongPassword(newPassword);
+    if (pwdErr) {
+      showCrossPlatformAlert('Weak Password', pwdErr);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -832,19 +899,20 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   // Send Reset Password OTP
   const handleSendResetOtp = async () => {
-    if (!resetEmail.includes('@')) {
-      showCrossPlatformAlert('Error', 'Please enter a valid college email.');
+    const targetEmail = resetEmail.trim() || currentUser?.email || '';
+    if (!targetEmail.includes('@')) {
+      showCrossPlatformAlert('Error', 'Please enter a valid email address (e.g. personal Gmail or registered email).');
       return;
     }
 
     setSendingResetOtp(true);
     try {
-      const res = await authService.forgotPassword(resetEmail.trim());
+      const res = await authService.forgotPassword(targetEmail);
       setResetOtpSent(true);
       showCrossPlatformAlert(
-        'Code Sent',
-        `A 6-digit password reset code was sent to ${resetEmail}.\n${
-          res.dev_otp ? `(Dev Code: ${res.dev_otp})` : ''
+        'Code Sent 📩',
+        `A 6-digit password reset code was sent to ${targetEmail}.${
+          res.dev_otp ? `\n(Dev Code: ${res.dev_otp})` : ''
         }`
       );
     } catch (e: any) {
@@ -860,16 +928,23 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       showCrossPlatformAlert('Error', 'Please enter the 6-digit OTP code.');
       return;
     }
-    if (!resetNewPassword || resetNewPassword.length < 6) {
-      showCrossPlatformAlert('Error', 'New password must be at least 6 characters.');
+    const pwdErr = validateStrongPassword(resetNewPassword);
+    if (pwdErr) {
+      showCrossPlatformAlert('Weak Password', pwdErr);
+      return;
+    }
+    if (resetNewPassword !== resetConfirmPassword) {
+      showCrossPlatformAlert('Mismatch', 'Confirm password does not match.');
       return;
     }
 
     setResettingPassword(true);
     try {
-      await authService.resetPassword(resetEmail.trim(), resetOtp.trim(), resetNewPassword.trim());
+      const targetEmail = resetEmail.trim() || currentUser?.email || '';
+      await authService.resetPassword(targetEmail, resetOtp.trim(), resetNewPassword.trim());
       setResetOtp('');
       setResetNewPassword('');
+      setResetConfirmPassword('');
       setResetOtpSent(false);
       showCrossPlatformAlert('Password Reset', 'You can now use your new password to sign in.');
     } catch (e: any) {
@@ -901,12 +976,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   const triggerLogout = () => {
     if (Platform.OS === 'web') {
-      const confirmed = typeof window !== 'undefined' ? window.confirm('Are you sure you want to sign out from Campus Connect?') : true;
+      const confirmed = typeof window !== 'undefined' ? window.confirm('Are you sure you want to sign out from Vike?') : true;
       if (confirmed) {
         onLogout();
       }
     } else {
-      Alert.alert('Sign Out', 'Are you sure you want to log out from Campus Connect?', [
+      Alert.alert('Sign Out', 'Are you sure you want to log out from Vike?', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Log Out', style: 'destructive', onPress: onLogout },
       ]);
@@ -1662,7 +1737,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   showCrossPlatformAlert('Post Comments', 'Tap into the Campus Feed tab to view and reply to comments on this post.');
                 }}
                 onSharePress={(p) => {
-                  showCrossPlatformAlert('Share', `Post by ${p.author_name} is published on Campus Connect.`);
+                  showCrossPlatformAlert('Share', `Post by ${p.author_name} is published on Vike.`);
                 }}
                 onDeletePost={async (pid) => {
                   try {
@@ -1797,20 +1872,40 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {settingsModalVisible && (
       <Modal
         visible={settingsModalVisible}
-        animationType={Platform.OS === 'web' ? 'none' : 'slide'}
+        animationType="none"
         transparent
-        onRequestClose={() => setSettingsModalVisible(false)}
+        onRequestClose={() => dismissModalWithSlide(() => setSettingsModalVisible(false))}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}
         >
-          <View style={[styles.settingsSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
-            <View style={styles.modalHeaderRow}>
+          <Animated.View
+            style={[
+              styles.settingsSheet,
+              {
+                backgroundColor: colors.surface,
+                borderTopColor: colors.cardBorder,
+                transform: [{ translateY: sheetTranslateY }],
+              },
+            ]}
+          >
+            {/* Real-time PanResponder Drag Handle (CommentsModal style) */}
+            <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleRow}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => dismissModalWithSlide(() => setSettingsModalVisible(false))}
+                hitSlop={{ top: 12, bottom: 12, left: 30, right: 30 }}
+              >
+                <View style={[styles.sheetHandle, { backgroundColor: colors.hairlineStrong || '#52525b' }]} />
+              </TouchableOpacity>
+            </View>
+
+            <View {...sheetPanResponder.panHandlers} style={styles.modalHeaderRow}>
               <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>⚙️ Campus Settings</Text>
               <TouchableOpacity
                 style={[styles.closeBtn, { backgroundColor: colors.surfaceLight }]}
-                onPress={() => setSettingsModalVisible(false)}
+                onPress={() => dismissModalWithSlide(() => setSettingsModalVisible(false))}
               >
                 <Text style={[styles.closeBtnText, { color: colors.textPrimary }]}>Done</Text>
               </TouchableOpacity>
@@ -2053,7 +2148,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     secureTextEntry
                   />
 
-                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>New Password (min 6 characters)</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>New Password (min 8 characters, letters & numbers)</Text>
                   <TextInput
                     style={[styles.settingsInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
                     value={newPassword}
@@ -2090,15 +2185,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   {/* Forgot / Reset Password with Email OTP */}
                   <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Forgot Password? (OTP Reset)</Text>
                   <Text style={[styles.subtext, { color: colors.textMuted }]}>
-                    Receive a 6-digit reset code on your college email address.
+                    Receive a 6-digit reset code on your personal email (Gmail or registered email).
                   </Text>
 
-                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>College Email</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Email Address (e.g. Gmail)</Text>
                   <TextInput
                     style={[styles.settingsInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
                     value={resetEmail}
                     onChangeText={setResetEmail}
-                    placeholder="e.g. rahul.sharma@geu.ac.in"
+                    placeholder="e.g. yourname@gmail.com"
                     placeholderTextColor={colors.textMuted}
                     autoCapitalize="none"
                   />
@@ -2128,12 +2223,22 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         maxLength={6}
                       />
 
-                      <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>New Password</Text>
+                      <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>New Password (min 8 characters)</Text>
                       <TextInput
                         style={[styles.settingsInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
                         value={resetNewPassword}
                         onChangeText={setResetNewPassword}
-                        placeholder="Enter new password"
+                        placeholder="Enter new strong password"
+                        placeholderTextColor={colors.textMuted}
+                        secureTextEntry
+                      />
+
+                      <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Confirm New Password</Text>
+                      <TextInput
+                        style={[styles.settingsInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
+                        value={resetConfirmPassword}
+                        onChangeText={setResetConfirmPassword}
+                        placeholder="Confirm new password"
                         placeholderTextColor={colors.textMuted}
                         secureTextEntry
                       />
@@ -2641,7 +2746,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </View>
               )}
             </ScrollView>
-          </View>
+          </Animated.View>
         </KeyboardAvoidingView>
       </Modal>
       )}
@@ -2757,20 +2862,40 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {/* 🔖 My Saved Posts Modal */}
       <Modal
         visible={savedModalVisible}
-        animationType={Platform.OS === 'web' ? 'none' : 'slide'}
+        animationType="none"
         transparent
-        onRequestClose={() => setSavedModalVisible(false)}
+        onRequestClose={() => dismissModalWithSlide(() => setSavedModalVisible(false))}
       >
         <View style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}>
-          <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
-            <View style={styles.modalHeaderRow}>
+          <Animated.View
+            style={[
+              styles.customModalSheet,
+              {
+                backgroundColor: colors.surface,
+                borderTopColor: colors.cardBorder,
+                transform: [{ translateY: sheetTranslateY }],
+              },
+            ]}
+          >
+            {/* Real-time PanResponder Drag Handle (CommentsModal style) */}
+            <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleRow}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => dismissModalWithSlide(() => setSavedModalVisible(false))}
+                hitSlop={{ top: 12, bottom: 12, left: 30, right: 30 }}
+              >
+                <View style={[styles.sheetHandle, { backgroundColor: colors.hairlineStrong || '#52525b' }]} />
+              </TouchableOpacity>
+            </View>
+
+            <View {...sheetPanResponder.panHandlers} style={styles.modalHeaderRow}>
               <View>
                 <Text style={[styles.customModalTitle, { color: colors.textPrimary }]}>🔖 My Saved Posts</Text>
                 <Text style={[styles.customModalSubtitle, { color: colors.textMuted }]}>
                   {savedPosts.length} saved bookmarks
                 </Text>
               </View>
-              <TouchableOpacity style={styles.customCloseBtn} onPress={() => setSavedModalVisible(false)}>
+              <TouchableOpacity style={styles.customCloseBtn} onPress={() => dismissModalWithSlide(() => setSavedModalVisible(false))}>
                 <Text style={[styles.closeBtnText, { color: colors.primary }]}>Done</Text>
               </TouchableOpacity>
             </View>
@@ -2828,7 +2953,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </View>
               </ScrollView>
             )}
-          </View>
+          </Animated.View>
         </View>
       </Modal>
 
@@ -2850,20 +2975,40 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {/* 🚫 My Blocked IDs Modal */}
       <Modal
         visible={blockedModalVisible}
-        animationType={Platform.OS === 'web' ? 'none' : 'slide'}
+        animationType="none"
         transparent
-        onRequestClose={() => setBlockedModalVisible(false)}
+        onRequestClose={() => dismissModalWithSlide(() => setBlockedModalVisible(false))}
       >
         <View style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}>
-          <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
-            <View style={styles.modalHeaderRow}>
+          <Animated.View
+            style={[
+              styles.customModalSheet,
+              {
+                backgroundColor: colors.surface,
+                borderTopColor: colors.cardBorder,
+                transform: [{ translateY: sheetTranslateY }],
+              },
+            ]}
+          >
+            {/* Real-time PanResponder Drag Handle (CommentsModal style) */}
+            <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleRow}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => dismissModalWithSlide(() => setBlockedModalVisible(false))}
+                hitSlop={{ top: 12, bottom: 12, left: 30, right: 30 }}
+              >
+                <View style={[styles.sheetHandle, { backgroundColor: colors.hairlineStrong || '#52525b' }]} />
+              </TouchableOpacity>
+            </View>
+
+            <View {...sheetPanResponder.panHandlers} style={styles.modalHeaderRow}>
               <View>
                 <Text style={[styles.customModalTitle, { color: colors.textPrimary }]}>🚫 Blocked Students</Text>
                 <Text style={[styles.customModalSubtitle, { color: colors.textMuted }]}>
                   {blockedUsers.length} blocked accounts
                 </Text>
               </View>
-              <TouchableOpacity style={styles.customCloseBtn} onPress={() => setBlockedModalVisible(false)}>
+              <TouchableOpacity style={styles.customCloseBtn} onPress={() => dismissModalWithSlide(() => setBlockedModalVisible(false))}>
                 <Text style={[styles.closeBtnText, { color: colors.primary }]}>Done</Text>
               </TouchableOpacity>
             </View>
@@ -2928,27 +3073,47 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </View>
               </ScrollView>
             )}
-          </View>
+          </Animated.View>
         </View>
       </Modal>
 
       {/* 🏛️ My Account Info Modal */}
       <Modal
         visible={accountInfoModalVisible}
-        animationType={Platform.OS === 'web' ? 'none' : 'slide'}
+        animationType="none"
         transparent
-        onRequestClose={() => setAccountInfoModalVisible(false)}
+        onRequestClose={() => dismissModalWithSlide(() => setAccountInfoModalVisible(false))}
       >
         <View style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}>
-          <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
-            <View style={styles.modalHeaderRow}>
+          <Animated.View
+            style={[
+              styles.customModalSheet,
+              {
+                backgroundColor: colors.surface,
+                borderTopColor: colors.cardBorder,
+                transform: [{ translateY: sheetTranslateY }],
+              },
+            ]}
+          >
+            {/* Real-time PanResponder Drag Handle (CommentsModal style) */}
+            <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleRow}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => dismissModalWithSlide(() => setAccountInfoModalVisible(false))}
+                hitSlop={{ top: 12, bottom: 12, left: 30, right: 30 }}
+              >
+                <View style={[styles.sheetHandle, { backgroundColor: colors.hairlineStrong || '#52525b' }]} />
+              </TouchableOpacity>
+            </View>
+
+            <View {...sheetPanResponder.panHandlers} style={styles.modalHeaderRow}>
               <View>
                 <Text style={[styles.customModalTitle, { color: colors.textPrimary }]}>🏛️ Student Account Info</Text>
                 <Text style={[styles.customModalSubtitle, { color: colors.textMuted }]}>
                   Verified academic enrollment credentials
                 </Text>
               </View>
-              <TouchableOpacity style={styles.customCloseBtn} onPress={() => setAccountInfoModalVisible(false)}>
+              <TouchableOpacity style={styles.customCloseBtn} onPress={() => dismissModalWithSlide(() => setAccountInfoModalVisible(false))}>
                 <Text style={[styles.closeBtnText, { color: colors.primary }]}>Done</Text>
               </TouchableOpacity>
             </View>
@@ -3056,27 +3221,47 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </View>
               </View>
             </ScrollView>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
 
       {/* ⚙️ My Preferences Modal */}
       <Modal
         visible={preferencesModalVisible}
-        animationType={Platform.OS === 'web' ? 'none' : 'slide'}
+        animationType="none"
         transparent
-        onRequestClose={() => setPreferencesModalVisible(false)}
+        onRequestClose={() => dismissModalWithSlide(() => setPreferencesModalVisible(false))}
       >
         <View style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}>
-          <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
-            <View style={styles.modalHeaderRow}>
+          <Animated.View
+            style={[
+              styles.customModalSheet,
+              {
+                backgroundColor: colors.surface,
+                borderTopColor: colors.cardBorder,
+                transform: [{ translateY: sheetTranslateY }],
+              },
+            ]}
+          >
+            {/* Real-time PanResponder Drag Handle (CommentsModal style) */}
+            <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleRow}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => dismissModalWithSlide(() => setPreferencesModalVisible(false))}
+                hitSlop={{ top: 12, bottom: 12, left: 30, right: 30 }}
+              >
+                <View style={[styles.sheetHandle, { backgroundColor: colors.hairlineStrong || '#52525b' }]} />
+              </TouchableOpacity>
+            </View>
+
+            <View {...sheetPanResponder.panHandlers} style={styles.modalHeaderRow}>
               <View>
                 <Text style={[styles.customModalTitle, { color: colors.textPrimary }]}>⚙️ Preferences & Privacy</Text>
                 <Text style={[styles.customModalSubtitle, { color: colors.textMuted }]}>
                   Campus safety, avatar style & messaging permissions
                 </Text>
               </View>
-              <TouchableOpacity style={styles.customCloseBtn} onPress={() => setPreferencesModalVisible(false)}>
+              <TouchableOpacity style={styles.customCloseBtn} onPress={() => dismissModalWithSlide(() => setPreferencesModalVisible(false))}>
                 <Text style={[styles.closeBtnText, { color: colors.primary }]}>Done</Text>
               </TouchableOpacity>
             </View>
@@ -3214,27 +3399,47 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </View>
               </View>
             </ScrollView>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
 
       {/* 🔔 My Notification Settings Modal */}
       <Modal
         visible={notifModalVisible}
-        animationType={Platform.OS === 'web' ? 'none' : 'slide'}
+        animationType="none"
         transparent
-        onRequestClose={() => setNotifModalVisible(false)}
+        onRequestClose={() => dismissModalWithSlide(() => setNotifModalVisible(false))}
       >
         <View style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay }]}>
-          <View style={[styles.customModalSheet, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder }]}>
-            <View style={styles.modalHeaderRow}>
+          <Animated.View
+            style={[
+              styles.customModalSheet,
+              {
+                backgroundColor: colors.surface,
+                borderTopColor: colors.cardBorder,
+                transform: [{ translateY: sheetTranslateY }],
+              },
+            ]}
+          >
+            {/* Real-time PanResponder Drag Handle (CommentsModal style) */}
+            <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleRow}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => dismissModalWithSlide(() => setNotifModalVisible(false))}
+                hitSlop={{ top: 12, bottom: 12, left: 30, right: 30 }}
+              >
+                <View style={[styles.sheetHandle, { backgroundColor: colors.hairlineStrong || '#52525b' }]} />
+              </TouchableOpacity>
+            </View>
+
+            <View {...sheetPanResponder.panHandlers} style={styles.modalHeaderRow}>
               <View>
                 <Text style={[styles.customModalTitle, { color: colors.textPrimary }]}>🔔 Notification Settings</Text>
                 <Text style={[styles.customModalSubtitle, { color: colors.textMuted }]}>
                   Alert sounds, push notifications & quiet mode
                 </Text>
               </View>
-              <TouchableOpacity style={styles.customCloseBtn} onPress={() => setNotifModalVisible(false)}>
+              <TouchableOpacity style={styles.customCloseBtn} onPress={() => dismissModalWithSlide(() => setNotifModalVisible(false))}>
                 <Text style={[styles.closeBtnText, { color: colors.primary }]}>Done</Text>
               </TouchableOpacity>
             </View>
@@ -3341,7 +3546,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </View>
               </View>
             </ScrollView>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
       <CollegePickerModal
@@ -4189,15 +4394,32 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
 
+  sheetHandleRow: {
+    alignItems: 'center',
+    paddingTop: 8,
+    paddingBottom: 8,
+    width: '100%',
+  },
+  sheetHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+
   // Settings Modal Styles
   settingsSheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '88%',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
     borderTopWidth: 1,
     borderTopColor: colors.cardBorder,
+    width: '100%',
+    maxWidth: 620,
+    alignSelf: 'center',
   },
   settingsNavRow: {
     flexDirection: 'row',
@@ -4741,10 +4963,11 @@ const styles = StyleSheet.create({
   customModalSheet: {
     width: '100%',
     maxWidth: 620,
+    alignSelf: 'center',
     maxHeight: '88%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingTop: 16,
+    paddingTop: 8,
     paddingHorizontal: 16,
     paddingBottom: 24,
     borderTopWidth: 1,

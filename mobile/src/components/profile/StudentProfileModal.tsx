@@ -20,6 +20,8 @@ import { AvatarZoomModal } from './AvatarZoomModal';
 import { backHandlerRegistry } from '../../services/backHandlerRegistry';
 import {
   X,
+  ChevronLeft,
+  MoreVertical,
   Shield,
   ShieldCheck,
   Lock,
@@ -301,29 +303,41 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
     <Modal
       visible={visible}
       animationType={Platform.OS === 'web' ? 'none' : 'slide'}
-      transparent
+      transparent={false}
       onRequestClose={onClose}
     >
-      <View style={styles.backdrop}>
-        <View style={[styles.sheet, { backgroundColor: colors.surface, borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.cardBorder }]}>
-          {/* Grab Handle */}
-          <View style={styles.sheetHandleRow}>
-            <View style={[styles.sheetHandle, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)' }]} />
-          </View>
-
-          {/* Header */}
-          <View style={[styles.header, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.hairline }]}>
-            <View style={styles.headerTitleBox}>
-              <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Student Identity</Text>
-              <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>Graphic Era Campus Network</Text>
-            </View>
+      <View style={[styles.backdrop, { backgroundColor: colors.background }]}>
+        <View style={[styles.sheet, { backgroundColor: colors.background }]}>
+          {/* Reddit / Twitter Style Profile Navbar */}
+          <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.cardBorder }]}>
             <TouchableOpacity
-              style={[styles.closeBtn, { backgroundColor: colors.surfaceLight }]}
+              style={styles.backBtn}
               onPress={onClose}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityLabel="Back to feed"
             >
-              <X size={18} color={colors.textSecondary} />
+              <ChevronLeft size={24} color={colors.textPrimary} />
             </TouchableOpacity>
+
+            <View style={styles.headerTitleBox}>
+              <Text style={[styles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+                {profile?.full_name || 'Student Profile'}
+              </Text>
+              <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
+                {profile?.posts_count ?? posts.length} Posts • {profile?.college_name || 'Campus'}
+              </Text>
+            </View>
+
+            {profile && !isSelf && (
+              <TouchableOpacity
+                style={[styles.closeBtn, { backgroundColor: colors.surfaceLight }]}
+                onPress={handleBlockAction}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Profile options"
+              >
+                <MoreVertical size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            )}
           </View>
 
           {loading ? (
@@ -681,37 +695,27 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
   },
   sheet: {
+    flex: 1,
     width: '100%',
-    maxWidth: 580,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '92%',
-    minHeight: '65%',
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  sheetHandleRow: {
-    alignItems: 'center',
-    paddingTop: 10,
-    paddingBottom: 4,
-  },
-  sheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
+    maxWidth: Platform.OS === 'web' ? 620 : '100%',
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
+    gap: 12,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitleBox: {
     flex: 1,

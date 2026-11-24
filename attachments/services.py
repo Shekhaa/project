@@ -9,10 +9,10 @@ from django.conf import settings
 from .models import MediaAttachment
 
 # Upload Restrictions
-MAX_IMAGE_SIZE = 15 * 1024 * 1024  # 15 MB
+MAX_IMAGE_SIZE = 8 * 1024 * 1024   # 8 MB
 MAX_DOC_SIZE = 20 * 1024 * 1024    # 20 MB
 MAX_AUDIO_SIZE = 25 * 1024 * 1024  # 25 MB
-MAX_VIDEO_SIZE = 100 * 1024 * 1024 # 100 MB
+MAX_VIDEO_SIZE = 10 * 1024 * 1024  # 10 MB
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 ALLOWED_DOC_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".csv", ".zip"}
@@ -62,12 +62,12 @@ class AttachmentService:
         if ext in ALLOWED_IMAGE_EXTENSIONS:
             file_type = "IMAGE"
             if size > MAX_IMAGE_SIZE:
-                raise ValidationError(f"Image '{sanitized_name}' exceeds 15 MB limit.")
+                raise ValidationError(f"Image '{sanitized_name}' exceeds 8 MB limit.")
         elif ext == ".webm":
             if uploaded_ct.startswith("video/") and not is_voice_hint:
                 file_type = "VIDEO"
                 if size > MAX_VIDEO_SIZE:
-                    raise ValidationError(f"Video '{sanitized_name}' exceeds 100 MB limit.")
+                    raise ValidationError(f"Video '{sanitized_name}' exceeds 10 MB limit.")
             else:
                 file_type = "AUDIO"
                 if size > MAX_AUDIO_SIZE:
@@ -83,7 +83,7 @@ class AttachmentService:
         elif ext in ALLOWED_VIDEO_EXTENSIONS:
             file_type = "VIDEO"
             if size > MAX_VIDEO_SIZE:
-                raise ValidationError(f"Video '{sanitized_name}' exceeds 100 MB limit.")
+                raise ValidationError(f"Video '{sanitized_name}' exceeds 10 MB limit.")
         elif ext in ALLOWED_DOC_EXTENSIONS:
             file_type = "DOCUMENT"
             if size > MAX_DOC_SIZE:
