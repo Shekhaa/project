@@ -1,5 +1,5 @@
 import { api } from '../config/api';
-import { Platform } from 'react-native';
+import { Platform, PermissionsAndroid } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -58,9 +58,21 @@ class NotificationService {
   }
 
   /**
-   * Request permission for Web/PWA push notifications (outside phone app window)
+   * Request permission for Web/PWA or native Android 13+ push notifications
    */
   async requestPushPermission(): Promise<boolean> {
+    if (Platform.OS === 'android' && Platform.Version >= 33) {
+      try {
+        const postNotif = (PermissionsAndroid.PERMISSIONS as any).POST_NOTIFICATIONS;
+        if (postNotif) {
+          const granted = await PermissionsAndroid.request(postNotif);
+          return granted === PermissionsAndroid.RESULTS.GRANTED;
+        }
+      } catch (err) {
+        console.warn('Android notification permission request error:', err);
+      }
+      return false;
+    }
     if (Platform.OS === 'web' && typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'granted') {
         return true;
@@ -113,10 +125,13 @@ class NotificationService {
   }
 
   /**
-   * Registers for native lockscreen push notifications via Expo.
-   * Completely safe and non-crashing in standalone APKs without FCM credentials.
+   * Registers for native push notifications. Requests runtime permission on Android 13+.
+   * Completely safe and non-crashing in standalone APKs.
    */
   async registerForNativePushNotifications(): Promise<string | null> {
+    try {
+      await this.requestPushPermission();
+    } catch {}
     return null;
   }
 

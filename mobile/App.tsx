@@ -576,20 +576,16 @@ function AppMain() {
         }}
       />
 
-      {/* Global Sign-In / Sign-Up Auth Modal (for Guests) */}
+      {/* Global Sign-In / Sign-Up Auth Screen (Rendered as full-screen overlay to avoid nested Modal crashes on Android) */}
       {authModalVisible && (
-        <Modal
-          visible={authModalVisible}
-          animationType={Platform.OS === 'web' ? 'none' : 'slide'}
-          onRequestClose={() => setAuthModalVisible(false)}
-        >
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.background, zIndex: 9999 }]}>
           <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <AuthScreen
               onDismiss={() => setAuthModalVisible(false)}
               onLoginSuccess={handleLoginSuccess}
             />
           </SafeAreaView>
-        </Modal>
+        </View>
       )}
 
       {/* Global Campus Verification Upgrade Modal (Invite Code / MS Link / ID Review) */}

@@ -110,6 +110,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
   // 2. MICROSOFT SSO & ID CARD VERIFICATION STATE
   // ==========================================
   const [inAppOAuthVisible, setInAppOAuthVisible] = useState(false);
+  const [oauthVerifying, setOauthVerifying] = useState(false);
   const oauthInterceptingRef = React.useRef(false);
   const [ssoTokenModal, setSsoTokenModal] = useState(false);
   const [manualTokenInput, setManualTokenInput] = useState('');
@@ -290,14 +291,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
     }
   };
 
-  const handleOAuthNavigationChange = async (navState: any) => {
-    const url = navState.url;
+  const handleOAuthTokenRedirect = async (url: string) => {
     if (!url || oauthInterceptingRef.current) return;
 
-    // Intercept redirect when url contains id_token or access_token
     if (url.includes('id_token=') || url.includes('access_token=')) {
       oauthInterceptingRef.current = true;
-      setInAppOAuthVisible(false);
+      setOauthVerifying(true);
       setSsoLoading(true);
       try {
         const match = url.match(/(?:id_token|access_token)=([^&#]+)/);
@@ -305,7 +304,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
         if (token) {
           const res = await authService.loginWithMicrosoft(token);
           if (res?.user) {
-            onLoginSuccess(res.user);
+            // Keep native WebView mounted for 150ms to let native animations settle cleanly
+            setTimeout(() => {
+              setInAppOAuthVisible(false);
+              setOauthVerifying(false);
+              setSsoLoading(false);
+              onLoginSuccess(res.user);
+            }, 150);
+            return;
           } else {
             setSsoError('Invalid response received from authentication server.');
           }
@@ -322,8 +328,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
           'Microsoft verification failed. Please try again.';
         setSsoError(errMsg);
       } finally {
+        setOauthVerifying(false);
         setSsoLoading(false);
       }
+    }
+  };
+
+  const handleOAuthNavigationChange = (navState: any) => {
+    const url = navState?.url;
+    if (url) {
+      handleOAuthTokenRedirect(url);
     }
   };
 
@@ -1313,44 +1327,86 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                   Graphic Era Official Login
                 </Text>
               </View>
-              <TouchableOpacity
-                onPress={() => setInAppOAuthVisible(false)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>Cancel</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    const url = buildMicrosoftAuthUrl();
+                    Linking.openURL(url).catch(() => {});
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>Open in Chrome</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setInAppOAuthVisible(false)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={{ color: colors.textMuted, fontSize: 13, fontWeight: '600' }}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Embedded Native WebView with domStorage & token auto-capture */}
             {NativeWebView ? (
-              <NativeWebView
-                source={{ uri: buildMicrosoftAuthUrl() }}
-                onNavigationStateChange={handleOAuthNavigationChange}
-                startInLoadingState={true}
-                renderLoading={() => (
+              <View style={{ flex: 1, position: 'relative' }}>
+                <NativeWebView
+                  source={{ uri: buildMicrosoftAuthUrl() }}
+                  onNavigationStateChange={handleOAuthNavigationChange}
+                  onShouldStartLoadWithRequest={(request: any) => {
+                    const reqUrl = request?.url || '';
+                    if (reqUrl.includes('id_token=') || reqUrl.includes('access_token=')) {
+                      handleOAuthTokenRedirect(reqUrl);
+                      return false; // Prevent Android WebView from loading jwt.ms
+                    }
+                    return true;
+                  }}
+                  startInLoadingState={true}
+                  renderLoading={() => (
+                    <View
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        backgroundColor: colors.background,
+                      }}
+                    >
+                      <ActivityIndicator size="large" color={colors.primary} />
+                      <Text style={{ color: colors.textSecondary, marginTop: 12, fontSize: 13 }}>
+                        Connecting to Graphic Era Microsoft portal...
+                      </Text>
+                    </View>
+                  )}
+                  incognito={false}
+                  javaScriptEnabled={true}
+                  domStorageEnabled={true}
+                  sharedCookiesEnabled={true}
+                />
+
+                {oauthVerifying && (
                   <View
                     style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
+                      ...StyleSheet.absoluteFillObject,
+                      backgroundColor: colors.background,
                       justifyContent: 'center',
                       alignItems: 'center',
-                      backgroundColor: colors.background,
+                      zIndex: 999,
+                      padding: 24,
                     }}
                   >
                     <ActivityIndicator size="large" color={colors.primary} />
-                    <Text style={{ color: colors.textSecondary, marginTop: 12, fontSize: 13 }}>
-                      Connecting to Graphic Era Microsoft portal...
+                    <Text style={{ color: colors.textPrimary, fontSize: 16, fontWeight: '700', marginTop: 16 }}>
+                      Verifying Student Identity
+                    </Text>
+                    <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+                      Authenticating with Graphic Era Microsoft servers...
                     </Text>
                   </View>
                 )}
-                incognito={false}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-                sharedCookiesEnabled={true}
-              />
+              </View>
             ) : (
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
                 <ActivityIndicator size="large" color={colors.primary} />
