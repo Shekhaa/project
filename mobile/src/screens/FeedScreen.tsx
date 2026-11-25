@@ -12,6 +12,8 @@ import {
   Modal,
   TextInput,
   useWindowDimensions,
+  Animated,
+  Keyboard,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../theme/ThemeContext';
@@ -29,7 +31,7 @@ import { notificationService, NotificationItem } from '../services/notificationS
 import { backHandlerRegistry } from '../services/backHandlerRegistry';
 import { api } from '../config/api';
 import { showCrossPlatformAlert } from '../utils/mediaUtils';
-import { Plus, Bell, Sparkles, SlidersHorizontal, Check, X, Sun, Moon, Search } from 'lucide-react-native';
+import { Plus, Bell, Sparkles, SlidersHorizontal, Check, X, Sun, Moon, Search, ArrowLeft, ShieldCheck } from 'lucide-react-native';
 
 const SCOPE_TABS: Array<{
   key: 'ALL' | 'COLLEGE' | 'FOLLOWING' | 'SAVED' | 'MEDIA' | 'RESOURCES';
@@ -120,24 +122,125 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
-  // Universal Search State (Twitter / Reddit model)
+  // Universal Search State (Twitter / X Expanding Top Bar & Animated Search Window)
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
-  const [searchModalVisible, setSearchModalVisible] = useState(false);
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  const [searchPanelOpen, setSearchPanelOpen] = useState(false);
   const [searchInputText, setSearchInputText] = useState('');
   const [studentSuggestions, setStudentSuggestions] = useState<any[]>([]);
   const [searchingStudents, setSearchingStudents] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const searchDebounceRef = useRef<any>(null);
+  const searchInputRef = useRef<TextInput>(null);
+  const searchAnim = useRef(new Animated.Value(0)).current;
+  const searchPanelAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    AsyncStorage.getItem('@vike_recent_searches')
+      .then((raw) => {
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) setRecentSearches(parsed.slice(0, 6));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const saveRecentSearch = useCallback((term: string) => {
+    const clean = term.trim();
+    if (!clean) return;
+    setRecentSearches((prev) => {
+      const next = [clean, ...prev.filter((item) => item.toLowerCase() !== clean.toLowerCase())].slice(0, 6);
+      AsyncStorage.setItem('@vike_recent_searches', JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const clearRecentSearches = useCallback(() => {
+    setRecentSearches([]);
+    AsyncStorage.removeItem('@vike_recent_searches').catch(() => {});
+  }, []);
+
+  const openSearchBar = useCallback(() => {
+    setSearchInputText(activeSearchQuery);
+    setSearchExpanded(true);
+    setSearchPanelOpen(true);
+    searchAnim.setValue(0);
+    searchPanelAnim.setValue(0);
+    Animated.parallel([
+      Animated.spring(searchAnim, {
+        toValue: 1,
+        tension: 78,
+        friction: 11,
+        useNativeDriver: true,
+      }),
+      Animated.timing(searchPanelAnim, {
+        toValue: 1,
+        duration: 240,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setTimeout(() => searchInputRef.current?.focus(), 30);
+    });
+  }, [activeSearchQuery, searchAnim, searchPanelAnim]);
+
+  const openSearchPanelOnly = useCallback(() => {
+    setSearchPanelOpen(true);
+    searchPanelAnim.setValue(0);
+    Animated.timing(searchPanelAnim, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [searchPanelAnim]);
+
+  const closeSearchPanelOnly = useCallback(() => {
+    Keyboard.dismiss();
+    Animated.timing(searchPanelAnim, {
+      toValue: 0,
+      duration: 160,
+      useNativeDriver: true,
+    }).start(() => {
+      setSearchPanelOpen(false);
+    });
+  }, [searchPanelAnim]);
+
+  const closeSearch = useCallback(() => {
+    Keyboard.dismiss();
+    Animated.parallel([
+      Animated.timing(searchAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(searchPanelAnim, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setSearchExpanded(false);
+      setSearchPanelOpen(false);
+      setSearchInputText('');
+      setStudentSuggestions([]);
+      setActiveSearchQuery('');
+    });
+  }, [searchAnim, searchPanelAnim]);
 
   // Universal Android Hardware & Browser Back Navigation
   useEffect(() => {
-    if (searchModalVisible) {
-      backHandlerRegistry.push('FeedSearchModal', () => {
-        setSearchModalVisible(false);
+    if (searchExpanded) {
+      backHandlerRegistry.push('FeedSearchBar', () => {
+        if (searchPanelOpen && activeSearchQuery.trim().length > 0) {
+          closeSearchPanelOnly();
+        } else {
+          closeSearch();
+        }
         return true;
       });
-      return () => backHandlerRegistry.pop('FeedSearchModal');
+      return () => backHandlerRegistry.pop('FeedSearchBar');
     }
-  }, [searchModalVisible]);
+  }, [searchExpanded, searchPanelOpen, activeSearchQuery, closeSearchPanelOnly, closeSearch]);
   useEffect(() => {
     if (activeCommentsPost) {
       backHandlerRegistry.push('FeedCommentsModal', () => {
@@ -345,19 +448,20 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         setSearchingStudents(true);
         const res: any = await authService.searchStudents(text.trim());
         const list = Array.isArray(res) ? res : res?.results || [];
-        setStudentSuggestions(list.slice(0, 6));
+        setStudentSuggestions(list.slice(0, 8));
       } catch {
         setStudentSuggestions([]);
       } finally {
         setSearchingStudents(false);
       }
-    }, 250);
+    }, 220);
   };
 
   const handleSelectStudent = (student: any) => {
-    setSearchModalVisible(false);
-    setSearchInputText('');
-    setStudentSuggestions([]);
+    if (searchInputText.trim()) {
+      saveRecentSearch(searchInputText.trim());
+    }
+    Keyboard.dismiss();
     if (!currentUser) {
       onRequireAuth?.();
       return;
@@ -369,8 +473,15 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   };
 
   const handleExecutePostSearch = () => {
-    setSearchModalVisible(false);
-    setActiveSearchQuery(searchInputText.trim());
+    const q = searchInputText.trim();
+    if (!q) {
+      setActiveSearchQuery('');
+      closeSearchPanelOnly();
+      return;
+    }
+    saveRecentSearch(q);
+    setActiveSearchQuery(q);
+    closeSearchPanelOnly();
   };
 
   useEffect(() => {
@@ -526,8 +637,26 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const renderHeader = () => (
     <View style={[styles.headerArea, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
       <View style={[styles.headerInner, Platform.OS === 'web' && styles.webCenteredContainer]}>
-        {/* Top Navbar */}
-      <View style={[styles.navBar, isCompactViewport && { paddingHorizontal: 12 }]}>
+        {/* Top Navbar (Normal Vike Header OR Twitter-Style Expanding Search Bar) */}
+      <View style={[styles.navBar, isCompactViewport && { paddingHorizontal: 12 }, { position: 'relative', overflow: 'hidden', minHeight: 58 }]}>
+        <Animated.View
+          style={{
+            flex: 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            opacity: searchAnim.interpolate({ inputRange: [0, 0.45, 1], outputRange: [1, 0.1, 0] }),
+            transform: [
+              {
+                translateX: searchAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, -28],
+                }),
+              },
+            ],
+          }}
+          pointerEvents={searchExpanded ? 'none' : 'auto'}
+        >
         <TouchableOpacity
           style={styles.brandRow}
           onPress={handleRefresh}
@@ -567,10 +696,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
               isCompactViewport && { width: 32, height: 32, borderRadius: 16 },
               Boolean(activeSearchQuery) && styles.iconBtnActive,
             ]}
-            onPress={() => {
-              setSearchInputText(activeSearchQuery);
-              setSearchModalVisible(true);
-            }}
+            onPress={openSearchBar}
             activeOpacity={0.7}
             accessibilityLabel="Search students and posts"
           >
@@ -658,8 +784,88 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             <Text style={[styles.createPostBtnText, { color: colors.onPrimary }, isCompactViewport && { fontSize: 12 }]}>Post</Text>
           </TouchableOpacity>
         </View>
+        </Animated.View>
+
+        {/* Twitter-Style Animated Expanding Top Search Bar Overlay */}
+        {searchExpanded && (
+          <Animated.View
+            style={[
+              styles.expandedSearchBarRow,
+              isCompactViewport && { paddingHorizontal: 10 },
+              {
+                backgroundColor: colors.surface,
+                opacity: searchAnim.interpolate({ inputRange: [0, 0.18, 1], outputRange: [0, 0.85, 1] }),
+                transform: [
+                  {
+                    translateX: searchAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [Math.min(width, 620) * 0.4, 0],
+                    }),
+                  },
+                  {
+                    scaleX: searchAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.5, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <TouchableOpacity
+              onPress={closeSearch}
+              style={[styles.searchBackBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+              activeOpacity={0.7}
+              accessibilityLabel="Back to home feed"
+            >
+              <ArrowLeft size={19} color={colors.textPrimary} />
+            </TouchableOpacity>
+
+            <View
+              style={[
+                styles.topSearchInputPill,
+                {
+                  backgroundColor: colors.surfaceLight,
+                  borderColor: searchPanelOpen ? colors.primary : colors.cardBorder,
+                },
+              ]}
+            >
+              <Search size={17} color={searchPanelOpen ? colors.primary : colors.textMuted} />
+              <TextInput
+                ref={searchInputRef}
+                style={[styles.topSearchTextInput, { color: colors.textPrimary }]}
+                placeholder="Search Vike — students, posts, notes..."
+                placeholderTextColor={colors.textMuted}
+                value={searchInputText}
+                onChangeText={handleSearchInputChange}
+                onFocus={() => {
+                  if (!searchPanelOpen) openSearchPanelOnly();
+                }}
+                onSubmitEditing={handleExecutePostSearch}
+                returnKeyType="search"
+                autoFocus
+              />
+              {searchInputText.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => {
+                    handleSearchInputChange('');
+                    setActiveSearchQuery('');
+                    if (!searchPanelOpen) openSearchPanelOnly();
+                    searchInputRef.current?.focus();
+                  }}
+                  style={[styles.topSearchClearBtn, { backgroundColor: colors.hairlineStrong || 'rgba(148,163,184,0.22)' }]}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <X size={13} color={colors.textPrimary} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </Animated.View>
+        )}
       </View>
 
+      {!searchPanelOpen && (
+      <>
       {/* Horizontal Fast Scope Pill Switcher */}
       <ScrollView
         horizontal
@@ -702,7 +908,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       </ScrollView>
 
       {/* Slim Read-Only Campus Banner */}
-      {(!currentUser || !canParticipate) && (
+      {(!currentUser || !canParticipate) && !searchExpanded && (
         <View
           style={[
             styles.readOnlyBanner,
@@ -758,18 +964,18 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       {activeSearchQuery.trim().length > 0 && (
         <View style={[styles.activeFilterBar, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
           <Text style={[styles.activeFilterText, { color: colors.textSecondary }]}>
-            Search: <Text style={styles.activeFilterHighlight}>"{activeSearchQuery}"</Text>
+            Posts matching <Text style={styles.activeFilterHighlight}>"{activeSearchQuery}"</Text>
           </Text>
           <TouchableOpacity
             style={styles.clearFilterBtn}
-            onPress={() => {
-              setActiveSearchQuery('');
-            }}
+            onPress={closeSearch}
           >
             <Text style={styles.clearFilterText}>Clear</Text>
             <X size={14} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
+      )}
+      </>
       )}
       </View>
     </View>
@@ -818,86 +1024,283 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {renderHeader()}
 
-      {refreshBannerVisible && (
-        <View
-          style={[
-            styles.refreshBanner,
-            { backgroundColor: isDark ? 'rgba(0, 112, 243, 0.95)' : '#0070f3' },
-          ]}
-        >
-          <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
-          <Text style={styles.refreshBannerText}>
-            {refreshing ? 'Updating campus feed...' : '✨ Feed up to date'}
-          </Text>
-        </View>
-      )}
-
-      {loading && posts.length === 0 ? (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Syncing campus updates...</Text>
-        </View>
-      ) : error && posts.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={{ fontSize: 36, marginBottom: 8 }}>⚠️</Text>
-          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>Could not load campus updates</Text>
-          <Text style={[styles.emptySub, { color: colors.textSecondary }]}>{error}</Text>
-          <TouchableOpacity
-            style={styles.emptyCta}
-            onPress={() => loadData(false)}
+      <View style={{ flex: 1, position: 'relative' }}>
+        {refreshBannerVisible && (
+          <View
+            style={[
+              styles.refreshBanner,
+              { backgroundColor: isDark ? 'rgba(0, 112, 243, 0.95)' : '#0070f3' },
+            ]}
           >
-            <Text style={styles.emptyCtaText}>🔄 Retry Sync</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          ref={flatListRef}
-          data={posts}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => (
-            <PostCard
-              post={item}
-              currentUser={currentUser}
-              canParticipate={canParticipate}
-              onRequireAuth={onRequireAuth}
-              onRequireVerify={onRequireVerify}
-              onLike={handleLikePost}
-              onCommentPress={(p) => setActiveCommentsPost(p)}
-              onSharePress={(p) => setActiveSharePost(p)}
-              onDeletePost={handleDeletePost}
-              onArchivePost={handleArchivePost}
-              onAuthorPress={(uid) => {
-                if (!currentUser) {
-                  onRequireAuth?.();
-                  return;
-                }
-                onOpenProfile?.(uid);
-              }}
-              onBookmarkToggle={handleBookmarkToggle}
-            />
-          )}
-          ListEmptyComponent={renderEmpty}
-          ListFooterComponent={renderFooter}
-          onEndReached={handleLoadMore}
-          onEndReachedThreshold={0.4}
-          initialNumToRender={5}
-          maxToRenderPerBatch={5}
-          windowSize={7}
-          removeClippedSubviews={Platform.OS !== 'web'}
-          contentContainerStyle={[
-            styles.listContent,
-            Platform.OS === 'web' && styles.webListContent,
-          ]}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor={colors.primary}
-              colors={[colors.primary]}
-            />
-          }
-        />
-      )}
+            <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
+            <Text style={styles.refreshBannerText}>
+              {refreshing ? 'Updating campus feed...' : '✨ Feed up to date'}
+            </Text>
+          </View>
+        )}
+
+        {loading && posts.length === 0 ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Syncing campus updates...</Text>
+          </View>
+        ) : error && posts.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={{ fontSize: 36, marginBottom: 8 }}>⚠️</Text>
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>Could not load campus updates</Text>
+            <Text style={[styles.emptySub, { color: colors.textSecondary }]}>{error}</Text>
+            <TouchableOpacity
+              style={styles.emptyCta}
+              onPress={() => loadData(false)}
+            >
+              <Text style={styles.emptyCtaText}>🔄 Retry Sync</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={posts}
+            keyExtractor={(item) => String(item.id)}
+            ListHeaderComponent={
+              activeSearchQuery.trim().length > 0 && studentSuggestions.length > 0 ? (
+                <View style={[styles.peopleResultsCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+                  <Text style={[styles.searchSectionHeaderTitle, { color: colors.textMuted, marginBottom: 10 }]}>
+                    PEOPLE MATCHING "{activeSearchQuery}"
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+                    {studentSuggestions.map((st, idx) => (
+                      <TouchableOpacity
+                        key={st.id || st.user_id || idx}
+                        style={[styles.peopleResultChip, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
+                        onPress={() => handleSelectStudent(st)}
+                        activeOpacity={0.75}
+                      >
+                        <UserAvatar
+                          uri={st.avatar || st.profile?.avatar}
+                          name={st.full_name || st.name || st.username}
+                          size={34}
+                        />
+                        <View style={{ marginLeft: 8, maxWidth: 140 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Text style={[styles.studentSuggestionName, { color: colors.textPrimary, fontSize: 13 }]} numberOfLines={1}>
+                              {st.full_name || st.name || st.username}
+                            </Text>
+                            {st.is_verified_student && <ShieldCheck size={12} color={colors.primary} />}
+                          </View>
+                          <Text style={[styles.studentSuggestionCollege, { color: colors.textMuted, fontSize: 11 }]} numberOfLines={1}>
+                            @{st.username || 'student'}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null
+            }
+            renderItem={({ item }) => (
+              <PostCard
+                post={item}
+                currentUser={currentUser}
+                canParticipate={canParticipate}
+                onRequireAuth={onRequireAuth}
+                onRequireVerify={onRequireVerify}
+                onLike={handleLikePost}
+                onCommentPress={(p) => setActiveCommentsPost(p)}
+                onSharePress={(p) => setActiveSharePost(p)}
+                onDeletePost={handleDeletePost}
+                onArchivePost={handleArchivePost}
+                onAuthorPress={(uid) => {
+                  if (!currentUser) {
+                    onRequireAuth?.();
+                    return;
+                  }
+                  onOpenProfile?.(uid);
+                }}
+                onBookmarkToggle={handleBookmarkToggle}
+              />
+            )}
+            ListEmptyComponent={renderEmpty}
+            ListFooterComponent={renderFooter}
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.4}
+            initialNumToRender={5}
+            maxToRenderPerBatch={5}
+            windowSize={7}
+            removeClippedSubviews={Platform.OS !== 'web'}
+            contentContainerStyle={[
+              styles.listContent,
+              Platform.OS === 'web' && styles.webListContent,
+            ]}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
+              />
+            }
+          />
+        )}
+
+        {/* Twitter-Style Animated Full-Screen Search Window (Spreads directly beneath top search bar) */}
+        {searchExpanded && searchPanelOpen && (
+          <Animated.View
+            style={[
+              styles.searchWindowOverlay,
+              {
+                backgroundColor: colors.background,
+                opacity: searchPanelAnim,
+                transform: [
+                  {
+                    translateY: searchPanelAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-16, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <ScrollView
+              style={[styles.searchWindowScroll, Platform.OS === 'web' && styles.webCenteredContainer]}
+              contentContainerStyle={styles.searchWindowContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {searchInputText.trim().length > 0 ? (
+                <>
+                  {/* Execute Full Post Search Row */}
+                  <TouchableOpacity
+                    style={[
+                      styles.searchPostsActionRow,
+                      { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+                    ]}
+                    onPress={handleExecutePostSearch}
+                    activeOpacity={0.75}
+                  >
+                    <View style={[styles.searchPostsIconCircle, { backgroundColor: colors.primary + '1F' }]}>
+                      <Search size={18} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.searchPostsActionTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+                        Search posts for "{searchInputText.trim()}"
+                      </Text>
+                      <Text style={[styles.searchPostsActionSub, { color: colors.textMuted }]}>
+                        Posts, notes & polls across global & your campus
+                      </Text>
+                    </View>
+                    <Text style={[styles.searchGoPill, { color: colors.primary }]}>Search →</Text>
+                  </TouchableOpacity>
+
+                  {/* Live Student / People Matches across all campuses */}
+                  <View style={styles.searchSectionBlock}>
+                    <View style={styles.searchSectionHeaderRow}>
+                      <Text style={[styles.searchSectionHeaderTitle, { color: colors.textMuted }]}>
+                        PEOPLE ACROSS CAMPUSES
+                      </Text>
+                      {searchingStudents && <ActivityIndicator size="small" color={colors.primary} />}
+                    </View>
+
+                    {studentSuggestions.length > 0 ? (
+                      <View style={[styles.searchPeopleCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+                        {studentSuggestions.map((st, idx) => (
+                          <TouchableOpacity
+                            key={st.id || st.user_id || idx}
+                            style={[
+                              styles.searchPersonRow,
+                              idx < studentSuggestions.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.hairline },
+                            ]}
+                            onPress={() => handleSelectStudent(st)}
+                            activeOpacity={0.75}
+                          >
+                            <UserAvatar
+                              uri={st.avatar || st.profile?.avatar}
+                              name={st.full_name || st.name || st.username}
+                              size={42}
+                            />
+                            <View style={{ flex: 1, marginLeft: 12 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                <Text style={[styles.studentSuggestionName, { color: colors.textPrimary }]} numberOfLines={1}>
+                                  {st.full_name || st.name || st.username}
+                                </Text>
+                                {st.is_verified_student && <ShieldCheck size={14} color={colors.primary} />}
+                              </View>
+                              <Text style={[styles.studentSuggestionCollege, { color: colors.textSecondary }]} numberOfLines={1}>
+                                @{st.username || 'student'} · {st.college_name || st.profile?.college_name || 'Student'}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    ) : !searchingStudents ? (
+                      <View style={[styles.searchEmptyMiniBox, { borderColor: colors.cardBorder }]}>
+                        <Text style={[styles.searchEmptyMiniText, { color: colors.textMuted }]}>
+                          No students found matching "{searchInputText.trim()}". Press Enter or tap above to search posts!
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </>
+              ) : (
+                <View style={styles.searchEmptyDiscovery}>
+                  {recentSearches.length > 0 && (
+                    <View style={styles.searchSectionBlock}>
+                      <View style={styles.searchSectionHeaderRow}>
+                        <Text style={[styles.searchSectionHeaderTitle, { color: colors.textMuted }]}>RECENT SEARCHES</Text>
+                        <TouchableOpacity onPress={clearRecentSearches}>
+                          <Text style={[styles.clearRecentText, { color: colors.primary }]}>Clear all</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={[styles.searchPeopleCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+                        {recentSearches.map((term, idx) => (
+                          <TouchableOpacity
+                            key={term}
+                            style={[
+                              styles.recentSearchRow,
+                              idx < recentSearches.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.hairline },
+                            ]}
+                            onPress={() => {
+                              handleSearchInputChange(term);
+                              saveRecentSearch(term);
+                              setActiveSearchQuery(term);
+                              closeSearchPanelOnly();
+                            }}
+                            activeOpacity={0.75}
+                          >
+                            <Search size={15} color={colors.textMuted} />
+                            <Text style={[styles.recentSearchText, { color: colors.textPrimary }]} numberOfLines={1}>
+                              {term}
+                            </Text>
+                            <TouchableOpacity
+                              onPress={() => {
+                                handleSearchInputChange(term);
+                                searchInputRef.current?.focus();
+                              }}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <Text style={{ color: colors.textMuted, fontSize: 12 }}>Fill</Text>
+                            </TouchableOpacity>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
+                  <View style={styles.searchPromptHero}>
+                    <View style={[styles.searchPromptIconBox, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                      <Search size={26} color={colors.primary} />
+                    </View>
+                    <Text style={[styles.searchPromptTitle, { color: colors.textPrimary }]}>Search Vike</Text>
+                    <Text style={[styles.searchPromptSub, { color: colors.textSecondary }]}>
+                      Search students across all campuses, or press Enter to search posts, study notes & polls.
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          </Animated.View>
+        )}
+      </View>
 
       {/* Clean Feed Filter Modal */}
       {filterModalVisible && (
@@ -1037,108 +1440,6 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           </View>
         </TouchableOpacity>
       </Modal>
-      )}
-
-      {/* Universal Search Modal (Twitter / Reddit style student & post discovery) */}
-      {searchModalVisible && (
-        <Modal
-          visible={searchModalVisible}
-          transparent
-          animationType={Platform.OS === 'web' ? 'none' : 'fade'}
-          onRequestClose={() => setSearchModalVisible(false)}
-        >
-          <TouchableOpacity
-            style={[styles.filterModalOverlay, { backgroundColor: colors.modalOverlay }]}
-            activeOpacity={1}
-            onPress={() => setSearchModalVisible(false)}
-          >
-            <View
-              style={[
-                styles.searchModalCard,
-                { backgroundColor: colors.surface, borderColor: colors.cardBorder },
-              ]}
-              onStartShouldSetResponder={() => true}
-            >
-              <View style={[styles.filterModalHeader, { borderBottomColor: colors.cardBorder }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Search size={18} color={colors.primary} />
-                  <Text style={[styles.filterModalTitle, { color: colors.textPrimary }]}>Universal Search</Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.closeBtn, { backgroundColor: colors.surfaceLight }]}
-                  onPress={() => setSearchModalVisible(false)}
-                >
-                  <X size={16} color={colors.textSecondary} />
-                </TouchableOpacity>
-              </View>
-
-              {/* Search Input Box */}
-              <View style={[styles.searchInputRow, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
-                <Search size={16} color={colors.textMuted} />
-                <TextInput
-                  style={[styles.searchInputField, { color: colors.textPrimary }]}
-                  placeholder="Search students, campus posts, notes..."
-                  placeholderTextColor={colors.textMuted}
-                  value={searchInputText}
-                  onChangeText={handleSearchInputChange}
-                  onSubmitEditing={handleExecutePostSearch}
-                  autoFocus
-                  returnKeyType="search"
-                />
-                {searchInputText.length > 0 && (
-                  <TouchableOpacity onPress={() => handleSearchInputChange('')}>
-                    <X size={16} color={colors.textMuted} />
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* Student Live Matching Suggestions */}
-              {studentSuggestions.length > 0 && (
-                <View style={styles.suggestionsContainer}>
-                  <Text style={[styles.suggestionsHeader, { color: colors.textMuted }]}>
-                    STUDENTS MATCHING "{searchInputText}"
-                  </Text>
-                  {studentSuggestions.map((st) => (
-                    <TouchableOpacity
-                      key={st.id || st.user_id}
-                      style={[styles.studentSuggestionItem, { borderBottomColor: colors.hairline }]}
-                      onPress={() => handleSelectStudent(st)}
-                      activeOpacity={0.75}
-                    >
-                      <UserAvatar
-                        uri={st.avatar || st.profile?.avatar}
-                        name={st.full_name || st.name || st.username}
-                        size={36}
-                      />
-                      <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={[styles.studentSuggestionName, { color: colors.textPrimary }]} numberOfLines={1}>
-                          {st.full_name || st.name || st.username}
-                        </Text>
-                        <Text style={[styles.studentSuggestionCollege, { color: colors.textSecondary }]} numberOfLines={1}>
-                          @{st.username || 'student'} • {st.college_name || st.profile?.college_name || 'Graphic Era'}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-
-              {/* Search Posts Action Button */}
-              {searchInputText.trim().length > 0 && (
-                <TouchableOpacity
-                  style={[styles.executeSearchBtn, { backgroundColor: colors.primary }]}
-                  onPress={handleExecutePostSearch}
-                  activeOpacity={0.8}
-                >
-                  <Search size={15} color="#ffffff" style={{ marginRight: 6 }} />
-                  <Text style={styles.executeSearchBtnText}>
-                    Search campus posts for "{searchInputText.trim()}"
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </TouchableOpacity>
-        </Modal>
       )}
 
       {/* Dedicated Post Composer & Photo Editor / PDF Modal */}
@@ -1396,66 +1697,198 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.cardBorder,
   },
-  searchModalCard: {
-    width: '100%',
-    maxWidth: 480,
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-  },
-  searchInputRow: {
+  expandedSearchBarRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginTop: 14,
+    paddingHorizontal: 14,
+    gap: 10,
   },
-  searchInputField: {
+  searchBackBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topSearchInputPill: {
+    flex: 1,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  topSearchTextInput: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+    padding: 0,
+    ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {}),
+  },
+  topSearchClearBtn: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchWindowOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 40,
+  },
+  searchWindowScroll: {
+    flex: 1,
+    width: '100%',
+  },
+  searchWindowContent: {
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 40,
+    gap: 16,
+  },
+  searchPostsActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 12,
+  },
+  searchPostsIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchPostsActionTitle: {
+    fontSize: 14.5,
+    fontWeight: '700',
+  },
+  searchPostsActionSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  searchGoPill: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  searchSectionBlock: {
+    gap: 8,
+  },
+  searchSectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+  },
+  searchSectionHeaderTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+  },
+  clearRecentText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  searchPeopleCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  searchPersonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  recentSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  recentSearchText: {
     flex: 1,
     fontSize: 14,
-    padding: 0,
+    fontWeight: '500',
   },
-  suggestionsContainer: {
-    marginTop: 12,
-    maxHeight: 240,
+  searchEmptyMiniBox: {
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    alignItems: 'center',
   },
-  suggestionsHeader: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    marginBottom: 8,
+  searchEmptyMiniText: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 19,
   },
-  studentSuggestionItem: {
+  searchEmptyDiscovery: {
+    gap: 22,
+  },
+  searchPromptHero: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+  searchPromptIconBox: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  searchPromptTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  searchPromptSub: {
+    fontSize: 13.5,
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: 320,
+  },
+  peopleResultsCard: {
+    marginHorizontal: 12,
+    marginBottom: 10,
+    marginTop: 4,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  peopleResultChip: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 10,
     paddingVertical: 8,
-    borderBottomWidth: 1,
+    borderRadius: 12,
+    borderWidth: 1,
   },
   studentSuggestionName: {
-    fontSize: 13.5,
+    fontSize: 14.5,
     fontWeight: '700',
   },
   studentSuggestionCollege: {
-    fontSize: 11.5,
+    fontSize: 12,
     marginTop: 2,
-  },
-  executeSearchBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginTop: 14,
-  },
-  executeSearchBtnText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
   },
   filterModalHeader: {
     flexDirection: 'row',
