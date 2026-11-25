@@ -95,7 +95,7 @@ class FeedView(generics.ListAPIView):
                 .prefetch_related("images", "attachments", "poll__options", "poll__votes")
                 .order_by("-created_at")
             )
-            search_query = (request.query_params.get("search") or request.query_params.get("q") or "").strip()
+            search_query = (self.request.query_params.get("search") or self.request.query_params.get("q") or "").strip()
             if search_query:
                 qs = qs.filter(
                     Q(content__icontains=search_query) |
@@ -155,7 +155,7 @@ class FeedView(generics.ListAPIView):
             resource_q = Q(media_type="DOCUMENT") | Q(document__isnull=False) | Q(attachments__file_type="DOCUMENT")
             qs_filter = base_permitted & resource_q & Q(is_confession=False)
         elif scope_param == "CONFESSIONS":
-            conf_level = str(request.query_params.get("level") or request.query_params.get("confession_scope") or "ALL").upper().strip()
+            conf_level = str(self.request.query_params.get("level") or self.request.query_params.get("confession_scope") or "ALL").upper().strip()
             confession_base = base_permitted & Q(is_confession=True)
             if conf_level == "GLOBAL":
                 qs_filter = confession_base & Q(visibility="GLOBAL")
@@ -194,7 +194,7 @@ class FeedView(generics.ListAPIView):
             private_filter &= ~Q(author_id__in=followed_ids)
         qs = qs.exclude(private_filter)
 
-        search_query = (request.query_params.get("search") or request.query_params.get("q") or "").strip()
+        search_query = (self.request.query_params.get("search") or self.request.query_params.get("q") or "").strip()
         if search_query:
             qs = qs.filter(
                 Q(content__icontains=search_query) |
