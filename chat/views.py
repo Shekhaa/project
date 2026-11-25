@@ -317,7 +317,9 @@ class ConversationMessagesView(generics.ListAPIView):
         if membership.cleared_at:
             qs = qs.filter(created_at__gt=membership.cleared_at)
 
-        return qs.select_related("sender", "sender__profile").prefetch_related("attachments").order_by("created_at")
+        return qs.select_related(
+            "sender", "sender__profile", "reply_to", "reply_to__sender", "reply_to__conversation"
+        ).prefetch_related("attachments", "reply_to__attachments").order_by("created_at")
 
 
 class SendMessageView(APIView):
@@ -407,11 +409,24 @@ class SendMessageView(APIView):
             is_hidden=True
         ).update(is_hidden=False)
 
+        reply_to_id = request.data.get("reply_to")
+        reply_msg = None
+        if reply_to_id:
+            try:
+                reply_msg = Message.objects.filter(
+                    id=reply_to_id,
+                    conversation=conv,
+                    is_unsent=False,
+                ).first()
+            except Exception:
+                reply_msg = None
+
         att_first = attachment if (attachment and not attachments) else None
         try:
             msg = Message.objects.create(
                 conversation=conv,
                 sender=request.user,
+                reply_to=reply_msg,
                 text=text,
                 attachment=att_first,
                 is_anonymous=is_anon,

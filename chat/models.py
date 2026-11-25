@@ -124,6 +124,13 @@ class Message(models.Model):
         on_delete=models.CASCADE,
         related_name="sent_chat_messages"
     )
+    reply_to = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="replies",
+    )
     text = models.TextField(blank=True, default="")
     attachment = models.FileField(upload_to="chat_attachments/", blank=True, null=True, max_length=500)
     is_read = models.BooleanField(default=False)

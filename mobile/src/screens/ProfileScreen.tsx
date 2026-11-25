@@ -255,8 +255,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
 
-  // Forgot / Reset Password State
-  const [resetEmail, setResetEmail] = useState(currentUser.email);
+  // Forgot / Reset Password State (locked to bound/verified recovery email if present)
+  const isPlaceholderAccountEmail =
+    !currentUser?.email ||
+    currentUser.email.toLowerCase().endsWith('.local') ||
+    currentUser.email.toLowerCase().startsWith('student_');
+  const hasLockedRecoveryEmail = !isPlaceholderAccountEmail;
+  const [resetEmail, setResetEmail] = useState(isPlaceholderAccountEmail ? '' : currentUser.email);
   const [resetOtp, setResetOtp] = useState('');
   const [resetNewPassword, setResetNewPassword] = useState('');
   const [resetConfirmPassword, setResetConfirmPassword] = useState('');
@@ -858,15 +863,20 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     }
   };
 
-  // Strong Password Validator (min 8 characters, letters & numbers)
+  // Strong Password Validator (min 8 characters, letters & numbers, rejects weak patterns)
   const validateStrongPassword = (pwd: string): string | null => {
-    if (!pwd || pwd.length < 8) {
+    const clean = (pwd || '').trim();
+    if (!clean || clean.length < 8) {
       return 'Password must be at least 8 characters long.';
     }
-    const hasLetter = /[a-zA-Z]/.test(pwd);
-    const hasNumber = /[0-9]/.test(pwd);
+    const hasLetter = /[a-zA-Z]/.test(clean);
+    const hasNumber = /[0-9]/.test(clean);
     if (!hasLetter || !hasNumber) {
       return 'Password must contain both letters and numbers.';
+    }
+    const weakList = ['12345678', '123456789', '1234567890', 'password', 'password1', 'password123', 'qwerty123', 'admin123'];
+    if (weakList.includes(clean.toLowerCase()) || new Set(clean.toLowerCase()).size < 4) {
+      return 'Password is too common or simple. Choose a stronger mix of letters and numbers.';
     }
     return null;
   };
@@ -990,16 +1000,22 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   const triggerDeleteAccount = () => {
     const confirmMessage =
-      'Are you sure you want to PERMANENTLY DELETE your student ID & account?\n\nThis will instantly delete your student profile, posts, comments, connections, and verification status. This action CANNOT be undone.';
+      'Schedule your Student ID & account for deletion?\n\n' +
+      '• 14-Day Retention Period: You will be logged out immediately.\n' +
+      '• Revert Anytime: If you log back in within 14 days, deletion is automatically cancelled and your account is restored.\n' +
+      '• Permanent Removal: If you do not log in for 14 consecutive days, your ID and data will be permanently deleted.';
 
     const executeDeletion = async () => {
       setDeletingAccount(true);
       try {
         await authService.deleteAccount();
-        showCrossPlatformAlert('Account Deleted', 'Your account and profile have been permanently deleted.');
+        showCrossPlatformAlert(
+          'Deletion Scheduled (14-Day Window)',
+          'You have been logged out. Your account will remain recoverable for 14 days — simply log back in before 14 days to cancel deletion and restore your ID.'
+        );
         onLogout();
       } catch (e: any) {
-        showCrossPlatformAlert('Deletion Failed', e?.response?.data?.message || 'Failed to delete account. Please try again.');
+        showCrossPlatformAlert('Deletion Failed', e?.response?.data?.message || e?.response?.data?.error || 'Failed to schedule account deletion. Please try again.');
       } finally {
         setDeletingAccount(false);
       }
@@ -1012,11 +1028,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       }
     } else {
       Alert.alert(
-        'Delete Student ID ⚠️',
+        'Delete Student ID (14-Day Retention) ⚠️',
         confirmMessage,
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Permanently Delete', style: 'destructive', onPress: executeDeletion },
+          { text: 'Schedule Delete & Logout', style: 'destructive', onPress: executeDeletion },
         ]
       );
     }
@@ -1027,16 +1043,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {/* Top Header Card */}
       <View style={[styles.heroCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
         <View style={styles.heroTopActions}>
-          <TouchableOpacity
-            style={[styles.editProfileBtn, { backgroundColor: colors.primary }]}
-            onPress={() => {
-              setActiveSettingsSection('PROFILE');
-              setSettingsModalVisible(true);
-            }}
-          >
-            <Edit3 size={13} color={colors.onPrimary} />
-            <Text style={[styles.editProfileBtnText, { color: colors.onPrimary }]}>Edit Profile</Text>
-          </TouchableOpacity>
           {(currentUser.is_staff || currentUser.is_superuser) && (
             <TouchableOpacity
               style={styles.auditIconBtn}
@@ -1052,7 +1058,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           )}
           <TouchableOpacity
             style={[styles.settingsIconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-            onPress={() => setSettingsModalVisible(true)}
+            onPress={() => {
+              setActiveSettingsSection('PROFILE');
+              setSettingsModalVisible(true);
+            }}
           >
             <Settings size={14} color={colors.textSecondary} />
             <Text style={[styles.settingsIconText, { color: colors.textSecondary }]}>Settings</Text>
@@ -1063,14 +1072,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           >
             <LogOut size={14} color={colors.danger} />
             <Text style={styles.heroLogoutText}>Sign Out</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.heroDeleteBtn}
-            onPress={triggerDeleteAccount}
-            disabled={deletingAccount}
-          >
-            <Trash2 size={14} color="#ef4444" />
-            <Text style={styles.heroDeleteText}>{deletingAccount ? 'Deleting...' : 'Delete ID'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -1245,6 +1246,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       placeholder="you@gmail.com"
                       placeholderTextColor={colors.textMuted}
                       value={verifyEmailInput}
+                      editable={!hasLockedRecoveryEmail}
                       onChangeText={(val) => {
                         setVerifyEmailInput(val);
                         setVerifyEmailError(null);
@@ -1868,6 +1870,25 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         <Text style={styles.logoutButtonText}>Log Out from Device</Text>
       </TouchableOpacity>
 
+      {/* Bottom Account Deletion Section (14-Day Retention Policy) */}
+      <View style={{ marginTop: 12, marginBottom: 24, gap: 8 }}>
+        <TouchableOpacity
+          style={styles.dangerDeleteAccountBtn}
+          onPress={triggerDeleteAccount}
+          disabled={deletingAccount}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            <Trash2 size={15} color="#ef4444" />
+            <Text style={styles.dangerDeleteAccountText}>
+              {deletingAccount ? 'Scheduling Deletion...' : 'Delete ID & Account'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+        <Text style={{ fontSize: 11.5, color: colors.textMuted, textAlign: 'center', lineHeight: 16, paddingHorizontal: 12 }}>
+          14-day retention policy: Deleting logs you out immediately. You can revert anytime within 14 days by logging back in; after 14 consecutive days your ID is permanently deleted.
+        </Text>
+      </View>
+
       {/* ⚙️ Comprehensive Campus Settings Modal */}
       {settingsModalVisible && (
       <Modal
@@ -2185,14 +2206,27 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   {/* Forgot / Reset Password with Email OTP */}
                   <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>Forgot Password? (OTP Reset)</Text>
                   <Text style={[styles.subtext, { color: colors.textMuted }]}>
-                    Receive a 6-digit reset code on your personal email (Gmail or registered email).
+                    {hasLockedRecoveryEmail
+                      ? `Receive a 6-digit reset code on your locked recovery email (${currentUser.email}).`
+                      : 'Receive a 6-digit reset code on your personal email (Gmail or registered email).'}
                   </Text>
 
-                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Email Address (e.g. Gmail)</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                    {hasLockedRecoveryEmail ? '🔒 Linked Recovery Email (Locked)' : 'Email Address (e.g. Gmail)'}
+                  </Text>
                   <TextInput
-                    style={[styles.settingsInput, { backgroundColor: colors.surfaceLight, color: colors.textPrimary, borderColor: colors.cardBorder }]}
+                    style={[
+                      styles.settingsInput,
+                      {
+                        backgroundColor: colors.surfaceLight,
+                        color: colors.textPrimary,
+                        borderColor: colors.cardBorder,
+                        opacity: hasLockedRecoveryEmail ? 0.72 : 1,
+                      },
+                    ]}
                     value={resetEmail}
                     onChangeText={setResetEmail}
+                    editable={!hasLockedRecoveryEmail}
                     placeholder="e.g. yourname@gmail.com"
                     placeholderTextColor={colors.textMuted}
                     autoCapitalize="none"
@@ -2429,7 +2463,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
                   <Text style={[styles.inputGroupTitle, { color: colors.textPrimary }]}>⚠️ Danger Zone</Text>
                   <Text style={[styles.subtext, { color: colors.textMuted }]}>
-                    Log out from this device or permanently delete your student account and wipe all profile data.
+                    Log out from this device or schedule your student account for deletion (14-day recovery window: log back in within 14 days to cancel).
                   </Text>
 
                   <TouchableOpacity style={styles.dangerLogoutBtn} onPress={onLogout}>
@@ -2439,13 +2473,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   <TouchableOpacity
                     style={styles.dangerDeleteAccountBtn}
                     onPress={() => {
-                      setSettingsModalVisible(false);
-                      triggerDeleteAccount();
+                      dismissModalWithSlide(() => {
+                        setSettingsModalVisible(false);
+                        triggerDeleteAccount();
+                      });
                     }}
                     disabled={deletingAccount}
                   >
                     <Text style={styles.dangerDeleteAccountText}>
-                      {deletingAccount ? 'Purging Account...' : '🗑️ Permanently Delete Account & ID'}
+                      {deletingAccount ? 'Scheduling Deletion...' : '🗑️ Delete Account & ID (14-Day Retention)'}
                     </Text>
                   </TouchableOpacity>
                 </View>

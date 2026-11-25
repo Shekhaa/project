@@ -57,6 +57,7 @@ import {
   UserPlus,
   MoreVertical,
   ShieldCheck,
+  CornerDownRight,
 } from 'lucide-react-native';
 
 interface ChatScreenProps {
@@ -127,6 +128,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [ephemeralModalVisible, setEphemeralModalVisible] = useState(false);
   const [selectedPostCard, setSelectedPostCard] = useState<SharedPostCardData | null>(null);
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
+  const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
   const [attachmentPickerVisible, setAttachmentPickerVisible] = useState(false);
 
   // Live Voice Note Recording & Draft State (Instagram style)
@@ -427,6 +429,18 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     setDraftVoiceNote(recorded);
   };
 
+  const getChatReplyPreviewText = (msg: Message) => {
+    const clean = (msg.text || '').trim();
+    if (clean.startsWith('[CAMPUS_POST_CARD:')) return '📌 Shared Post';
+    if (clean) return clean;
+    const atts = msg.attachments || [];
+    if (atts.some((a) => a.file_type === 'AUDIO')) return '🎙️ Voice Note';
+    if (atts.some((a) => a.file_type === 'VIDEO')) return '🎬 Video';
+    if (atts.some((a) => a.file_type === 'IMAGE')) return '🖼️ Photo';
+    if (atts.length > 0 || msg.attachment) return '📄 Document';
+    return 'Attachment';
+  };
+
   const handleSendMessage = async () => {
     if (!canParticipate) {
       onRequireVerify?.('Verify your campus ID or enter an invite code to send messages.');
@@ -447,6 +461,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       return;
     }
 
+    const activeReply = replyToMessage;
+    setReplyToMessage(null);
     let textToSend = rawText;
     setInputMessage('');
 
@@ -465,6 +481,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       sender: currentUser?.id,
       sender_name: mySenderName,
       sender_email: currentUser?.email || '',
+      reply_to: activeReply ? activeReply.id : null,
+      reply_to_preview: activeReply
+        ? {
+            id: activeReply.id,
+            sender_name: activeReply.sender_name || 'Student',
+            text: getChatReplyPreviewText(activeReply),
+          }
+        : null,
       text: textToSend,
       attachments: [],
       created_at: new Date().toISOString(),
@@ -476,7 +500,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
     try {
       setSending(true);
-      const sent = await chatService.sendMessage(activeConv.id, textToSend);
+      const sent = await chatService.sendMessage(activeConv.id, textToSend, {
+        reply_to: activeReply ? activeReply.id : undefined,
+      });
       setMessages((prev) => upsertMessageUnique(prev, sent, tempId));
     } catch (e: any) {
       if (isVerifyRequiredErr(e)) {
@@ -505,6 +531,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     if (!activeConv) return;
     setDeliveryError(null);
     setRoomNotice(null);
+    const activeReply = replyToMessage;
+    setReplyToMessage(null);
     const tempId = `temp_att_msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     let finalCaption = (caption || '').trim();
 
@@ -522,6 +550,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       sender: currentUser?.id,
       sender_name: mySenderName,
       sender_email: currentUser?.email || '',
+      reply_to: activeReply ? activeReply.id : null,
+      reply_to_preview: activeReply
+        ? {
+            id: activeReply.id,
+            sender_name: activeReply.sender_name || 'Student',
+            text: getChatReplyPreviewText(activeReply),
+          }
+        : null,
       text: finalCaption,
       created_at: new Date().toISOString(),
       attachments: staged.map((item, idx) => ({
@@ -551,7 +587,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         name: item.name,
         type: item.mimeType || (item.type === 'IMAGE' ? 'image/jpeg' : (item.type === 'AUDIO' ? 'audio/webm' : (item.type === 'VIDEO' ? 'video/mp4' : 'application/octet-stream'))),
       }));
-      const sent = await chatService.sendMessageWithAttachments(activeConv.id, finalCaption, filesToSend);
+      const sent = await chatService.sendMessageWithAttachments(
+        activeConv.id,
+        finalCaption,
+        filesToSend,
+        undefined,
+        { reply_to: activeReply ? activeReply.id : undefined }
+      );
       setMessages((prev) => upsertMessageUnique(prev, sent, tempId));
     } catch (err: any) {
       if (isVerifyRequiredErr(err)) {
@@ -931,6 +973,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                   message={item}
                   isMe={isMe}
                   isGroup={activeConv.is_group}
+                  onSwipeReply={(m) => setReplyToMessage(m)}
                   onPress={(m) => {
                     if (m.status === 'failed') {
                       setActionMessage(m);
@@ -1062,6 +1105,43 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               onRemove={() => setDraftVoiceNote(null)}
               compact
             />
+          </View>
+        )}
+
+        {/* Quoted Reply Banner */}
+        {replyToMessage && (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingHorizontal: 14,
+              paddingVertical: 9,
+              backgroundColor: colors.surfaceLight,
+              borderTopWidth: 1,
+              borderTopColor: colors.cardBorder,
+              borderLeftWidth: 4,
+              borderLeftColor: colors.primary,
+              gap: 10,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <CornerDownRight size={13} color={colors.primary} />
+                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.primary }} numberOfLines={1}>
+                  Replying to {replyToMessage.sender_name || 'Student'}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 12.5, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
+                {getChatReplyPreviewText(replyToMessage)}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setReplyToMessage(null)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ padding: 4 }}
+            >
+              <X size={16} color={colors.textMuted} />
+            </TouchableOpacity>
           </View>
         )}
 
@@ -1240,6 +1320,20 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                         >
                           Message failed to deliver
                         </Text>
+                      )}
+
+                      {!isTempOrFailed && (
+                        <TouchableOpacity
+                          style={styles.actionSheetItem}
+                          onPress={() => {
+                            const target = actionMessage;
+                            setActionMessage(null);
+                            if (target) setReplyToMessage(target);
+                          }}
+                        >
+                          <CornerDownRight size={18} color={colors.primary} />
+                          <Text style={[styles.actionSheetText, { color: colors.textPrimary }]}>Reply</Text>
+                        </TouchableOpacity>
                       )}
 
                       {isSenderMe && !isTempOrFailed && (

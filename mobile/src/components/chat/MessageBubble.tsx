@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   View,
   Text,
@@ -7,13 +7,16 @@ import {
   Image,
   Platform,
   Linking,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { Message } from '../../services/chatService';
-import { ExternalLink, Heart, MessageCircle, Play, AlertCircle } from 'lucide-react-native';
+import { ExternalLink, Heart, MessageCircle, Play, AlertCircle, CornerDownRight } from 'lucide-react-native';
 import { MediaGrid } from '../media/MediaGrid';
 import { DocumentCard } from '../media/DocumentCard';
 import { AudioPlayerPill, splitMediaAttachments } from '../media/VoiceNotePlayer';
+import { CustomVideoPlayer } from '../media/CustomVideoPlayer';
 import { UserAvatar } from '../common/UserAvatar';
 import { getFullMediaUrl } from '../../config/api';
 
@@ -44,48 +47,19 @@ interface MessageBubbleProps {
   onLongPress?: (msg: Message) => void;
   onPostCardPress?: (cardData: SharedPostCardData) => void;
   onSenderPress?: (senderId: number) => void;
+  onSwipeReply?: (msg: Message) => void;
 }
 
 const VideoPlayerPill: React.FC<{ url: string; fileName: string; isMe: boolean }> = ({ url, fileName, isMe }) => {
-  const { colors, isDark } = useTheme();
-  const fullUrl = getFullMediaUrl(url);
-  if (Platform.OS === 'web') {
-    return (
-      <View style={{ borderRadius: 10, overflow: 'hidden', marginVertical: 4, maxWidth: 280, backgroundColor: '#000' }}>
-        <video
-          src={fullUrl}
-          controls
-          playsInline
-          style={{ width: '100%', maxHeight: 240, objectFit: 'contain', display: 'block', borderRadius: 10 }}
-        />
-        {fileName && (
-          <Text style={{ fontSize: 11, color: isMe ? 'rgba(255,255,255,0.75)' : '#94a3b8', paddingHorizontal: 8, paddingVertical: 4 }}>
-            🎬 {fileName}
-          </Text>
-        )}
-      </View>
-    );
-  }
   return (
-    <TouchableOpacity
-      style={[
-        styles.videoFallbackPill,
-        {
-          backgroundColor: isMe
-            ? 'rgba(255, 255, 255, 0.14)'
-            : isDark
-            ? 'rgba(94, 106, 210, 0.12)'
-            : 'rgba(79, 70, 229, 0.08)',
-          borderColor: isMe ? 'rgba(255, 255, 255, 0.25)' : colors.cardBorder,
-        },
-      ]}
-      onPress={() => Linking.openURL(fullUrl)}
-    >
-      <Play size={16} color={isMe ? '#ffffff' : colors.primary} />
-      <Text style={[styles.videoFallbackText, { color: isMe ? '#ffffff' : colors.bubbleThemText }]}>
-        🎬 {fileName || 'Watch Video'}
-      </Text>
-    </TouchableOpacity>
+    <View style={{ borderRadius: 10, overflow: 'hidden', marginVertical: 4, width: 260, maxWidth: '100%', backgroundColor: '#000' }}>
+      <CustomVideoPlayer url={url} maxHeight={220} borderRadius={10} />
+      {fileName ? (
+        <Text style={{ fontSize: 11, color: isMe ? 'rgba(255,255,255,0.75)' : '#94a3b8', paddingHorizontal: 8, paddingVertical: 4 }} numberOfLines={1}>
+          🎬 {fileName}
+        </Text>
+      ) : null}
+    </View>
   );
 };
 
@@ -126,9 +100,47 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   onLongPress,
   onPostCardPress,
   onSenderPress,
+  onSwipeReply,
 }) => {
   const { colors, isDark } = useTheme();
   const { cleanText, cardData } = parseSharedPostCard(message.text);
+  const swipeTranslateX = useRef(new Animated.Value(0)).current;
+  const swipeReplyRef = useRef(onSwipeReply);
+  swipeReplyRef.current = onSwipeReply;
+  const messageRef = useRef(message);
+  messageRef.current = message;
+
+  const swipePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        Boolean(swipeReplyRef.current) &&
+        gesture.dx < -14 &&
+        Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.4,
+      onPanResponderMove: (_, gesture) => {
+        if (gesture.dx < 0) {
+          swipeTranslateX.setValue(Math.max(gesture.dx, -58));
+        }
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dx < -36 && swipeReplyRef.current) {
+          swipeReplyRef.current(messageRef.current);
+        }
+        Animated.spring(swipeTranslateX, {
+          toValue: 0,
+          bounciness: 6,
+          useNativeDriver: true,
+        }).start();
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(swipeTranslateX, {
+          toValue: 0,
+          bounciness: 6,
+          useNativeDriver: true,
+        }).start();
+      },
+    })
+  ).current;
 
   const formatTime = (dateStr: string) => {
     if (!dateStr) return '';
@@ -154,9 +166,52 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   const anonInfo = parseAnonMessage(cleanText);
   const displayText = anonInfo.isAnon ? anonInfo.messageBody : cleanText;
+  const replyPreview = message.reply_to_preview;
 
   return (
-    <View style={[styles.row, isMe ? styles.rowMe : styles.rowThem]}>
+    <View style={{ position: 'relative', justifyContent: 'center' }}>
+      {Boolean(onSwipeReply) && (
+        <Animated.View
+          style={{
+            position: 'absolute',
+            right: 16,
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 30,
+            height: 30,
+            borderRadius: 15,
+            backgroundColor: colors.surfaceLight,
+            borderWidth: 1,
+            borderColor: colors.cardBorder,
+            opacity: swipeTranslateX.interpolate({
+              inputRange: [-45, -12, 0],
+              outputRange: [1, 0.4, 0],
+              extrapolate: 'clamp',
+            }),
+            transform: [
+              {
+                scale: swipeTranslateX.interpolate({
+                  inputRange: [-50, -10, 0],
+                  outputRange: [1, 0.7, 0.4],
+                  extrapolate: 'clamp',
+                }),
+              },
+            ],
+          }}
+          pointerEvents="none"
+        >
+          <CornerDownRight size={14} color={colors.primary} />
+        </Animated.View>
+      )}
+
+      <Animated.View
+        {...(onSwipeReply ? swipePanResponder.panHandlers : {})}
+        style={[
+          styles.row,
+          isMe ? styles.rowMe : styles.rowThem,
+          { transform: [{ translateX: swipeTranslateX }] },
+        ]}
+      >
       {!isMe && isGroup && (
         <TouchableOpacity
           disabled={!message.sender || anonInfo.isAnon}
@@ -222,6 +277,38 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           >
             <Text style={[styles.senderHeader, { color: colors.primary }]}>{message.sender_name}</Text>
           </TouchableOpacity>
+        )}
+
+        {/* Quoted Reply Preview Card */}
+        {replyPreview && (
+          <View
+            style={[
+              styles.replyQuoteBox,
+              {
+                backgroundColor: isMe ? 'rgba(255,255,255,0.14)' : colors.surfaceLight,
+                borderLeftColor: isMe ? '#ffffff' : colors.primary,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.replyQuoteSender,
+                { color: isMe ? '#ffffff' : colors.primary },
+              ]}
+              numberOfLines={1}
+            >
+              {replyPreview.sender_name}
+            </Text>
+            <Text
+              style={[
+                styles.replyQuoteText,
+                { color: isMe ? 'rgba(255,255,255,0.85)' : colors.textSecondary },
+              ]}
+              numberOfLines={2}
+            >
+              {replyPreview.text}
+            </Text>
+          </View>
         )}
 
         {imageAttachments.length > 0 && (
@@ -545,11 +632,28 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           )}
         </View>
       </TouchableOpacity>
+      </Animated.View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  replyQuoteBox: {
+    borderLeftWidth: 3,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginBottom: 6,
+  },
+  replyQuoteSender: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 1,
+  },
+  replyQuoteText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
   row: {
     flexDirection: 'row',
     marginVertical: 4,

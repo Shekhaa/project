@@ -13,6 +13,9 @@ import {
   Platform,
   ScrollView,
   Share,
+  Animated,
+  PanResponder,
+  Image,
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import {
@@ -21,6 +24,7 @@ import {
   CommunityMemberItem,
 } from '../services/communityService';
 import { chatService, Message, mergeMessagesUnique, upsertMessageUnique } from '../services/chatService';
+import { getFullMediaUrl } from '../config/api';
 import {
   Paperclip,
   Search,
@@ -37,6 +41,10 @@ import {
   UserPlus,
   Mic,
   ShieldCheck,
+  CornerDownRight,
+  Image as ImageIcon,
+  FileText,
+  Film,
 } from 'lucide-react-native';
 import { AttachmentPickerModal, StagedAttachment } from '../components/media/AttachmentPickerModal';
 import {
@@ -45,7 +53,10 @@ import {
   useVoiceRecorder,
   RecordedVoiceNote,
 } from '../components/media/VoiceNoteRecorder';
-import { pauseAllActiveVoiceNotes } from '../components/media/VoiceNotePlayer';
+import { pauseAllActiveVoiceNotes, splitMediaAttachments } from '../components/media/VoiceNotePlayer';
+import { DocumentCard } from '../components/media/DocumentCard';
+import { CustomVideoPlayer } from '../components/media/CustomVideoPlayer';
+import { ImageViewerModal } from '../components/media/ImageViewerModal';
 import { MessageBubble, SharedPostCardData } from '../components/chat/MessageBubble';
 import { SharedPostViewerModal } from '../components/chat/SharedPostViewerModal';
 import { DiscussTab } from '../components/discuss/DiscussTab';
@@ -127,8 +138,106 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   const [reportError, setReportError] = useState<string | null>(null);
   const [submittingReport, setSubmittingReport] = useState(false);
 
-  // More Options Menu
+  // More Options Menu + CommentsModal-style Slide-Down PanResponder
   const [moreMenuVisible, setMoreMenuVisible] = useState(false);
+  const moreMenuTranslateY = useRef(new Animated.Value(0)).current;
+  const dismissMoreMenuWithSlide = (afterClose?: () => void) => {
+    Animated.timing(moreMenuTranslateY, {
+      toValue: 550,
+      duration: 210,
+      useNativeDriver: true,
+    }).start(() => {
+      moreMenuTranslateY.setValue(0);
+      setMoreMenuVisible(false);
+      afterClose?.();
+    });
+  };
+  const moreMenuPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gs) => gs.dy > 5,
+      onPanResponderMove: (_, gs) => {
+        if (gs.dy > 0) moreMenuTranslateY.setValue(gs.dy);
+      },
+      onPanResponderRelease: (_, gs) => {
+        if (gs.dy > 90 || gs.vy > 0.6) {
+          dismissMoreMenuWithSlide();
+        } else {
+          Animated.spring(moreMenuTranslateY, {
+            toValue: 0,
+            bounciness: 4,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  // Shared Group Media Gallery State + Slide-Down PanResponder
+  const [mediaGalleryModalVisible, setMediaGalleryModalVisible] = useState(false);
+  const [mediaGalleryFilter, setMediaGalleryFilter] = useState<'ALL' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'>('ALL');
+  const [galleryViewerVisible, setGalleryViewerVisible] = useState(false);
+  const [galleryViewerIndex, setGalleryViewerIndex] = useState(0);
+  const mediaSheetTranslateY = useRef(new Animated.Value(0)).current;
+  const dismissMediaSheetWithSlide = () => {
+    Animated.timing(mediaSheetTranslateY, {
+      toValue: 650,
+      duration: 210,
+      useNativeDriver: true,
+    }).start(() => {
+      mediaSheetTranslateY.setValue(0);
+      setMediaGalleryModalVisible(false);
+    });
+  };
+  const mediaSheetPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gs) => gs.dy > 5,
+      onPanResponderMove: (_, gs) => {
+        if (gs.dy > 0) mediaSheetTranslateY.setValue(gs.dy);
+      },
+      onPanResponderRelease: (_, gs) => {
+        if (gs.dy > 110 || gs.vy > 0.6) {
+          dismissMediaSheetWithSlide();
+        } else {
+          Animated.spring(mediaSheetTranslateY, {
+            toValue: 0,
+            bounciness: 4,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  // In-Chat Search State (accessible from Three Dots -> Search Chat & Docs)
+  const [chatSearchOpen, setChatSearchOpen] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const chatSearchAnim = useRef(new Animated.Value(0)).current;
+  const openChatSearch = () => {
+    setActiveTab('CHAT');
+    setChatSearchOpen(true);
+    chatSearchAnim.setValue(0);
+    Animated.spring(chatSearchAnim, {
+      toValue: 1,
+      tension: 80,
+      friction: 11,
+      useNativeDriver: true,
+    }).start();
+  };
+  const closeChatSearch = () => {
+    Animated.timing(chatSearchAnim, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => {
+      setChatSearchOpen(false);
+      setChatSearchQuery('');
+    });
+  };
+
+  // Swipe-to-Reply State
+  const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
 
   // Custom Community Creation
   const [newTitle, setNewTitle] = useState('');
@@ -140,6 +249,14 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   const [addMembersModalVisible, setAddMembersModalVisible] = useState(false);
   const [inviteLinkModalVisible, setInviteLinkModalVisible] = useState(false);
   const [joinViaInviteModalVisible, setJoinViaInviteModalVisible] = useState(false);
+
+  const fetchMembersSilently = async () => {
+    if (!activeCommunity) return;
+    try {
+      const data = await communityService.getMembers(activeCommunity.slug);
+      setMembersList(data || []);
+    } catch {}
+  };
 
   const handleAddCommunityMembers = async (selectedIds: number[]) => {
     if (!activeCommunity) return;
@@ -189,7 +306,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
     loadCommunities();
   }, []);
 
-  // Back button handling in CommunitiesScreen: Step back from active community to list, or close modals
+  // Back button handling in CommunitiesScreen: Step back from active community to list, or close modals cleanly in 1 press
   useEffect(() => {
     if (activeCommunity) {
       backHandlerRegistry.push('communities-active-room', () => {
@@ -209,6 +326,47 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       return () => backHandlerRegistry.pop('communities-create-modal');
     }
   }, [createCommunityModalVisible]);
+
+  useEffect(() => {
+    if (addMembersModalVisible) {
+      backHandlerRegistry.push('communities-add-members-modal', () => {
+        setAddMembersModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('communities-add-members-modal');
+    }
+  }, [addMembersModalVisible]);
+
+  useEffect(() => {
+    if (inviteLinkModalVisible) {
+      backHandlerRegistry.push('communities-invite-link-modal', () => {
+        setInviteLinkModalVisible(false);
+        return true;
+      });
+      return () => backHandlerRegistry.pop('communities-invite-link-modal');
+    }
+  }, [inviteLinkModalVisible]);
+
+  useEffect(() => {
+    if (mediaGalleryModalVisible) {
+      mediaSheetTranslateY.setValue(0);
+      backHandlerRegistry.push('communities-media-gallery', () => {
+        dismissMediaSheetWithSlide();
+        return true;
+      });
+      return () => backHandlerRegistry.pop('communities-media-gallery');
+    }
+  }, [mediaGalleryModalVisible]);
+
+  useEffect(() => {
+    if (chatSearchOpen) {
+      backHandlerRegistry.push('communities-chat-search', () => {
+        closeChatSearch();
+        return true;
+      });
+      return () => backHandlerRegistry.pop('communities-chat-search');
+    }
+  }, [chatSearchOpen]);
 
   useEffect(() => {
     if (membersModalVisible) {
@@ -232,8 +390,9 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
   useEffect(() => {
     if (moreMenuVisible) {
+      moreMenuTranslateY.setValue(0);
       backHandlerRegistry.push('communities-more-menu', () => {
-        setMoreMenuVisible(false);
+        dismissMoreMenuWithSlide();
         return true;
       });
       return () => backHandlerRegistry.pop('communities-more-menu');
@@ -254,6 +413,9 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   useEffect(() => {
     voiceRecorder.cancelRecording();
     setDraftVoiceNote(null);
+    setReplyToMessage(null);
+    setChatSearchOpen(false);
+    setChatSearchQuery('');
     setHubChatError(null);
     setHubChatNotice(null);
     pauseAllActiveVoiceNotes();
@@ -315,6 +477,18 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   const isVerifyRequiredErr = (err: any) =>
     err?.response?.status === 403 || err?.response?.data?.code === 'CAMPUS_VERIFICATION_REQUIRED';
 
+  const getReplyPreviewText = (msg: Message) => {
+    const clean = (msg.text || '').trim();
+    if (clean.startsWith('[CAMPUS_POST_CARD:')) return '📌 Shared Post';
+    if (clean) return clean;
+    const atts = msg.attachments || [];
+    if (atts.some((a) => a.file_type === 'AUDIO')) return '🎙️ Voice Note';
+    if (atts.some((a) => a.file_type === 'VIDEO')) return '🎬 Video';
+    if (atts.some((a) => a.file_type === 'IMAGE')) return '🖼️ Photo';
+    if (atts.length > 0 || msg.attachment) return '📄 Document';
+    return 'Attachment';
+  };
+
   // Send Message in Hub Chat
   const handleSendHubMessage = async () => {
     if (!canParticipate) {
@@ -336,6 +510,8 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       return;
     }
 
+    const activeReply = replyToMessage;
+    setReplyToMessage(null);
     setMessageText('');
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const optimisticMsg: Message = {
@@ -344,6 +520,14 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       sender: currentUser?.id,
       sender_name: currentUser?.full_name || 'You',
       sender_email: currentUser?.email || '',
+      reply_to: activeReply ? activeReply.id : null,
+      reply_to_preview: activeReply
+        ? {
+            id: activeReply.id,
+            sender_name: activeReply.sender_name || 'Student',
+            text: getReplyPreviewText(activeReply),
+          }
+        : null,
       text: textToSend,
       attachments: [],
       created_at: new Date().toISOString(),
@@ -355,7 +539,9 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
     setSendingMessage(true);
 
     try {
-      const newMsg = await chatService.sendMessage(activeConv.id, textToSend);
+      const newMsg = await chatService.sendMessage(activeConv.id, textToSend, {
+        reply_to: activeReply ? activeReply.id : undefined,
+      });
       setMessages((prev) => upsertMessageUnique(prev, newMsg, tempId));
       setTimeout(() => chatFlatListRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e: any) {
@@ -388,6 +574,8 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
     if (!activeConv) return;
     setHubChatError(null);
     setHubChatNotice(null);
+    const activeReply = replyToMessage;
+    setReplyToMessage(null);
     const finalCaption = (caption || '').trim();
     const tempId = `temp_att_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const optimisticMsg: Message = {
@@ -396,6 +584,14 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       sender: currentUser?.id,
       sender_name: currentUser?.full_name || 'You',
       sender_email: currentUser?.email || '',
+      reply_to: activeReply ? activeReply.id : null,
+      reply_to_preview: activeReply
+        ? {
+            id: activeReply.id,
+            sender_name: activeReply.sender_name || 'Student',
+            text: getReplyPreviewText(activeReply),
+          }
+        : null,
       text: finalCaption,
       created_at: new Date().toISOString(),
       attachments: files.map((item, idx) => ({
@@ -434,7 +630,9 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
       const newMsg = await chatService.sendMessageWithAttachments(
         activeConv.id,
         finalCaption,
-        normalizedFiles
+        normalizedFiles,
+        undefined,
+        { reply_to: activeReply ? activeReply.id : undefined }
       );
       setMessages((prev) => upsertMessageUnique(prev, newMsg, tempId));
       setTimeout(() => chatFlatListRef.current?.scrollToEnd({ animated: true }), 100);
@@ -882,7 +1080,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
             <TouchableOpacity
               style={[styles.headerIconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder, borderWidth: 1 }]}
               onPress={() => {
-                handleOpenMembers();
+                fetchMembersSilently();
                 setAddMembersModalVisible(true);
               }}
               accessibilityLabel="Add members"
@@ -891,10 +1089,13 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.headerIconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder, borderWidth: 1 }]}
-              onPress={handleOpenMembers}
-              accessibilityLabel="View members"
+              onPress={() => {
+                setMediaGalleryFilter('ALL');
+                setMediaGalleryModalVisible(true);
+              }}
+              accessibilityLabel="Shared media and documents"
             >
-              <Users size={16} color={colors.textSecondary} />
+              <ImageIcon size={16} color={colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.headerIconBtn, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder, borderWidth: 1 }]}
@@ -976,6 +1177,52 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
         {/* TAB A: CHAT EXPERIENCE */}
         {activeTab === 'CHAT' && (
           <View style={{ flex: 1 }}>
+            {/* Animated Expanding Search Bar inside Chat (Messages + Shared Documents) */}
+            {chatSearchOpen && (
+              <Animated.View
+                style={[
+                  styles.inChatSearchBar,
+                  {
+                    backgroundColor: colors.surface,
+                    borderBottomColor: colors.cardBorder,
+                    opacity: chatSearchAnim,
+                    transform: [
+                      {
+                        translateY: chatSearchAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [-14, 0],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <View style={[styles.inChatSearchPill, { backgroundColor: colors.surfaceLight, borderColor: colors.primary }]}>
+                  <Search size={15} color={colors.primary} />
+                  <TextInput
+                    style={[
+                      styles.inChatSearchInput,
+                      { color: colors.textPrimary },
+                      Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : null,
+                    ]}
+                    placeholder="Search chat messages or shared documents..."
+                    placeholderTextColor={colors.textMuted}
+                    value={chatSearchQuery}
+                    onChangeText={setChatSearchQuery}
+                    autoFocus
+                  />
+                  {chatSearchQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setChatSearchQuery('')}>
+                      <X size={15} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <TouchableOpacity onPress={closeChatSearch} style={{ paddingHorizontal: 8, paddingVertical: 6 }}>
+                  <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>Cancel</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+
             {chatLoading && messages.length === 0 ? (
               <View style={styles.centerLoading}>
                 <ActivityIndicator color={colors.primary} size="large" />
@@ -984,7 +1231,19 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
             ) : (
               <FlatList
                 ref={chatFlatListRef}
-                data={messages}
+                data={
+                  chatSearchOpen && chatSearchQuery.trim()
+                    ? messages.filter((m) => {
+                        const q = chatSearchQuery.trim().toLowerCase();
+                        const textMatch = (m.text || '').toLowerCase().includes(q);
+                        const senderMatch = (m.sender_name || '').toLowerCase().includes(q);
+                        const attMatch = (m.attachments || []).some((a) =>
+                          (a.file_name || '').toLowerCase().includes(q)
+                        );
+                        return textMatch || senderMatch || attMatch;
+                      })
+                    : messages
+                }
                 keyExtractor={(item) => String(item.id)}
                 contentContainerStyle={styles.chatListContent}
                 renderItem={({ item }) => {
@@ -998,6 +1257,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                       message={item}
                       isMe={isMe}
                       isGroup={true}
+                      onSwipeReply={(msg) => setReplyToMessage(msg)}
                       onPress={(msg) => {
                         if ((msg as any).status === 'failed') {
                           setActionMessage(msg);
@@ -1081,6 +1341,39 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   onRemove={() => setDraftVoiceNote(null)}
                   compact
                 />
+              </View>
+            )}
+
+            {/* Quoted Reply Banner (Swipe Left or Long-Press Reply) */}
+            {replyToMessage && (
+              <View
+                style={[
+                  styles.replyPreviewBanner,
+                  {
+                    backgroundColor: colors.surfaceLight,
+                    borderTopColor: colors.cardBorder,
+                    borderLeftColor: colors.primary,
+                  },
+                ]}
+              >
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <CornerDownRight size={13} color={colors.primary} />
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: colors.primary }} numberOfLines={1}>
+                      Replying to {replyToMessage.sender_name || 'Student'}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 12.5, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
+                    {getReplyPreviewText(replyToMessage)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setReplyToMessage(null)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{ padding: 4 }}
+                >
+                  <X size={16} color={colors.textMuted} />
+                </TouchableOpacity>
               </View>
             )}
 
@@ -1231,6 +1524,20 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                 <Text style={[styles.sheetHeaderTitle, { color: colors.textPrimary }]}>
                   {isActionFailedOrLocal ? 'Message failed to deliver' : 'Message Options'}
                 </Text>
+
+                {!isActionFailedOrLocal && (
+                  <TouchableOpacity
+                    style={[styles.sheetActionItem, { borderBottomColor: colors.cardBorder }]}
+                    onPress={() => {
+                      const target = actionMessage;
+                      setActionMessage(null);
+                      if (target) setReplyToMessage(target);
+                    }}
+                  >
+                    <CornerDownRight size={16} color={colors.primary} />
+                    <Text style={[styles.sheetActionText, { color: colors.textPrimary }]}>Reply</Text>
+                  </TouchableOpacity>
+                )}
 
                 {Boolean(actionMessage.text?.trim()) && (
                   <TouchableOpacity
@@ -1607,25 +1914,69 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
           </View>
         </Modal>
 
-        {/* MORE OPTIONS MENU SHEET */}
+        {/* MORE OPTIONS MENU SHEET (Slide-Down PanResponder matching CommentsModal) */}
         {moreMenuVisible && (
-          <Modal visible={moreMenuVisible} transparent animationType="fade" onRequestClose={() => setMoreMenuVisible(false)}>
+          <Modal visible={moreMenuVisible} transparent animationType="none" onRequestClose={() => dismissMoreMenuWithSlide()}>
             <TouchableOpacity
               style={[styles.sheetOverlay, { backgroundColor: colors.modalOverlay }]}
               activeOpacity={1}
-              onPress={() => setMoreMenuVisible(false)}
+              onPress={() => dismissMoreMenuWithSlide()}
             >
-              <View style={[styles.sheetMenu, { backgroundColor: colors.surface, borderTopColor: colors.cardBorder, borderTopWidth: 1 }]}>
-                <View style={[styles.sheetDragBar, { backgroundColor: colors.hairlineStrong }]} />
-                <Text style={[styles.sheetHeaderTitle, { color: colors.textPrimary }]}>{activeCommunity.name}</Text>
+              <Animated.View
+                style={[
+                  styles.sheetMenu,
+                  {
+                    backgroundColor: colors.surface,
+                    borderTopColor: colors.cardBorder,
+                    borderTopWidth: 1,
+                    transform: [{ translateY: moreMenuTranslateY }],
+                  },
+                ]}
+                onStartShouldSetResponder={() => true}
+              >
+                <View {...moreMenuPanResponder.panHandlers} style={{ width: '100%', alignItems: 'center', paddingVertical: 6 }}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => dismissMoreMenuWithSlide()}
+                    hitSlop={{ top: 10, bottom: 10, left: 30, right: 30 }}
+                  >
+                    <View style={[styles.sheetDragBar, { backgroundColor: colors.hairlineStrong, marginBottom: 4 }]} />
+                  </TouchableOpacity>
+                </View>
+
+                <View {...moreMenuPanResponder.panHandlers}>
+                  <Text style={[styles.sheetHeaderTitle, { color: colors.textPrimary }]}>{activeCommunity.name}</Text>
+                </View>
 
                 <TouchableOpacity
                   style={[styles.sheetActionItem, { borderBottomColor: colors.cardBorder }]}
-                  onPress={() => {
-                    setMoreMenuVisible(false);
-                    handleOpenMembers();
-                    setAddMembersModalVisible(true);
-                  }}
+                  onPress={() => dismissMoreMenuWithSlide(() => openChatSearch())}
+                >
+                  <Search size={16} color={colors.primary} />
+                  <Text style={[styles.sheetActionText, { color: colors.textPrimary }]}>Search Chat & Documents</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.sheetActionItem, { borderBottomColor: colors.cardBorder }]}
+                  onPress={() =>
+                    dismissMoreMenuWithSlide(() => {
+                      setMediaGalleryFilter('ALL');
+                      setMediaGalleryModalVisible(true);
+                    })
+                  }
+                >
+                  <ImageIcon size={16} color={colors.primary} />
+                  <Text style={[styles.sheetActionText, { color: colors.textPrimary }]}>Shared Media & Docs</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.sheetActionItem, { borderBottomColor: colors.cardBorder }]}
+                  onPress={() =>
+                    dismissMoreMenuWithSlide(() => {
+                      fetchMembersSilently();
+                      setAddMembersModalVisible(true);
+                    })
+                  }
                 >
                   <UserPlus size={16} color={colors.primary} />
                   <Text style={[styles.sheetActionText, { color: colors.textPrimary }]}>Add People</Text>
@@ -1633,10 +1984,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
                 <TouchableOpacity
                   style={[styles.sheetActionItem, { borderBottomColor: colors.cardBorder }]}
-                  onPress={() => {
-                    setMoreMenuVisible(false);
-                    setInviteLinkModalVisible(true);
-                  }}
+                  onPress={() => dismissMoreMenuWithSlide(() => setInviteLinkModalVisible(true))}
                 >
                   <Link2 size={16} color={colors.primary} />
                   <Text style={[styles.sheetActionText, { color: colors.textPrimary }]}>Group Invite Link</Text>
@@ -1644,10 +1992,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
                 <TouchableOpacity
                   style={[styles.sheetActionItem, { borderBottomColor: colors.cardBorder }]}
-                  onPress={() => {
-                    setMoreMenuVisible(false);
-                    handleOpenMembers();
-                  }}
+                  onPress={() => dismissMoreMenuWithSlide(() => handleOpenMembers())}
                 >
                   <Users size={16} color={colors.primary} />
                   <Text style={[styles.sheetActionText, { color: colors.textPrimary }]}>
@@ -1657,12 +2002,13 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
                 <TouchableOpacity
                   style={[styles.sheetActionItem, { borderBottomColor: colors.cardBorder }]}
-                  onPress={() => {
-                    setMoreMenuVisible(false);
-                    Share.share({
-                      message: `Join ${activeCommunity.name} on Vike!`,
-                    });
-                  }}
+                  onPress={() =>
+                    dismissMoreMenuWithSlide(() => {
+                      Share.share({
+                        message: `Join ${activeCommunity.name} on Vike!`,
+                      });
+                    })
+                  }
                 >
                   <Share2 size={16} color={colors.primary} />
                   <Text style={[styles.sheetActionText, { color: colors.textPrimary }]}>Share Community</Text>
@@ -1670,12 +2016,13 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
 
                 <TouchableOpacity
                   style={[styles.sheetActionItem, { borderBottomColor: colors.cardBorder }]}
-                  onPress={() => {
-                    setMoreMenuVisible(false);
-                    setReportTarget({ type: 'COMMUNITY', id: String(activeCommunity.id) });
-                    setReportError(null);
-                    setReportModalVisible(true);
-                  }}
+                  onPress={() =>
+                    dismissMoreMenuWithSlide(() => {
+                      setReportTarget({ type: 'COMMUNITY', id: String(activeCommunity.id) });
+                      setReportError(null);
+                      setReportModalVisible(true);
+                    })
+                  }
                 >
                   <AlertTriangle size={16} color={colors.warning} />
                   <Text style={[styles.sheetActionText, { color: colors.warning }]}>Report Community</Text>
@@ -1685,43 +2032,44 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   <TouchableOpacity
                     style={[styles.sheetActionItem, { borderBottomColor: colors.cardBorder }]}
                     onPress={() => {
-                      setMoreMenuVisible(false);
                       const targetSlug = activeCommunity.slug;
                       const targetName = activeCommunity.name;
-                      const executeDelete = async () => {
-                        try {
-                          await communityService.deleteCommunity(targetSlug);
-                          setActiveCommunity(null);
-                          loadCommunities();
-                          if (Platform.OS === 'web') {
-                            window.alert(`Community "${targetName}" deleted successfully.`);
-                          } else {
-                            Alert.alert('Deleted', `Community "${targetName}" deleted successfully.`);
+                      dismissMoreMenuWithSlide(() => {
+                        const executeDelete = async () => {
+                          try {
+                            await communityService.deleteCommunity(targetSlug);
+                            setActiveCommunity(null);
+                            loadCommunities();
+                            if (Platform.OS === 'web') {
+                              window.alert(`Community "${targetName}" deleted successfully.`);
+                            } else {
+                              Alert.alert('Deleted', `Community "${targetName}" deleted successfully.`);
+                            }
+                          } catch (e: any) {
+                            const err = extractApiError(e, 'Could not delete community.');
+                            setHubChatError(err);
+                            if (Platform.OS === 'web') {
+                              window.alert(err);
+                            } else {
+                              Alert.alert('Error', err);
+                            }
                           }
-                        } catch (e: any) {
-                          const err = extractApiError(e, 'Could not delete community.');
-                          setHubChatError(err);
-                          if (Platform.OS === 'web') {
-                            window.alert(err);
-                          } else {
-                            Alert.alert('Error', err);
-                          }
-                        }
-                      };
+                        };
 
-                      if (Platform.OS === 'web') {
-                        const ok = typeof window !== 'undefined' ? window.confirm(`Are you sure you want to delete "${targetName}"? All group messages and discussions will be permanently deleted.`) : true;
-                        if (ok) executeDelete();
-                      } else {
-                        Alert.alert(
-                          'Delete Community',
-                          `Are you sure you want to delete "${targetName}"? This action cannot be undone.`,
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            { text: 'Delete', style: 'destructive', onPress: executeDelete },
-                          ]
-                        );
-                      }
+                        if (Platform.OS === 'web') {
+                          const ok = typeof window !== 'undefined' ? window.confirm(`Are you sure you want to delete "${targetName}"? All group messages and discussions will be permanently deleted.`) : true;
+                          if (ok) executeDelete();
+                        } else {
+                          Alert.alert(
+                            'Delete Community',
+                            `Are you sure you want to delete "${targetName}"? This action cannot be undone.`,
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              { text: 'Delete', style: 'destructive', onPress: executeDelete },
+                            ]
+                          );
+                        }
+                      });
                     }}
                   >
                     <Trash2 size={16} color={colors.danger} />
@@ -1733,43 +2081,222 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                   <TouchableOpacity
                     style={[styles.sheetActionItem, { borderBottomColor: colors.cardBorder }]}
                     onPress={() => {
-                      setMoreMenuVisible(false);
                       const targetSlug = activeCommunity.slug;
                       const targetName = activeCommunity.name;
-                      const executeLeave = async () => {
-                        try {
-                          await communityService.toggleJoin(targetSlug);
-                          setActiveCommunity(null);
-                          loadCommunities();
-                        } catch (e: any) {
-                          const err = extractApiError(e, 'Cannot leave community');
-                          if (Platform.OS === 'web') {
-                            window.alert(err);
-                          } else {
-                            Alert.alert('Error', err);
+                      dismissMoreMenuWithSlide(() => {
+                        const executeLeave = async () => {
+                          try {
+                            await communityService.toggleJoin(targetSlug);
+                            setActiveCommunity(null);
+                            loadCommunities();
+                          } catch (e: any) {
+                            const err = extractApiError(e, 'Cannot leave community');
+                            if (Platform.OS === 'web') {
+                              window.alert(err);
+                            } else {
+                              Alert.alert('Error', err);
+                            }
                           }
-                        }
-                      };
+                        };
 
-                      if (Platform.OS === 'web') {
-                        const ok = typeof window !== 'undefined' ? window.confirm(`Leave ${targetName}?`) : true;
-                        if (ok) executeLeave();
-                      } else {
-                        Alert.alert('Leave Community', `Are you sure you want to leave ${targetName}?`, [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Leave', style: 'destructive', onPress: executeLeave },
-                        ]);
-                      }
+                        if (Platform.OS === 'web') {
+                          const ok = typeof window !== 'undefined' ? window.confirm(`Leave ${targetName}?`) : true;
+                          if (ok) executeLeave();
+                        } else {
+                          Alert.alert('Leave Community', `Are you sure you want to leave ${targetName}?`, [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Leave', style: 'destructive', onPress: executeLeave },
+                          ]);
+                        }
+                      });
                     }}
                   >
                     <Trash2 size={16} color={colors.warning} />
                     <Text style={[styles.sheetActionText, { color: colors.warning }]}>Leave Community</Text>
                   </TouchableOpacity>
                 )}
-              </View>
+              </Animated.View>
             </TouchableOpacity>
           </Modal>
         )}
+
+        {/* SHARED GROUP MEDIA & DOCUMENTS GALLERY DIALOG */}
+        {mediaGalleryModalVisible && (() => {
+          const allImages: any[] = [];
+          const allVideos: any[] = [];
+          const allDocs: any[] = [];
+          messages.forEach((m) => {
+            const { imageAttachments, videoAttachments, docAttachments } = splitMediaAttachments(
+              m.attachments,
+              m.attachment,
+              m.created_at
+            );
+            imageAttachments.forEach((a) => allImages.push({ ...a, sender_name: m.sender_name }));
+            videoAttachments.forEach((a) => allVideos.push({ ...a, sender_name: m.sender_name }));
+            docAttachments.forEach((a) => allDocs.push({ ...a, sender_name: m.sender_name }));
+          });
+          const totalMediaCount = allImages.length + allVideos.length + allDocs.length;
+
+          return (
+            <Modal
+              visible={mediaGalleryModalVisible}
+              transparent
+              animationType="none"
+              onRequestClose={dismissMediaSheetWithSlide}
+            >
+              <View style={[styles.sheetOverlay, { backgroundColor: colors.modalOverlay }]}>
+                <Animated.View
+                  style={[
+                    styles.mediaGallerySheet,
+                    {
+                      backgroundColor: colors.surface,
+                      borderTopColor: colors.cardBorder,
+                      transform: [{ translateY: mediaSheetTranslateY }],
+                    },
+                  ]}
+                >
+                  <View {...mediaSheetPanResponder.panHandlers} style={{ width: '100%', alignItems: 'center', paddingTop: 8, paddingBottom: 4 }}>
+                    <TouchableOpacity onPress={dismissMediaSheetWithSlide} hitSlop={{ top: 10, bottom: 10, left: 30, right: 30 }}>
+                      <View style={[styles.sheetDragBar, { backgroundColor: colors.hairlineStrong, marginBottom: 4 }]} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View {...mediaSheetPanResponder.panHandlers} style={[styles.mediaGalleryHeader, { borderBottomColor: colors.cardBorder }]}>
+                    <View>
+                      <Text style={[styles.sheetHeaderTitle, { color: colors.textPrimary, marginBottom: 2 }]}>
+                        Shared Media & Docs
+                      </Text>
+                      <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                        {allImages.length} photos · {allVideos.length} videos · {allDocs.length} documents
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={dismissMediaSheetWithSlide}
+                      style={[styles.mediaCloseBtn, { backgroundColor: colors.surfaceLight }]}
+                    >
+                      <X size={17} color={colors.textPrimary} />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Filter Tabs: All / Photos / Videos / Docs */}
+                  <View style={[styles.mediaTabsRow, { borderBottomColor: colors.cardBorder }]}>
+                    {([
+                      { key: 'ALL', label: `All (${totalMediaCount})` },
+                      { key: 'IMAGE', label: `Photos (${allImages.length})` },
+                      { key: 'VIDEO', label: `Videos (${allVideos.length})` },
+                      { key: 'DOCUMENT', label: `Docs (${allDocs.length})` },
+                    ] as const).map((tab) => {
+                      const active = mediaGalleryFilter === tab.key;
+                      return (
+                        <TouchableOpacity
+                          key={tab.key}
+                          style={[
+                            styles.mediaTabPill,
+                            {
+                              backgroundColor: active ? colors.primary : colors.surfaceLight,
+                              borderColor: active ? colors.primary : colors.cardBorder,
+                            },
+                          ]}
+                          onPress={() => setMediaGalleryFilter(tab.key)}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: active ? colors.onPrimary : colors.textSecondary }}>
+                            {tab.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 14, gap: 16, paddingBottom: 32 }}>
+                    {totalMediaCount === 0 ? (
+                      <View style={{ alignItems: 'center', paddingVertical: 48, gap: 8 }}>
+                        <ImageIcon size={34} color={colors.textMuted} />
+                        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>No shared media yet</Text>
+                        <Text style={{ fontSize: 12.5, color: colors.textMuted, textAlign: 'center', maxWidth: 260 }}>
+                          Photos, videos, and study PDFs shared in {activeCommunity.name} will automatically appear here.
+                        </Text>
+                      </View>
+                    ) : (
+                      <>
+                        {(mediaGalleryFilter === 'ALL' || mediaGalleryFilter === 'IMAGE') && allImages.length > 0 && (
+                          <View style={{ gap: 8 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.6 }}>
+                              PHOTOS ({allImages.length})
+                            </Text>
+                            <View style={styles.mediaPhotoGrid}>
+                              {allImages.map((img, idx) => (
+                                <TouchableOpacity
+                                  key={img.id || idx}
+                                  style={[styles.mediaPhotoTile, { borderColor: colors.cardBorder, backgroundColor: colors.surfaceLight }]}
+                                  onPress={() => {
+                                    setGalleryViewerIndex(idx);
+                                    setGalleryViewerVisible(true);
+                                  }}
+                                  activeOpacity={0.85}
+                                >
+                                  <Image
+                                    source={{ uri: getFullMediaUrl(img.file_url) }}
+                                    style={{ width: '100%', height: '100%' }}
+                                    resizeMode="cover"
+                                  />
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          </View>
+                        )}
+
+                        {(mediaGalleryFilter === 'ALL' || mediaGalleryFilter === 'VIDEO') && allVideos.length > 0 && (
+                          <View style={{ gap: 10 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.6 }}>
+                              VIDEOS ({allVideos.length})
+                            </Text>
+                            {allVideos.map((vid, idx) => (
+                              <View
+                                key={vid.id || idx}
+                                style={{
+                                  borderRadius: 12,
+                                  overflow: 'hidden',
+                                  borderWidth: 1,
+                                  borderColor: colors.cardBorder,
+                                  backgroundColor: '#000',
+                                }}
+                              >
+                                <CustomVideoPlayer url={vid.file_url} maxHeight={220} borderRadius={12} />
+                                <Text style={{ fontSize: 11.5, color: '#cbd5e1', paddingHorizontal: 10, paddingVertical: 6 }} numberOfLines={1}>
+                                  🎬 {vid.file_name || 'Shared Video'} {vid.sender_name ? `· by ${vid.sender_name}` : ''}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+
+                        {(mediaGalleryFilter === 'ALL' || mediaGalleryFilter === 'DOCUMENT') && allDocs.length > 0 && (
+                          <View style={{ gap: 8 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.6 }}>
+                              DOCUMENTS & NOTES ({allDocs.length})
+                            </Text>
+                            {allDocs.map((doc, idx) => (
+                              <DocumentCard key={doc.id || idx} attachment={doc} />
+                            ))}
+                          </View>
+                        )}
+                      </>
+                    )}
+                  </ScrollView>
+                </Animated.View>
+              </View>
+
+              {galleryViewerVisible && (
+                <ImageViewerModal
+                  visible={galleryViewerVisible}
+                  images={allImages}
+                  initialIndex={galleryViewerIndex}
+                  onClose={() => setGalleryViewerVisible(false)}
+                />
+              )}
+            </Modal>
+          );
+        })()}
 
         {/* SHARED POST VIEWER MODAL */}
         {viewingSharedPost && (
@@ -2664,6 +3191,88 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 6,
     lineHeight: 18,
+  },
+  inChatSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    gap: 8,
+  },
+  inChatSearchPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1.5,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  inChatSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    padding: 0,
+  },
+  replyPreviewBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderTopWidth: 1,
+    borderLeftWidth: 4,
+    gap: 10,
+  },
+  mediaGallerySheet: {
+    width: '100%',
+    maxWidth: 620,
+    alignSelf: 'center',
+    height: '82%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    overflow: 'hidden',
+  },
+  mediaGalleryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+  },
+  mediaCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaTabsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 8,
+    borderBottomWidth: 1,
+  },
+  mediaTabPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  mediaPhotoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  mediaPhotoTile: {
+    width: '31.5%',
+    aspectRatio: 1,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 1,
   },
 });
 

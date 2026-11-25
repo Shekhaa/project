@@ -1,3 +1,4 @@
+from datetime import timedelta
 import re
 import secrets
 from django.conf import settings
@@ -5,6 +6,37 @@ from django.db import models
 from django.utils import timezone
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from .managers import UserManager
+
+
+WEAK_COMMON_PASSWORDS = {
+    "12345678",
+    "123456789",
+    "1234567890",
+    "password",
+    "password1",
+    "password123",
+    "qwerty123",
+    "admin123",
+    "welcome1",
+    "welcome123",
+    "abcd1234",
+    "campus123",
+}
+
+
+def validate_strong_password(password: str):
+    """
+    Returns an error string if password does not meet strong security standards, else None.
+    Requires >= 8 chars, at least one letter, at least one digit, and rejects trivial patterns.
+    """
+    pwd = (password or "").strip()
+    if len(pwd) < 8:
+        return "Password must be at least 8 characters long."
+    if not re.search(r"[A-Za-z]", pwd) or not re.search(r"[0-9]", pwd):
+        return "Password must contain both letters and numbers."
+    if pwd.lower() in WEAK_COMMON_PASSWORDS or len(set(pwd.lower())) < 4:
+        return "Password is too common or simple. Choose a stronger mix of letters and numbers."
+    return None
 
 
 def is_institutional_email(email: str) -> bool:
@@ -47,6 +79,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     last_login_device = models.CharField(max_length=255, blank=True, default="")
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    deletion_requested_at = models.DateTimeField(null=True, blank=True)
+    scheduled_deletion_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Account permanently deletes after this timestamp unless user logs back in."
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -142,6 +181,45 @@ class User(AbstractBaseUser, PermissionsMixin):
         if should_verify and not self.is_verified_student:
             self.is_verified_student = True
             self.save(update_fields=['is_verified_student'])
+
+    def schedule_deletion(self, days: int = 14):
+        """
+        Soft-deletes the account with a 14-day retention window.
+        Deactivates tokens immediately; logging back in within 14 days cancels deletion.
+        """
+        now = timezone.now()
+        self.is_active = False
+        self.deletion_requested_at = now
+        self.scheduled_deletion_at = now + timedelta(days=days)
+        self.save(update_fields=["is_active", "deletion_requested_at", "scheduled_deletion_at"])
+        return self.scheduled_deletion_at
+
+    def revert_scheduled_deletion(self) -> bool:
+        """
+        Cancels pending 14-day deletion if user signs back in before expiration.
+        Returns True if a pending deletion was reverted.
+        """
+        if not self.scheduled_deletion_at and not self.deletion_requested_at:
+            return False
+        self.is_active = True
+        self.deletion_requested_at = None
+        self.scheduled_deletion_at = None
+        self.save(update_fields=["is_active", "deletion_requested_at", "scheduled_deletion_at"])
+        return True
+
+    @classmethod
+    def purge_expired_deletions(cls) -> int:
+        """
+        Permanently deletes any accounts whose 14-day retention window has elapsed.
+        """
+        expired_qs = cls.objects.filter(
+            scheduled_deletion_at__isnull=False,
+            scheduled_deletion_at__lte=timezone.now(),
+        )
+        count = expired_qs.count()
+        if count:
+            expired_qs.delete()
+        return count
 
 
 class CampusInviteCode(models.Model):

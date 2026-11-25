@@ -65,6 +65,12 @@ export interface Message {
   sender_name: string;
   sender_email: string;
   sender_avatar?: string;
+  reply_to?: string | null;
+  reply_to_preview?: {
+    id: string;
+    sender_name: string;
+    text: string;
+  } | null;
   text: string;
   attachment?: string;
   attachments?: AttachmentItem[];
@@ -176,12 +182,15 @@ export const chatService = {
   async sendMessage(
     conversationId: string,
     text: string,
-    options?: { is_anonymous?: boolean; anonymous_alias?: string }
+    options?: { is_anonymous?: boolean; anonymous_alias?: string; reply_to?: string | null }
   ): Promise<Message> {
     const payload: any = { text };
     if (options?.is_anonymous) {
       payload.is_anonymous = true;
       payload.anonymous_alias = options.anonymous_alias || '🦉 Anonymous Classmate';
+    }
+    if (options?.reply_to) {
+      payload.reply_to = options.reply_to;
     }
     const res = await api.post(`/chat/${conversationId}/send/`, payload);
     return res.data;
@@ -193,7 +202,7 @@ export const chatService = {
     text: string,
     files: any[],
     onProgress?: (percent: number) => void,
-    options?: { is_anonymous?: boolean; anonymous_alias?: string }
+    options?: { is_anonymous?: boolean; anonymous_alias?: string; reply_to?: string | null }
   ): Promise<Message> {
     const formData = new FormData();
     if (text) {
@@ -202,6 +211,9 @@ export const chatService = {
     if (options?.is_anonymous) {
       formData.append('is_anonymous', 'true');
       formData.append('anonymous_alias', options.anonymous_alias || '🦉 Anonymous Classmate');
+    }
+    if (options?.reply_to) {
+      formData.append('reply_to', options.reply_to);
     }
     files.forEach((item, index) => {
       let fileToAppend = item.file;

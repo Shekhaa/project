@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from config.media_utils import resolve_media_url
 from colleges.models import CollegeDomain
-from .models import User
+from .models import User, validate_strong_password
 
 class SendEmailOTPSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
@@ -13,7 +13,14 @@ class SendEmailOTPSerializer(serializers.Serializer):
 class VerifyEmailOTPSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
     otp = serializers.CharField(max_length=6, min_length=4, required=True)
-    password = serializers.CharField(min_length=6, required=False, allow_blank=True, allow_null=True)
+    password = serializers.CharField(min_length=8, required=False, allow_blank=True, allow_null=True)
+
+    def validate_password(self, value):
+        if value and value.strip():
+            err = validate_strong_password(value)
+            if err:
+                raise serializers.ValidationError(err)
+        return value
 
 
 class SendPhoneOTPSerializer(serializers.Serializer):
@@ -27,17 +34,27 @@ class SendPhoneOTPSerializer(serializers.Serializer):
 class VerifyPhoneOTPSerializer(serializers.Serializer):
     phone_number = serializers.CharField(max_length=15, min_length=10, required=True)
     otp = serializers.CharField(max_length=6, min_length=4, required=True)
-    password = serializers.CharField(min_length=6, required=False, allow_blank=True, allow_null=True)
+    password = serializers.CharField(min_length=8, required=False, allow_blank=True, allow_null=True)
 
     def validate_phone_number(self, value):
         return value.strip().replace(" ", "").replace("-", "")
 
+    def validate_password(self, value):
+        if value and value.strip():
+            err = validate_strong_password(value)
+            if err:
+                raise serializers.ValidationError(err)
+        return value
+
 
 class SetPasswordSerializer(serializers.Serializer):
-    password = serializers.CharField(min_length=6, write_only=True, required=True)
-    confirm_password = serializers.CharField(min_length=6, write_only=True, required=True)
+    password = serializers.CharField(min_length=8, write_only=True, required=True)
+    confirm_password = serializers.CharField(min_length=8, write_only=True, required=True)
 
     def validate(self, attrs):
+        err = validate_strong_password(attrs["password"])
+        if err:
+            raise serializers.ValidationError({"password": err})
         if attrs["password"] != attrs["confirm_password"]:
             raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
         return attrs

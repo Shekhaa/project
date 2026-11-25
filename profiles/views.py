@@ -41,7 +41,7 @@ class CompleteProfileView(APIView):
         # Shallow dict copy avoids QueryDict.copy() deepcopy crash if a TemporaryUploadedFile >2.5MB is attached
         data = {k: request.data.get(k) for k in request.data.keys()} if hasattr(request.data, "keys") else dict(request.data)
 
-        from accounts.models import CampusInviteCode, is_institutional_email
+        from accounts.models import CampusInviteCode, is_institutional_email, validate_strong_password
         from django.db import transaction
         from django.db.models import F
 
@@ -156,7 +156,13 @@ class CompleteProfileView(APIView):
                 return Response({"error": "Please provide a valid email address."}, status=status.HTTP_400_BAD_REQUEST)
             if User.objects.filter(email__iexact=contact_email).exclude(id=user.id).exists():
                 return Response(
-                    {"error": "This email is already registered to another Campus Connect account."},
+                    {"error": "This email is already registered to another Vike account."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            existing_is_placeholder = (not user.email) or user.email.lower().endswith(".local") or user.email.lower().startswith("student_")
+            if not existing_is_placeholder and user.email.lower() != contact_email:
+                return Response(
+                    {"error": f"Your recovery email ({user.email}) is already linked and cannot be changed."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             if user.email.lower() != contact_email:
@@ -183,7 +189,10 @@ class CompleteProfileView(APIView):
                 user_fields_to_update.extend(["phone_number", "is_phone_verified"])
 
         password = data.get("password")
-        if password and len(str(password).strip()) >= 6:
+        if password and str(password).strip():
+            pwd_err = validate_strong_password(str(password).strip())
+            if pwd_err:
+                return Response({"error": pwd_err}, status=status.HTTP_400_BAD_REQUEST)
             user.set_password(str(password).strip())
             user_fields_to_update.append("password")
 
@@ -303,6 +312,8 @@ class EditProfileView(APIView):
                         pass
             except ValueError as err:
                 return Response({"error": str(err)}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as err:
+                return Response({"error": f"Could not save profile picture: {err}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         # 3. Update profile picture if passed as base64 string
         pic_b64 = request.data.get("profile_picture_base64") or request.data.get("image_base64")
@@ -355,7 +366,10 @@ class EditProfileView(APIView):
                 else:
                     setattr(profile, bool_field, bool(val))
 
-        profile.save()
+        try:
+            profile.save()
+        except Exception as err:
+            return Response({"error": f"Failed to save profile changes: {err}"}, status=status.HTTP_400_BAD_REQUEST)
 
         serializer = StudentProfileSerializer(profile, context={"request": request})
         resolved_avatar = resolve_media_url(request, profile.profile_picture) if profile.profile_picture else None

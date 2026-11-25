@@ -18,7 +18,7 @@ from django.http import HttpResponse
 from otp.services import OTPService
 from colleges.models import College, CollegeDomain, Course, Branch, AcademicYear
 from profiles.models import StudentProfile
-from .models import User, CampusInviteCode, is_institutional_email
+from .models import User, CampusInviteCode, is_institutional_email, validate_strong_password
 from .serializers import (
     SendEmailOTPSerializer,
     VerifyEmailOTPSerializer,
@@ -30,6 +30,24 @@ from .serializers import (
 )
 
 
+def _handle_pending_deletion_on_login(user):
+    """
+    Handles 14-day account deletion retention on login:
+    - If 14 days have elapsed: permanently deletes user and returns (False, error_msg, False).
+    - If within 14 days: automatically cancels deletion and restores user, returning (True, None, True).
+    - Otherwise checks user.is_active and returns (user.is_active, error_if_disabled, False).
+    """
+    if getattr(user, "scheduled_deletion_at", None):
+        if timezone.now() >= user.scheduled_deletion_at:
+            user.delete()
+            return False, "Your account was permanently deleted after the 14-day retention period.", False
+        user.revert_scheduled_deletion()
+        return True, None, True
+    if not user.is_active:
+        return False, "Account is disabled.", False
+    return True, None, False
+
+
 def _build_user_auth_payload(request, user):
     from config.media_utils import resolve_media_url
     prof = getattr(user, "profile", None)
@@ -38,7 +56,7 @@ def _build_user_auth_payload(request, user):
     return {
         "id": user.id,
         "email": user.email,
-        "full_name": user.full_name or (prof.username if prof else user.email.split("@")[0]),
+        "full_name": user.full_name if not profile_done else (user.full_name or (prof.username if prof else user.email.split("@")[0])),
         "username": prof.username if prof else user.email.split("@")[0],
         "phone_number": user.phone_number,
         "profile_picture": avatar_url,
@@ -147,12 +165,19 @@ class VerifyEmailOTPView(APIView):
             defaults={"is_email_verified": True}
         )
 
+        allowed, del_err, deletion_reverted = _handle_pending_deletion_on_login(user)
+        if not allowed:
+            return Response({"error": del_err}, status=status.HTTP_403_FORBIDDEN)
+
         if not user.is_email_verified:
             user.is_email_verified = True
             user.save(update_fields=["is_email_verified"])
 
         password = serializer.validated_data.get("password")
-        if password and len(password.strip()) >= 6:
+        if password and password.strip():
+            pwd_err = validate_strong_password(password.strip())
+            if pwd_err:
+                return Response({"error": pwd_err}, status=status.HTTP_400_BAD_REQUEST)
             user.set_password(password.strip())
             user.save(update_fields=["password"])
 
@@ -173,6 +198,7 @@ class VerifyEmailOTPView(APIView):
             "access": str(refresh.access_token),
             "refresh": str(refresh),
             "is_new_user": is_new_user,
+            "deletion_reverted": deletion_reverted,
             "user": _build_user_auth_payload(request, user),
             "detected_college": detected_college
         }, status=status.HTTP_200_OK)
@@ -195,6 +221,7 @@ class BindEmailOTPView(APIView):
     - action='save_unverified' -> Save mandatory contact email now & verify later
     - action='send'            -> Send 6-digit OTP to verify email now
     - action='verify'          -> Verify 6-digit OTP and mark user.is_email_verified=True
+    Once a real email is written or verified, it cannot be changed and is locked for password reset.
     """
     permission_classes = [IsAuthenticated]
 
@@ -208,11 +235,18 @@ class BindEmailOTPView(APIView):
 
         if User.objects.filter(email__iexact=email).exclude(id=request.user.id).exists():
             return Response(
-                {"error": "This email is already linked to another Campus Connect account."},
+                {"error": "This email is already linked to another Vike account."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         user = request.user
+        has_locked_email = bool(user.email and not _is_placeholder_email(user.email))
+        if has_locked_email and user.email.lower() != email:
+            return Response(
+                {"error": f"Your recovery email ({user.email}) is already linked and cannot be changed."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         if action == "save_unverified":
             changed = []
             if user.email.lower() != email:
@@ -222,7 +256,7 @@ class BindEmailOTPView(APIView):
             if changed:
                 user.save(update_fields=changed)
             return Response({
-                "message": "Email saved. You can verify it anytime from your Profile.",
+                "message": "Email saved and locked for password recovery. Verify it anytime from your Profile.",
                 "user": _build_user_auth_payload(request, user),
             }, status=status.HTTP_200_OK)
 
@@ -247,7 +281,7 @@ class BindEmailOTPView(APIView):
             user.check_and_update_student_status()
             user.refresh_from_db()
             return Response({
-                "message": "Email verified and linked to your account!",
+                "message": "Email verified and locked to your account for password recovery!",
                 "user": _build_user_auth_payload(request, user),
             }, status=status.HTTP_200_OK)
 
@@ -385,13 +419,15 @@ class LoginView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
-        if not user.is_active:
-            return Response({"error": "Account is disabled."}, status=status.HTTP_403_FORBIDDEN)
+        allowed, del_err, deletion_reverted = _handle_pending_deletion_on_login(user)
+        if not allowed:
+            return Response({"error": del_err}, status=status.HTTP_403_FORBIDDEN)
 
         refresh = RefreshToken.for_user(user)
         return Response({
             "access": str(refresh.access_token),
             "refresh": str(refresh),
+            "deletion_reverted": deletion_reverted,
             "user": _build_user_auth_payload(request, user),
         })
 
@@ -672,6 +708,13 @@ class MicrosoftSSOView(APIView):
                 is_verified_student=True,
             )
             is_new_user = True
+        else:
+            allowed, del_err, deletion_reverted = _handle_pending_deletion_on_login(user)
+            if not allowed:
+                return Response({"error": del_err}, status=status.HTTP_403_FORBIDDEN)
+
+        if is_new_user:
+            deletion_reverted = False
 
         # Update verified status & name if not set
         fields_to_update = []
@@ -723,7 +766,7 @@ class MicrosoftSSOView(APIView):
                 college_email=email,
                 admission_number=candidate_roll,
                 username=candidate_user,
-                bio="Excited for hackathons, college fests & campus tech clubs!",
+                bio="",
                 gender="Male",
                 show_gender=True,
                 college=college,
@@ -766,6 +809,7 @@ class MicrosoftSSOView(APIView):
             "access": str(refresh.access_token),
             "refresh": str(refresh),
             "is_new_user": is_new_user,
+            "deletion_reverted": deletion_reverted,
             "user": _build_user_auth_payload(request, user),
             "detected_student": {
                 "roll_number": roll_no or email_prefix,
@@ -858,7 +902,7 @@ class LinkMicrosoftSSOView(APIView):
                 college_email=ms_email,
                 admission_number=candidate_roll,
                 username=cand,
-                bio="Excited for hackathons, college fests & campus tech clubs!",
+                bio="",
                 gender="Other",
                 show_gender=False,
                 college=college,
@@ -1202,16 +1246,23 @@ class InviteCodesView(APIView):
 class DeleteAccountView(APIView):
     """
     DELETE /api/authentication/delete-account/
-    Permanently deletes current authenticated student account, profile, posts, and data.
+    Schedules account deletion with a 14-day retention window.
+    Logs user out immediately; logging back in within 14 days cancels deletion.
     """
     permission_classes = [IsAuthenticated]
 
     def delete(self, request):
+        User.purge_expired_deletions()
         user = request.user
         email = user.email
-        user.delete()
+        scheduled_at = user.schedule_deletion(days=14)
         return Response({
-            "message": f"Account for {email} has been permanently deleted."
+            "message": (
+                f"Account for {email} is scheduled for deletion in 14 days. "
+                "Log back in anytime within 14 days to cancel deletion and restore your ID."
+            ),
+            "retention_days": 14,
+            "scheduled_deletion_at": scheduled_at.isoformat(),
         }, status=status.HTTP_200_OK)
 
 
@@ -1307,18 +1358,16 @@ class ChangePasswordView(APIView):
     def post(self, request):
         old_password = request.data.get("old_password", "")
         new_password = request.data.get("new_password", "")
-        if not new_password or len(new_password) < 6:
-            return Response(
-                {"error": "New password must be at least 6 characters."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        if request.user.has_usable_password() and old_password:
-            if not request.user.check_password(old_password):
+        pwd_err = validate_strong_password(new_password)
+        if pwd_err:
+            return Response({"error": pwd_err}, status=status.HTTP_400_BAD_REQUEST)
+        if request.user.has_usable_password():
+            if not old_password or not request.user.check_password(old_password):
                 return Response(
                     {"error": "Current password is incorrect."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-        request.user.set_password(new_password)
+        request.user.set_password(new_password.strip())
         request.user.save(update_fields=["password"])
         return Response({"message": "Password changed successfully."})
 
@@ -1334,8 +1383,11 @@ class ForgotPasswordView(APIView):
 
     def post(self, request):
         email = request.data.get("email", "").strip().lower()
-        if not email or "@" not in email:
-            return Response({"error": "Valid email address is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not email or "@" not in email or _is_placeholder_email(email):
+            return Response(
+                {"error": "Please enter your valid registered personal or college email address."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         user = User.objects.filter(email__iexact=email).first()
         if not user:
             # Prevent User Enumeration: return standard message without disclosing non-existence
@@ -1374,11 +1426,9 @@ class ResetPasswordView(APIView):
                 {"error": "Email, OTP and new password are required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        if len(new_password) < 6:
-            return Response(
-                {"error": "New password must be at least 6 characters."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        pwd_err = validate_strong_password(new_password)
+        if pwd_err:
+            return Response({"error": pwd_err}, status=status.HTTP_400_BAD_REQUEST)
 
         is_valid, err = OTPService.verify_otp(email, otp, purpose="PASSWORD_RESET")
         if not is_valid:
@@ -1518,13 +1568,20 @@ class VerifyPhoneLoginOTPView(APIView):
                 is_verified_student=False,
             )
             is_new_user = True
+            deletion_reverted = False
         else:
+            allowed, del_err, deletion_reverted = _handle_pending_deletion_on_login(user)
+            if not allowed:
+                return Response({"error": del_err}, status=status.HTTP_403_FORBIDDEN)
             if not user.is_phone_verified:
                 user.is_phone_verified = True
                 user.save(update_fields=["is_phone_verified"])
 
         password = str(request.data.get("password", "")).strip()
-        if password and len(password) >= 6:
+        if password:
+            pwd_err = validate_strong_password(password)
+            if pwd_err:
+                return Response({"error": pwd_err}, status=status.HTTP_400_BAD_REQUEST)
             user.set_password(password)
             user.save(update_fields=["password"])
 
@@ -1533,6 +1590,7 @@ class VerifyPhoneLoginOTPView(APIView):
             "access": str(refresh.access_token),
             "refresh": str(refresh),
             "is_new_user": is_new_user,
+            "deletion_reverted": deletion_reverted,
             "user": _build_user_auth_payload(request, user),
         }, status=status.HTTP_200_OK)
 
@@ -1594,7 +1652,7 @@ class IDCardLoginView(APIView):
         manual_email = str(request.data.get("email", "") or "").strip().lower()
         if manual_email and ("@" not in manual_email or "." not in manual_email.split("@")[-1] or _is_placeholder_email(manual_email)):
             return Response({"error": "Please enter a valid contact email address."}, status=status.HTTP_400_BAD_REQUEST)
-        full_name = ext.get("full_name") or manual_name or "Student (ID Pending)"
+        full_name = ext.get("full_name") or manual_name or ""
         admission_num = ext.get("admission_number") or manual_roll or f"PENDING-{img_hash[:8].upper()}"
         safe_roll = re.sub(r"[^A-Za-z0-9]", "", admission_num).lower() or img_hash[:8]
         placeholder_email = f"{safe_roll}@idreview.campusconnect.local"
@@ -1608,8 +1666,12 @@ class IDCardLoginView(APIView):
             existing_profile = StudentProfile.objects.filter(admission_number__iexact=admission_num).first()
 
         is_new_user = False
+        deletion_reverted = False
         if existing_profile and existing_profile.user:
             user = existing_profile.user
+            allowed, del_err, deletion_reverted = _handle_pending_deletion_on_login(user)
+            if not allowed:
+                return Response({"error": del_err}, status=status.HTTP_403_FORBIDDEN)
             profile = existing_profile
             clean_user = profile.username
         else:
@@ -1620,6 +1682,11 @@ class IDCardLoginView(APIView):
                 )
             user = User.objects.filter(email__iexact=target_email).first()
             if not user:
+                password = str(request.data.get("password", "")).strip()
+                if password:
+                    pwd_err = validate_strong_password(password)
+                    if pwd_err:
+                        return Response({"error": pwd_err}, status=status.HTTP_400_BAD_REQUEST)
                 user = User.objects.create(
                     email=target_email,
                     full_name=full_name,
@@ -1628,12 +1695,15 @@ class IDCardLoginView(APIView):
                     is_verified_student=False,
                 )
                 is_new_user = True
-                password = str(request.data.get("password", "")).strip()
-                if password and len(password) >= 6:
+                if password:
                     user.set_password(password)
                     user.save(update_fields=["password"])
+            else:
+                allowed, del_err, deletion_reverted = _handle_pending_deletion_on_login(user)
+                if not allowed:
+                    return Response({"error": del_err}, status=status.HTTP_403_FORBIDDEN)
 
-            clean_base = re.sub(r"[^a-z0-9]", "_", full_name.lower()).strip("_") or "student"
+            clean_base = re.sub(r"[^a-z0-9]", "_", (full_name or "id").lower()).strip("_") or "id"
             clean_user = f"{clean_base}_{safe_roll[-4:]}"
             cand_user = clean_user[:40]
             counter = 1
@@ -1675,7 +1745,7 @@ class IDCardLoginView(APIView):
                     branch=branch,
                     academic_year=academic_year,
                     section=section,
-                    bio="Excited for campus tech clubs and discussions!",
+                    bio="",
                     gender="Other",
                     verified=False,
                     id_card_verified=False,
@@ -1690,22 +1760,29 @@ class IDCardLoginView(APIView):
             thumb_uri = IDCardOCRService.generate_thumbnail_data_uri(image_bytes)
             if thumb_uri and isinstance(ext, dict):
                 ext["image_data_uri"] = thumb_uri
-            try:
-                from PIL import Image as PILImage
-                PILImage.open(io.BytesIO(image_bytes)).verify()
-                profile.id_card_image.save(file_name, ContentFile(image_bytes), save=False)
-            except Exception:
-                pass
             if profile.verification_method not in ("MICROSOFT_SSO", "ADMIN_VERIFIED"):
                 profile.id_card_verified = False
                 profile.verified = False
                 profile.verification_method = "ID_CARD_OCR"
             profile.id_card_hash = img_hash
             profile.id_card_ocr_data = ext
-            profile.save(update_fields=[
-                "id_card_image", "id_card_verified", "verified",
-                "verification_method", "id_card_hash", "id_card_ocr_data"
-            ])
+            image_saved = False
+            try:
+                from PIL import Image as PILImage
+                PILImage.open(io.BytesIO(image_bytes)).verify()
+                profile.id_card_image.save(file_name, ContentFile(image_bytes), save=False)
+                profile.save(update_fields=[
+                    "id_card_image", "id_card_verified", "verified",
+                    "verification_method", "id_card_hash", "id_card_ocr_data"
+                ])
+                image_saved = True
+            except Exception:
+                profile.id_card_image = None
+            if not image_saved:
+                profile.save(update_fields=[
+                    "id_card_verified", "verified",
+                    "verification_method", "id_card_hash", "id_card_ocr_data"
+                ])
 
         user.refresh_from_db()
         refresh = RefreshToken.for_user(user)
@@ -1720,6 +1797,7 @@ class IDCardLoginView(APIView):
             "access": str(refresh.access_token),
             "refresh": str(refresh),
             "is_new_user": is_new_user,
+            "deletion_reverted": deletion_reverted,
             "extracted_data": ext,
             "detected_student": {
                 "roll_number": admission_num,

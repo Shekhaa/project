@@ -101,10 +101,9 @@ class FeedView(generics.ListAPIView):
                     Q(content__icontains=search_query) |
                     Q(poll__question__icontains=search_query) |
                     Q(document_name__icontains=search_query) |
-                    Q(author__first_name__icontains=search_query) |
-                    Q(author__last_name__icontains=search_query) |
-                    Q(author__username__icontains=search_query)
-                )
+                    Q(author__full_name__icontains=search_query) |
+                    Q(author__profile__username__icontains=search_query)
+                ).distinct()
             return annotate_post_metrics(qs, user=None)
 
         user_community_ids = list(CommunityMember.objects.filter(
@@ -201,10 +200,9 @@ class FeedView(generics.ListAPIView):
                 Q(content__icontains=search_query) |
                 Q(poll__question__icontains=search_query) |
                 Q(document_name__icontains=search_query) |
-                Q(author__first_name__icontains=search_query) |
-                Q(author__last_name__icontains=search_query) |
-                Q(author__username__icontains=search_query)
-            )
+                Q(author__full_name__icontains=search_query) |
+                Q(author__profile__username__icontains=search_query)
+            ).distinct()
 
         return annotate_post_metrics(qs, user=user)
 
@@ -341,20 +339,40 @@ class CreatePostView(APIView):
                 post.delete()
                 msg = err.message if hasattr(err, "message") else str(err)
                 return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as err:
+                post.delete()
+                return Response(
+                    {"error": f"Failed to upload attachment '{getattr(att_file, 'name', 'file')}': {str(err)}"},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
 
         # Handle legacy multiple image uploads
         for img in images:
-            PostImage.objects.create(post=post, image=img)
+            try:
+                PostImage.objects.create(post=post, image=img)
+            except Exception as err:
+                post.delete()
+                return Response(
+                    {"error": f"Failed to upload image: {str(err)}"},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
 
         # Handle legacy document/PDF upload
         if doc:
-            post.document = doc
-            if not post.document_name:
-                post.document_name = doc.name
-            size_kb = doc.size / 1024
-            post.document_size = f"{size_kb:.1f} KB" if size_kb < 1024 else f"{(size_kb/1024):.1f} MB"
-            post.media_type = "DOCUMENT"
-            post.save(update_fields=["document", "document_name", "document_size", "media_type"])
+            try:
+                post.document = doc
+                if not post.document_name:
+                    post.document_name = doc.name
+                size_kb = doc.size / 1024
+                post.document_size = f"{size_kb:.1f} KB" if size_kb < 1024 else f"{(size_kb/1024):.1f} MB"
+                post.media_type = "DOCUMENT"
+                post.save(update_fields=["document", "document_name", "document_size", "media_type"])
+            except Exception as err:
+                post.delete()
+                return Response(
+                    {"error": f"Failed to upload document: {str(err)}"},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
 
         # Handle 1-Tap Campus Poll creation
         poll_question = str(request.data.get("poll_question", "") or "").strip()

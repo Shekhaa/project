@@ -49,24 +49,6 @@ import { profileService } from '../services/profileService';
 import { CollegeCatalogItem, CollegePickerModal, getCollegeCity } from '../components/common/CollegePickerModal';
 import { showCrossPlatformAlert } from '../utils/mediaUtils';
 
-// Safe Base64 encoding helper for cross-platform JWT simulation (Web + Native Hermes)
-const safeBase64Encode = (str: string): string => {
-  try {
-    if (typeof btoa !== 'undefined') return btoa(str);
-  } catch {}
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
-  let output = '';
-  for (
-    let block = 0, charCode, idx = 0, map = chars;
-    str.charAt(idx | 0) || ((map = '='), idx % 1);
-    output += map.charAt(63 & (block >> (8 - (idx % 1) * 8)))
-  ) {
-    charCode = str.charCodeAt((idx += 3 / 4));
-    block = (block << 8) | charCode;
-  }
-  return output;
-};
-
 // Dynamic native WebView import for seamless In-App OAuth on Android/iOS
 let NativeWebView: any = null;
 if (Platform.OS !== 'web') {
@@ -74,6 +56,21 @@ if (Platform.OS !== 'web') {
     NativeWebView = require('react-native-webview').WebView;
   } catch {}
 }
+
+const validateStrongPassword = (pwd: string): string | null => {
+  const clean = (pwd || '').trim();
+  if (clean.length < 8) {
+    return 'Password must be at least 8 characters long.';
+  }
+  if (!/[a-zA-Z]/.test(clean) || !/[0-9]/.test(clean)) {
+    return 'Password must include both letters and numbers.';
+  }
+  const weakList = ['12345678', '123456789', '1234567890', 'password', 'password1', 'password123', 'qwerty123', 'admin123'];
+  if (weakList.includes(clean.toLowerCase()) || new Set(clean.toLowerCase()).size < 4) {
+    return 'Password is too weak or common. Choose a stronger mix of letters and numbers.';
+  }
+  return null;
+};
 
 interface AuthScreenProps {
   onLoginSuccess: (user: any) => void;
@@ -100,7 +97,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotOtp, setForgotOtp] = useState('');
   const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
   const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+  const [showForgotConfirmPassword, setShowForgotConfirmPassword] = useState(false);
   const [forgotStep, setForgotStep] = useState<'EMAIL' | 'OTP'>('EMAIL');
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotMsg, setForgotMsg] = useState('');
@@ -119,7 +118,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
 
   // ID Card Scan State + Uttarakhand College Catalog
   const [idScanLoading, setIdScanLoading] = useState(false);
-  const [showDevPresets, setShowDevPresets] = useState(false);
   const [colleges, setColleges] = useState<CollegeCatalogItem[]>([]);
   const [selectedIdCollegeId, setSelectedIdCollegeId] = useState<number | undefined>(undefined);
   const [idCollegePickerVisible, setIdCollegePickerVisible] = useState(false);
@@ -146,20 +144,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
 
   const selectedIdCollege = colleges.find((c) => c.id === selectedIdCollegeId) || null;
 
-  // Safe Base64 encoding helper for cross-platform JWT simulation
-  const createDevStudentToken = (email: string, name: string) => {
-    const header = safeBase64Encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).replace(/=/g, '');
-    const claims = safeBase64Encode(
-      JSON.stringify({
-        email,
-        name,
-        tid: 'graphic-era-entra-id',
-        sub: 'student-' + email.split('@')[0],
-      })
-    ).replace(/=/g, '');
-    return `${header}.${claims}.dummy_signature`;
-  };
-
   // ==========================================
   // CREDENTIAL LOGIN ACTION
   // ==========================================
@@ -181,6 +165,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
 
     try {
       const res = await authService.loginWithPassword(cleanId, cleanPass);
+      if (res?.deletion_reverted) {
+        showCrossPlatformAlert(
+          'Account Restored',
+          'Welcome back! Your scheduled account deletion has been cancelled because you logged in within the 14-day retention period.'
+        );
+      }
       onLoginSuccess(res.user);
     } catch (err: any) {
       const data = err.response?.data;
@@ -224,8 +214,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
       setForgotError('Please enter the 6-digit OTP code.');
       return;
     }
-    if (!forgotNewPassword.trim() || forgotNewPassword.trim().length < 6) {
-      setForgotError('New password must be at least 6 characters long.');
+    const pwdErr = validateStrongPassword(forgotNewPassword);
+    if (pwdErr) {
+      setForgotError(pwdErr);
+      return;
+    }
+    if (forgotNewPassword.trim() !== forgotConfirmPassword.trim()) {
+      setForgotError('Confirm password does not match.');
       return;
     }
     setForgotLoading(true);
@@ -236,6 +231,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
       setForgotModalVisible(false);
       setLoginIdentifier(forgotEmail.trim());
       setLoginPassword(forgotNewPassword.trim());
+      setForgotConfirmPassword('');
     } catch (err: any) {
       setForgotError(err.response?.data?.error || 'Password reset failed. Please check the code.');
     } finally {
@@ -258,6 +254,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
         setManualTokenInput('');
         if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history?.replaceState) {
           window.history.replaceState(null, '', window.location.pathname);
+        }
+        if (res?.deletion_reverted) {
+          showCrossPlatformAlert(
+            'Account Restored',
+            'Welcome back! Your scheduled account deletion has been cancelled because you logged in within 14 days.'
+          );
         }
         onLoginSuccess(res.user);
       } catch (err: any) {
@@ -524,30 +526,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
       }
     }
   };
-
-  const SAMPLE_ID_PRESETS = [
-    {
-      name: 'Aarav Joshi',
-      roll: 'GEHU2024CSE01',
-      dept: 'B.Tech CSE • 2nd Year',
-      college: 'Graphic Era Hill University',
-      rawText: 'GRAPHIC ERA HILL UNIVERSITY\nNAME: AARAV JOSHI\nROLL NO: GEHU2024CSE01\nCOURSE: B.TECH COMPUTER SCIENCE\nYEAR: 2ND YEAR',
-    },
-    {
-      name: 'Priya Rawat',
-      roll: 'GEHU2024AIML02',
-      dept: 'B.Tech AI/ML • 2nd Year',
-      college: 'Graphic Era Hill University',
-      rawText: 'GRAPHIC ERA HILL UNIVERSITY\nNAME: PRIYA RAWAT\nROLL NO: GEHU2024AIML02\nCOURSE: B.TECH AI MACHINE LEARNING\nYEAR: 2ND YEAR',
-    },
-    {
-      name: 'Rohan Bisht',
-      roll: 'GEHU2024BCA03',
-      dept: 'BCA Core • 1st Year',
-      college: 'Graphic Era Hill University',
-      rawText: 'GRAPHIC ERA HILL UNIVERSITY\nNAME: ROHAN BISHT\nROLL NO: GEHU2024BCA03\nCOURSE: BCA CORE\nYEAR: 1ST YEAR',
-    },
-  ];
 
   return (
     <KeyboardAvoidingView
@@ -1043,100 +1021,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                 </View>
               </View>
 
-              {/* DEVELOPER / DEMO 1-TAP SWITCHER ACCORDION */}
-              <View style={[styles.devAccordionBox, { borderColor: colors.cardBorder }]}>
-                <TouchableOpacity
-                  style={styles.devAccordionHeader}
-                  onPress={() => setShowDevPresets(!showDevPresets)}
-                  activeOpacity={0.75}
-                >
-                  <View style={styles.devAccordionTitleRow}>
-                    <Sparkles size={14} color={colors.primary} />
-                    <Text style={[styles.devAccordionTitle, { color: colors.textSecondary }]}>
-                      Instant 1-Tap Demo Student Profiles
-                    </Text>
-                  </View>
-                  {showDevPresets ? (
-                    <ChevronUp size={16} color={colors.textMuted} />
-                  ) : (
-                    <ChevronDown size={16} color={colors.textMuted} />
-                  )}
-                </TouchableOpacity>
-
-                {showDevPresets && (
-                  <View style={styles.devPresetsContent}>
-                    <Text style={[styles.devPresetsSub, { color: colors.textMuted }]}>
-                      Test complete student onboarding without scanning physical cards:
-                    </Text>
-
-                    {/* Instant Test Profiles */}
-                    <View style={styles.presetsGrid}>
-                      <TouchableOpacity
-                        style={[styles.presetCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                        onPress={() => {
-                          const token = createDevStudentToken(
-                            '2313812137@geu.ac.in',
-                            'Chandra Shekhar Singh Rana'
-                          );
-                          handleMicrosoftSSO(token);
-                        }}
-                        disabled={ssoLoading}
-                      >
-                        <View style={styles.presetTop}>
-                          <Text style={[styles.presetName, { color: colors.textPrimary }]}>Chandra Shekhar Rana</Text>
-                          <View style={styles.presetBadgeGreen}>
-                            <Text style={styles.presetBadgeGreenText}>🟢 GEU Verified</Text>
-                          </View>
-                        </View>
-                        <Text style={[styles.presetMeta, { color: colors.textMuted }]}>
-                          Roll: 2313812137 • B.Tech CSE • @geu.ac.in
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[styles.presetCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                        onPress={() => {
-                          const token = createDevStudentToken(
-                            '2313812140@geu.ac.in',
-                            'Priya Rawat'
-                          );
-                          handleMicrosoftSSO(token);
-                        }}
-                        disabled={ssoLoading}
-                      >
-                        <View style={styles.presetTop}>
-                          <Text style={[styles.presetName, { color: colors.textPrimary }]}>Priya Rawat</Text>
-                          <View style={styles.presetBadgeGreen}>
-                            <Text style={styles.presetBadgeGreenText}>🟢 GEU Verified</Text>
-                          </View>
-                        </View>
-                        <Text style={[styles.presetMeta, { color: colors.textMuted }]}>
-                          Roll: 2313812140 • B.Tech AI/ML • @geu.ac.in
-                        </Text>
-                      </TouchableOpacity>
-
-                      {SAMPLE_ID_PRESETS.map((p, idx) => (
-                        <TouchableOpacity
-                          key={idx}
-                          style={[styles.presetCard, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}
-                          onPress={() => handleScanAndLogin('data:image/jpeg;base64,' + safeBase64Encode(p.rawText), true)}
-                          disabled={idScanLoading}
-                        >
-                          <View style={styles.presetTop}>
-                            <Text style={[styles.presetName, { color: colors.textPrimary }]}>{p.name}</Text>
-                            <View style={styles.presetBadgeYellow}>
-                              <Text style={styles.presetBadgeYellowText}>🟡 Pending Review</Text>
-                            </View>
-                          </View>
-                          <Text style={[styles.presetMeta, { color: colors.textMuted }]}>
-                            {p.roll} • {p.dept}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-                )}
-              </View>
             </View>
           )}
 
@@ -1178,7 +1062,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={[styles.modalSub, { color: colors.textSecondary }]}>
                 {forgotStep === 'EMAIL'
-                  ? 'Enter your registered Graphic Era college email address to receive a 6-digit reset code.'
+                  ? 'Enter your registered email address (Gmail or college email) to receive a 6-digit reset code.'
                   : forgotMsg || 'Enter the 6-digit OTP sent to your email and set your new password.'}
               </Text>
 
@@ -1191,12 +1075,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
 
               {forgotStep === 'EMAIL' ? (
                 <View style={{ marginTop: 10 }}>
-                  <Text style={[styles.fieldLabel, { color: colors.textPrimary }]}>College Email</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textPrimary }]}>Registered Email</Text>
                   <View style={[styles.inputFieldRow, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
                     <Mail size={16} color={colors.textSecondary} />
                     <TextInput
                       style={[styles.fieldTextInput, { color: colors.textPrimary }]}
-                      placeholder="e.g. 2313812137@geu.ac.in"
+                      placeholder="e.g. yourname@gmail.com"
                       placeholderTextColor={colors.textMuted}
                       value={forgotEmail}
                       onChangeText={(val) => {
@@ -1239,12 +1123,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                     />
                   </View>
 
-                  <Text style={[styles.fieldLabel, { color: colors.textPrimary, marginTop: 12 }]}>New Password</Text>
+                  <Text style={[styles.fieldLabel, { color: colors.textPrimary, marginTop: 12 }]}>
+                    New Password (min 8 chars, letters & numbers)
+                  </Text>
                   <View style={[styles.inputFieldRow, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
                     <Lock size={16} color={colors.textSecondary} />
                     <TextInput
                       style={[styles.fieldTextInput, { color: colors.textPrimary }]}
-                      placeholder="Min. 6 characters"
+                      placeholder="Enter strong password"
                       placeholderTextColor={colors.textMuted}
                       value={forgotNewPassword}
                       onChangeText={(val) => {
@@ -1259,6 +1145,33 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                       style={styles.eyeBtn}
                     >
                       {showForgotNewPassword ? (
+                        <EyeOff size={16} color={colors.textSecondary} />
+                      ) : (
+                        <Eye size={16} color={colors.textSecondary} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={[styles.fieldLabel, { color: colors.textPrimary, marginTop: 12 }]}>Confirm New Password</Text>
+                  <View style={[styles.inputFieldRow, { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder }]}>
+                    <Lock size={16} color={colors.textSecondary} />
+                    <TextInput
+                      style={[styles.fieldTextInput, { color: colors.textPrimary }]}
+                      placeholder="Re-enter password"
+                      placeholderTextColor={colors.textMuted}
+                      value={forgotConfirmPassword}
+                      onChangeText={(val) => {
+                        setForgotConfirmPassword(val);
+                        setForgotError('');
+                      }}
+                      secureTextEntry={!showForgotConfirmPassword}
+                      autoCapitalize="none"
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowForgotConfirmPassword(!showForgotConfirmPassword)}
+                      style={styles.eyeBtn}
+                    >
+                      {showForgotConfirmPassword ? (
                         <EyeOff size={16} color={colors.textSecondary} />
                       ) : (
                         <Eye size={16} color={colors.textSecondary} />

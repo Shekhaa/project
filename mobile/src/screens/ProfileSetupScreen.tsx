@@ -217,8 +217,21 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
     currentUser.email.toLowerCase().endsWith('.local') ||
     currentUser.email.toLowerCase().startsWith('student_');
 
-  // Form State
-  const [fullName, setFullName] = useState(currentUser.full_name || '');
+  const isDummyName = (val?: string | null) => {
+    const clean = (val || '').trim().toLowerCase();
+    return (
+      !clean ||
+      clean === 'student' ||
+      clean === 'student (id pending)' ||
+      clean === 'campus student' ||
+      clean === 'unverified' ||
+      clean.startsWith('student_') ||
+      clean.startsWith('id_')
+    );
+  };
+
+  // Form State (empty by default so faded placeholders act as clean examples)
+  const [fullName, setFullName] = useState(isDummyName(currentUser.full_name) ? '' : currentUser.full_name);
   const [username, setUsername] = useState('');
   const [gender, setGender] = useState<'Male' | 'Female' | 'Other'>('Male');
   const [showGender, setShowGender] = useState(true);
@@ -230,7 +243,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   const [emailOtpCode, setEmailOtpCode] = useState('');
   const [emailDevCode, setEmailDevCode] = useState<string | null>(null);
   const [emailActionLoading, setEmailActionLoading] = useState(false);
-  const [bio, setBio] = useState('Excited for campus tech clubs, hackathons & fests!');
+  const [bio, setBio] = useState('');
   const [admissionNumber, setAdmissionNumber] = useState('');
   const [colleges, setColleges] = useState<CollegeCatalogItem[]>([]);
   const [selectedCollegeId, setSelectedCollegeId] = useState<number | undefined>(undefined);
@@ -281,7 +294,6 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
 
       const data = profileRes.status === 'fulfilled' ? profileRes.value : null;
       const emailPrefix = (currentUser.email || '').split('@')[0];
-      const safeUserPrefix = emailPrefix.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 18) || 'campus_student';
 
       const defaultCollege =
         collegesList.find(
@@ -289,15 +301,15 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
         ) || collegesList[0];
 
       if (data) {
-        if (data.full_name) setFullName(data.full_name);
-        if (data.username) {
-          setUsername(data.username);
-        } else {
-          setUsername(`student_${safeUserPrefix}`);
+        if (data.full_name && !isDummyName(data.full_name)) {
+          setFullName(data.full_name);
         }
-        if (data.admission_number) {
+        if (data.profile_completed && data.username && !isDummyName(data.username)) {
+          setUsername(data.username);
+        }
+        if (data.admission_number && !String(data.admission_number).startsWith('PENDING-')) {
           setAdmissionNumber(data.admission_number);
-        } else if (isInstitutionalEmail && emailPrefix) {
+        } else if (isInstitutionalEmail && emailPrefix && !emailPrefix.toLowerCase().startsWith('student_')) {
           setAdmissionNumber(emailPrefix);
         }
         if (data.college_name) setCollegeName(data.college_name);
@@ -315,12 +327,13 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
         if (data.gender) setGender(data.gender);
         if (typeof data.show_gender === 'boolean') setShowGender(data.show_gender);
         if (data.verification_tier) setVerificationTier(data.verification_tier);
-        if (data.bio) setBio(data.bio);
+        if (data.bio && !data.bio.startsWith('Excited for campus tech clubs')) {
+          setBio(data.bio);
+        }
       } else {
-        if (isInstitutionalEmail && emailPrefix) {
+        if (isInstitutionalEmail && emailPrefix && !emailPrefix.toLowerCase().startsWith('student_')) {
           setAdmissionNumber(emailPrefix);
         }
-        setUsername(`student_${safeUserPrefix}`);
         if (defaultCollege) {
           setSelectedCollegeId(defaultCollege.id);
           setCollegeName(defaultCollege.name);
@@ -402,13 +415,22 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
     }
 
     if (accountPassword.trim()) {
-      if (accountPassword.trim().length < 6) {
-        const msg = 'Please choose a password with at least 6 characters.';
-        setErrorMsg(msg);
-        if (Platform.OS !== 'web') Alert.alert('Weak Password', msg);
+      const cleanPwd = accountPassword.trim();
+      const weakList = ['12345678', '123456789', '1234567890', 'password', 'password1', 'password123', 'qwerty123', 'admin123'];
+      let pwdErr: string | null = null;
+      if (cleanPwd.length < 8) {
+        pwdErr = 'Password must be at least 8 characters long.';
+      } else if (!/[a-zA-Z]/.test(cleanPwd) || !/[0-9]/.test(cleanPwd)) {
+        pwdErr = 'Password must include both letters and numbers.';
+      } else if (weakList.includes(cleanPwd.toLowerCase()) || new Set(cleanPwd.toLowerCase()).size < 4) {
+        pwdErr = 'Password is too weak or common. Choose a stronger mix of letters and numbers.';
+      }
+      if (pwdErr) {
+        setErrorMsg(pwdErr);
+        if (Platform.OS !== 'web') Alert.alert('Weak Password', pwdErr);
         return;
       }
-      if (accountPassword.trim() !== confirmPassword.trim()) {
+      if (cleanPwd !== confirmPassword.trim()) {
         const msg = 'The passwords you entered do not match. Please re-enter.';
         setErrorMsg(msg);
         if (Platform.OS !== 'web') Alert.alert('Password Mismatch', msg);
@@ -917,15 +939,12 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
             >
               <Mail size={15} color={colors.textMuted} style={{ marginRight: 6 }} />
               <TextInput
-                style={[styles.usernameInput, { color: colors.textPrimary }]}
+                style={[styles.usernameInput, { color: colors.textPrimary, opacity: !emailVerified && isPlaceholderEmail ? 1 : 0.75 }]}
                 value={contactEmail}
                 onChangeText={(txt) => {
                   setContactEmail(txt.trim());
-                  if (emailVerified && txt.trim().toLowerCase() !== (currentUser.email || '').toLowerCase()) {
-                    setEmailVerified(false);
-                  }
                 }}
-                editable={!emailVerified}
+                editable={!emailVerified && isPlaceholderEmail}
                 placeholder="you@gmail.com"
                 placeholderTextColor={colors.textTertiary}
                 keyboardType="email-address"
@@ -1035,7 +1054,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
               style={[styles.passwordInput, { color: colors.textPrimary }]}
               value={accountPassword}
               onChangeText={setAccountPassword}
-              placeholder="Enter new password (min. 6 chars)"
+              placeholder="Min. 8 chars (letters & numbers)"
               placeholderTextColor={colors.textMuted}
               secureTextEntry={!showPassword}
               autoCapitalize="none"

@@ -8,6 +8,7 @@ class MessageSerializer(serializers.ModelSerializer):
     sender_email = serializers.CharField(source="sender.email", read_only=True)
     sender_avatar = serializers.SerializerMethodField()
     attachments = MediaAttachmentSerializer(many=True, read_only=True)
+    reply_to_preview = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
@@ -20,13 +21,67 @@ class MessageSerializer(serializers.ModelSerializer):
             "sender_avatar",
             "is_anonymous",
             "anonymous_alias",
+            "reply_to",
+            "reply_to_preview",
             "text",
             "attachment",
             "attachments",
             "is_read",
             "created_at",
         ]
-        read_only_fields = ["id", "sender", "sender_name", "sender_email", "sender_avatar", "is_anonymous", "anonymous_alias", "attachments", "is_read", "created_at"]
+        read_only_fields = [
+            "id",
+            "sender",
+            "sender_name",
+            "sender_email",
+            "sender_avatar",
+            "is_anonymous",
+            "anonymous_alias",
+            "reply_to_preview",
+            "attachments",
+            "is_read",
+            "created_at",
+        ]
+
+    def get_reply_to_preview(self, obj):
+        parent = getattr(obj, "reply_to", None)
+        if not parent or getattr(parent, "is_unsent", False):
+            return None
+        request = self.context.get("request")
+        current_user = request.user if request else None
+        is_parent_anon = parent.is_anonymous or (
+            parent.conversation.is_anonymous and parent.conversation.anonymous_sender_id == parent.sender_id
+        )
+        if is_parent_anon and current_user != parent.sender:
+            sender_name = parent.anonymous_alias or parent.conversation.anonymous_alias or "🦉 Anonymous Classmate"
+        else:
+            sender_name = getattr(parent.sender, "full_name", "") or parent.sender.email.split("@")[0]
+
+        preview_text = (parent.text or "").strip()
+        if preview_text.startswith("[CAMPUS_POST_CARD:"):
+            preview_text = "📌 Shared Post"
+        elif preview_text.startswith("[ANON_MSG:"):
+            end_idx = preview_text.find("]")
+            if end_idx != -1:
+                preview_text = preview_text[end_idx + 1:].strip()
+
+        if not preview_text:
+            if parent.attachments.filter(file_type="AUDIO").exists():
+                preview_text = "🎙️ Voice Note"
+            elif parent.attachments.filter(file_type="VIDEO").exists():
+                preview_text = "🎬 Video"
+            elif parent.attachments.filter(file_type="IMAGE").exists():
+                preview_text = "🖼️ Photo"
+            elif parent.attachments.filter(file_type="DOCUMENT").exists() or parent.attachment:
+                preview_text = "📄 Document"
+            else:
+                preview_text = "Attachment"
+
+        return {
+            "id": str(parent.id),
+            "sender_name": sender_name,
+            "text": preview_text[:120],
+        }
 
     def to_representation(self, obj):
         data = super().to_representation(obj)
