@@ -142,6 +142,16 @@ class NotificationService {
     return;
   }
 
+  private activeConversationId: string | null = null;
+
+  setActiveConversationId(convId: string | null) {
+    this.activeConversationId = convId ? String(convId) : null;
+  }
+
+  getActiveConversationId(): string | null {
+    return this.activeConversationId;
+  }
+
   /**
    * Attaches lockscreen tap listener to deep link into posts or chats
    */

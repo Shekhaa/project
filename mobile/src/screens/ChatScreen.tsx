@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { notificationService } from '../services/notificationService';
 import {
   chatService,
   Conversation,
@@ -100,6 +101,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const { colors, isDark } = useTheme();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
+
+  // Track currently open chat/group so incoming notifications for this room are suppressed
+  useEffect(() => {
+    notificationService.setActiveConversationId(activeConv ? String(activeConv.id) : null);
+    return () => {
+      notificationService.setActiveConversationId(null);
+    };
+  }, [activeConv?.id]);
   const [actionConv, setActionConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingInbox, setLoadingInbox] = useState(true);

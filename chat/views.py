@@ -82,6 +82,8 @@ class InboxView(generics.ListAPIView):
         return qs.order_by("-updated_at")
 
     def list(self, request, *args, **kwargs):
+        from django.core.cache import cache
+        cache.delete(f"active_chat:{request.user.id}")
         response = super().list(request, *args, **kwargs)
         pending_requests_count = MessageRequest.objects.filter(recipient=request.user, status="PENDING").count()
         if isinstance(response.data, dict):
@@ -299,9 +301,20 @@ class ConversationMessagesView(generics.ListAPIView):
     serializer_class = MessageSerializer
 
     def get_queryset(self):
+        from django.core.cache import cache
+        from notifications.models import Notification
+
         conv_id = self.kwargs["conversation_id"]
         # Ensure user is a member
         membership = get_object_or_404(ConversationMember, conversation_id=conv_id, user=self.request.user)
+
+        # Track active presence in this chat/group so user won't get redundant notifications while reading
+        cache.set(f"active_chat:{self.request.user.id}", str(conv_id), timeout=20)
+        Notification.objects.filter(
+            recipient=self.request.user,
+            is_read=False,
+            data__conversation_id=str(conv_id),
+        ).update(is_read=True)
 
         # Mark unread incoming messages as read
         Message.objects.filter(
@@ -475,8 +488,14 @@ class SendMessageView(APIView):
         fallback_att_label = "Sent a voice note 🎙️" if has_audio_att else "Sent an attachment"
         notif_msg = f"{sender_name} shared a post with you." if is_shared_card else f"{sender_name}: {text[:75] or fallback_att_label}"
 
+        from django.core.cache import cache
+        cache.set(f"active_chat:{request.user.id}", str(conv.id), timeout=20)
+
         for m in other_members:
             if not m.is_hidden:
+                # Skip notification & push if recipient is actively reading this chat/group
+                if str(cache.get(f"active_chat:{m.user_id}") or "") == str(conv.id):
+                    continue
                 create_notification(
                     recipient=m.user,
                     sender=request.user if not is_anon else None,

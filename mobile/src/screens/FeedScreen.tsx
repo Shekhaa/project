@@ -404,7 +404,13 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       const newUnread = res.unread_count || 0;
       if (newUnread > unreadNotifCount && res.results && res.results.length > 0) {
         const latest = res.results[0];
-        if (!latest.is_read) {
+        const openConvId = notificationService.getActiveConversationId();
+        const isCurrentChatNotif =
+          openConvId &&
+          latest.data?.conversation_id &&
+          String(latest.data.conversation_id) === String(openConvId);
+
+        if (!latest.is_read && !isCurrentChatNotif) {
           notificationService.showExternalNotification(
             latest.title,
             latest.message,
