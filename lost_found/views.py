@@ -166,10 +166,11 @@ class ContactReporterView(APIView):
             except Exception:
                 image_url = item.image.url if hasattr(item.image, "url") else ""
 
+        prof = getattr(item.author, "profile", None)
         author_display = (
-            item.author.get_full_name()
-            if hasattr(item.author, "get_full_name") and item.author.get_full_name()
-            else item.author.username
+            getattr(item.author, "full_name", None)
+            or (getattr(prof, "username", None) if prof else None)
+            or (item.author.email.split("@")[0] if getattr(item.author, "email", None) else "Campus Student")
         )
         card_payload = {
             "kind": "LOST_FOUND",

@@ -344,12 +344,16 @@ class EditProfileView(APIView):
         if bio is None:
             bio = request.data.get("caption")
         if bio is not None:
-            profile.bio = str(bio).strip()
+            from config.security_utils import sanitize_user_text
+            profile.bio = sanitize_user_text(bio)
 
-        # 5. Update username if provided
+        # 5. Update username if provided (strictly letters, digits, '@' and '_')
         username = request.data.get("username")
         if username is not None and str(username).strip():
-            clean_u = str(username).strip().lower()
+            from config.security_utils import validate_campus_username
+            clean_u, u_err = validate_campus_username(username)
+            if u_err:
+                return Response({"error": u_err}, status=status.HTTP_400_BAD_REQUEST)
             if clean_u != profile.username:
                 if StudentProfile.objects.filter(username=clean_u).exclude(id=profile.id).exists():
                     return Response({"error": "This username is already taken by another student."}, status=status.HTTP_400_BAD_REQUEST)

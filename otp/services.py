@@ -7,6 +7,7 @@ import secrets
 from datetime import timedelta
 from django.utils import timezone
 from django.core.mail import send_mail
+from django.core.cache import cache
 from django.conf import settings
 from django.db import transaction
 from .models import OTP
@@ -14,6 +15,16 @@ from .models import OTP
 class OTPService:
     COOLDOWN_SECONDS = 60
     EXPIRY_MINUTES = 5
+    MAX_WRONG_ATTEMPTS = 4
+    LOCKOUT_SECONDS = 3600  # 1 hour lockout after 4 wrong OTP attempts
+
+    @classmethod
+    def _lock_key(cls, destination: str, purpose: str) -> str:
+        return f"otp_lockout:{destination.strip().lower()}:{purpose}"
+
+    @classmethod
+    def _fail_key(cls, destination: str, purpose: str) -> str:
+        return f"otp_fail_count:{destination.strip().lower()}:{purpose}"
 
     @classmethod
     def generate_code(cls):
@@ -211,6 +222,10 @@ class OTPService:
         """
         email = email.strip().lower()
 
+        if cache.get(cls._lock_key(email, purpose)):
+            err_msg = "Too many wrong OTP attempts. Please try again after 1 hour."
+            return (False, err_msg, None) if return_record else (False, err_msg)
+
         # Check cooldown
         recent_otp = OTP.objects.filter(
             destination=email,
@@ -282,6 +297,10 @@ class OTPService:
         """
         phone_number = phone_number.strip().replace(" ", "")
 
+        if cache.get(cls._lock_key(phone_number, purpose)):
+            err_msg = "Too many wrong OTP attempts. Please try again after 1 hour."
+            return (False, err_msg, None) if return_record else (False, err_msg)
+
         # Check cooldown
         recent_otp = OTP.objects.filter(
             destination=phone_number,
@@ -340,6 +359,10 @@ class OTPService:
         Returns: (True, None) or (False, "Error message")
         """
         destination = destination.strip().lower()
+
+        if cache.get(cls._lock_key(destination, purpose)):
+            return False, "Too many wrong OTP attempts. Please try again after 1 hour."
+
         with transaction.atomic():
             otp_record = OTP.objects.select_for_update().filter(
                 destination=destination,
@@ -357,12 +380,19 @@ class OTPService:
 
             if not secrets.compare_digest(str(otp_record.otp), str(otp_code).strip()):
                 otp_record.record_attempt()
-                remaining = otp_record.max_attempts - otp_record.attempts
-                if remaining <= 0:
-                    return False, "Maximum verification attempts exceeded. Code has been invalidated."
-                return False, f"Invalid verification code. {remaining} attempt(s) remaining."
+                fail_count = cache.get(cls._fail_key(destination, purpose), 0) + 1
+                cache.set(cls._fail_key(destination, purpose), fail_count, timeout=cls.LOCKOUT_SECONDS)
+                if fail_count >= cls.MAX_WRONG_ATTEMPTS:
+                    cache.set(cls._lock_key(destination, purpose), True, timeout=cls.LOCKOUT_SECONDS)
+                    otp_record.is_used = True
+                    otp_record.save(update_fields=["is_used"])
+                    return False, "Too many wrong OTP attempts (4/4). Please try again after 1 hour."
+                remaining = cls.MAX_WRONG_ATTEMPTS - fail_count
+                return False, f"Invalid verification code. {remaining} attempt(s) remaining before 1-hour lockout."
 
-            # Mark consumed
+            # Mark consumed & clear failure tracking
+            cache.delete(cls._fail_key(destination, purpose))
+            cache.delete(cls._lock_key(destination, purpose))
             otp_record.mark_consumed()
             return True, None
 

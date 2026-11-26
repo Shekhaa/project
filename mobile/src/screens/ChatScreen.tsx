@@ -59,6 +59,7 @@ import {
   MoreVertical,
   ShieldCheck,
   CornerDownRight,
+  Share2,
 } from 'lucide-react-native';
 
 interface ChatScreenProps {
@@ -131,6 +132,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [selectedPostCard, setSelectedPostCard] = useState<SharedPostCardData | null>(null);
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
   const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
+  const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
+  const [forwardingConvId, setForwardingConvId] = useState<string | null>(null);
   const [attachmentPickerVisible, setAttachmentPickerVisible] = useState(false);
 
   // Live Voice Note Recording & Draft State (Instagram style)
@@ -987,6 +990,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                   onLongPress={(m) => setActionMessage(m)}
                   onPostCardPress={(card) => setSelectedPostCard(card)}
                   onSenderPress={onOpenProfile}
+                  onForward={(m) => setForwardMessage(m)}
                 />
               );
             }}
@@ -1341,6 +1345,20 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                         </TouchableOpacity>
                       )}
 
+                      {!isTempOrFailed && !actionMessage.is_unsent && (
+                        <TouchableOpacity
+                          style={styles.actionSheetItem}
+                          onPress={() => {
+                            const target = actionMessage;
+                            setActionMessage(null);
+                            if (target) setForwardMessage(target);
+                          }}
+                        >
+                          <Share2 size={18} color={colors.primary} />
+                          <Text style={[styles.actionSheetText, { color: colors.textPrimary }]}>Forward / Share</Text>
+                        </TouchableOpacity>
+                      )}
+
                       {isSenderMe && !isTempOrFailed && (
                         <TouchableOpacity
                           style={styles.actionSheetItem}
@@ -1371,6 +1389,109 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                     </>
                   );
                 })()}
+              </View>
+            </TouchableOpacity>
+          </Modal>
+        )}
+
+        {/* FORWARD / SHARE MESSAGE OR MEDIA MODAL */}
+        {forwardMessage && (
+          <Modal
+            transparent
+            animationType="slide"
+            visible={!!forwardMessage}
+            onRequestClose={() => setForwardMessage(null)}
+          >
+            <TouchableOpacity
+              style={[styles.menuBackdrop, { backgroundColor: colors.modalOverlay, justifyContent: 'flex-end' }]}
+              activeOpacity={1}
+              onPress={() => setForwardMessage(null)}
+            >
+              <View
+                style={{
+                  backgroundColor: colors.surface,
+                  borderTopLeftRadius: 20,
+                  borderTopRightRadius: 20,
+                  paddingHorizontal: 16,
+                  paddingTop: 12,
+                  paddingBottom: 24,
+                  maxHeight: '72%',
+                  width: '100%',
+                  maxWidth: 680,
+                  alignSelf: 'center',
+                  borderTopWidth: 1,
+                  borderTopColor: colors.cardBorder,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary }}>
+                    Forward to Chat
+                  </Text>
+                  <TouchableOpacity onPress={() => setForwardMessage(null)}>
+                    <X size={20} color={colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  {conversations.map((conv) => {
+                    const targetName = conv.is_group
+                      ? conv.name || 'Group Chat'
+                      : conv.recipient?.full_name || conv.recipient?.username || 'Campus Peer';
+                    const isBusy = forwardingConvId === String(conv.id);
+                    return (
+                      <TouchableOpacity
+                        key={conv.id}
+                        disabled={!!forwardingConvId}
+                        onPress={async () => {
+                          setForwardingConvId(String(conv.id));
+                          try {
+                            const attIds = (forwardMessage.attachments || []).map((a) => String(a.id)).filter(Boolean);
+                            const fwdText = forwardMessage.text?.trim() || (attIds.length > 0 ? '' : 'Shared media');
+                            await chatService.sendMessage(conv.id, fwdText, false, '', attIds);
+                            setForwardMessage(null);
+                            setRoomNotice(`Forwarded to ${targetName}`);
+                            setTimeout(() => setRoomNotice(null), 2200);
+                          } catch {
+                            setDeliveryError('Could not forward message to selected chat.');
+                          } finally {
+                            setForwardingConvId(null);
+                          }
+                        }}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingVertical: 10,
+                          borderBottomWidth: 1,
+                          borderBottomColor: colors.hairline,
+                          gap: 10,
+                        }}
+                      >
+                        <UserAvatar
+                          uri={!conv.is_group ? conv.recipient?.avatar || conv.recipient?.profile_picture : undefined}
+                          name={targetName}
+                          size={34}
+                        />
+                        <Text style={{ flex: 1, fontSize: 14, fontWeight: '600', color: colors.textPrimary }} numberOfLines={1}>
+                          {targetName}
+                        </Text>
+                        <View
+                          style={{
+                            backgroundColor: colors.primary,
+                            paddingHorizontal: 12,
+                            paddingVertical: 6,
+                            borderRadius: 12,
+                          }}
+                        >
+                          {isBusy ? (
+                            <ActivityIndicator size="small" color={colors.onPrimary} />
+                          ) : (
+                            <Text style={{ color: colors.onPrimary, fontSize: 12, fontWeight: '700' }}>Send</Text>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
               </View>
             </TouchableOpacity>
           </Modal>

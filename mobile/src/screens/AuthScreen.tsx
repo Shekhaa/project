@@ -801,7 +801,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                       <View style={[styles.msLogoCell, { backgroundColor: '#FFB900' }]} />
                     </View>
                     <Text style={[styles.msButtonText, { color: colors.textPrimary }]}>
-                      Continue with College ID (@geu.ac.in)
+                      Continue with College Official ID (.ac.in)
                     </Text>
                     <ArrowRight size={15} color={colors.textMuted} />
                   </View>
@@ -828,7 +828,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                     Sign in with College Microsoft ID
                   </Text>
                   <Text style={[styles.ssoDesc, { color: colors.textSecondary }]}>
-                    Use your official university Outlook account (@geu.ac.in / @gehu.ac.in). Instant verified badge & auto roll number — add your personal Gmail next for contact.
+                    Apne college ki official .ac.in ID use karein (e.g. name@college.ac.in). Instant verified Green Badge & auto roll number — add your personal Gmail next for contact.
                   </Text>
                 </View>
 
@@ -858,7 +858,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                         <View style={[styles.msLogoCell, { backgroundColor: '#FFB900' }]} />
                       </View>
                       <Text style={[styles.msButtonText, { color: colors.onPrimary }]}>
-                        Continue with College ID (@geu.ac.in)
+                        Continue with College Official ID (.ac.in)
                       </Text>
                       <ArrowRight size={16} color={colors.onPrimary} />
                     </View>
@@ -1234,7 +1234,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                   <View style={[styles.msLogoCellSmall, { backgroundColor: '#FFB900' }]} />
                 </View>
                 <Text style={{ color: colors.textPrimary, fontSize: 14, fontWeight: '700' }}>
-                  Graphic Era Official Login
+                  College Official ID (.ac.in) Login
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
@@ -1286,7 +1286,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                     >
                       <ActivityIndicator size="large" color={colors.primary} />
                       <Text style={{ color: colors.textSecondary, marginTop: 12, fontSize: 13 }}>
-                        Connecting to Graphic Era Microsoft portal...
+                        Connecting to your college official portal (.ac.in)...
                       </Text>
                     </View>
                   )}
@@ -1312,7 +1312,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                       Verifying Student Identity
                     </Text>
                     <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 8, textAlign: 'center' }}>
-                      Authenticating with Graphic Era Microsoft servers...
+                      Authenticating with your College Official Portal...
                     </Text>
                   </View>
                 )}

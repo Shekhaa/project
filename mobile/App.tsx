@@ -359,6 +359,9 @@ function AppMain() {
               }
               navigateToTab('CHAT');
             }}
+            onNavigateToArena={() => navigateToTab('LOST_FOUND')}
+            onNavigateToCommunities={() => navigateToTab('COMMUNITIES')}
+            isProfileModalOpen={!!viewingProfileUserId}
             onOpenProfile={(uid) => {
               if (!currentUser) {
                 handleRequireAuth();

@@ -21,6 +21,12 @@ import {
 import { AttachmentItem } from '../../services/chatService';
 import { useTheme } from '../../theme/ThemeContext';
 import { getFullMediaUrl, api } from '../../config/api';
+import { showCrossPlatformAlert } from '../../utils/mediaUtils';
+
+let FileSystem: any = null;
+let Sharing: any = null;
+try { FileSystem = require('expo-file-system'); } catch {}
+try { Sharing = require('expo-sharing'); } catch {}
 
 interface DocumentCardProps {
   attachment: AttachmentItem;
@@ -95,7 +101,10 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
 
   const config = getDocTypeConfig();
   const IconComponent = config.icon;
-  const rawTargetUrl = attachment.download_url || attachment.file_url;
+  // Always prefer backend streaming proxy over raw Cloudinary URLs to avoid 401 ACL blocks
+  const rawTargetUrl = attachment.id
+    ? `/api/attachments/${attachment.id}/download/`
+    : (attachment.download_url || attachment.file_url);
 
   const handleOpenOrDownload = async (action: 'open' | 'download') => {
     if (onPress) {
@@ -108,79 +117,76 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
     let targetUrl = getFullMediaUrl(rawTargetUrl);
 
     try {
-      if (action === 'download') {
-        setDownloading(true);
-      }
+      setDownloading(true);
 
-      // Attach auth token if available so authenticated endpoints succeed
       const token = await AsyncStorage.getItem('access_token');
       if (token && !targetUrl.includes('token=')) {
         const separator = targetUrl.includes('?') ? '&' : '?';
         targetUrl = `${targetUrl}${separator}token=${encodeURIComponent(token)}`;
       }
 
-      if (action === 'open') {
-        if (Platform.OS === 'web') {
-          if (typeof window !== 'undefined') {
-            const separator = targetUrl.includes('?') ? '&' : '?';
-            const urlWithParam = ext === 'pdf' ? `${targetUrl}${separator}preview=true` : targetUrl;
-            window.open(urlWithParam, '_blank');
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        const fetchUrl = action === 'open'
+          ? `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}preview=true`
+          : targetUrl;
+
+        try {
+          const response = await api.get(fetchUrl, { responseType: 'blob' });
+          const mimeType = attachment.mime_type || (ext === 'pdf' ? 'application/pdf' : 'application/octet-stream');
+          const blob = new Blob([response.data], { type: mimeType });
+          const blobUrl = window.URL.createObjectURL(blob);
+
+          if (action === 'open') {
+            window.open(blobUrl, '_blank');
+          } else {
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = attachment.file_name || `document.${ext || 'pdf'}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setDownloadSuccess(true);
+            setTimeout(() => setDownloadSuccess(false), 2500);
           }
-        } else {
-          // Native mobile: open in system browser or registered PDF viewer
-          try {
-            await Linking.openURL(targetUrl);
-          } catch (err) {
-            console.warn('Could not launch external URL directly:', err);
-          }
+          setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60000);
+        } catch {
+          showCrossPlatformAlert('Document Unavailable', 'Could not load this document right now. Please try again later.');
         }
         return;
       }
 
-      // Download Action
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        try {
-          // Attempt authenticated blob download first for true cross-origin file saving
-          const response = await api.get(targetUrl, { responseType: 'blob' });
-          const blob = new Blob([response.data], {
-            type: attachment.mime_type || 'application/octet-stream',
-          });
-          const blobUrl = window.URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = blobUrl;
-          link.download = attachment.file_name || `document.${ext || 'pdf'}`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          window.URL.revokeObjectURL(blobUrl);
-
-          setDownloadSuccess(true);
-          setTimeout(() => setDownloadSuccess(false), 2500);
-        } catch {
-          // Fallback to standard anchor download trigger
-          const link = document.createElement('a');
-          link.href = targetUrl;
-          link.download = attachment.file_name || `document.${ext || 'pdf'}`;
-          link.target = '_blank';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-
-          setDownloadSuccess(true);
-          setTimeout(() => setDownloadSuccess(false), 2500);
+      // Native Android / iOS: download locally & launch system "Open With" (Google Drive / PDF Viewer) or save
+      if (FileSystem?.downloadAsync && Sharing?.isAvailableAsync) {
+        const safeName = (attachment.file_name || `document.${ext || 'pdf'}`).replace(/[^a-zA-Z0-9._-]/g, '_');
+        const localUri = `${FileSystem.cacheDirectory}${safeName}`;
+        const dlRes = await FileSystem.downloadAsync(
+          targetUrl,
+          localUri,
+          token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+        );
+        if (dlRes && dlRes.status >= 200 && dlRes.status < 300) {
+          const canShare = await Sharing.isAvailableAsync();
+          if (canShare) {
+            await Sharing.shareAsync(dlRes.uri, {
+              mimeType: attachment.mime_type || (ext === 'pdf' ? 'application/pdf' : 'application/octet-stream'),
+              dialogTitle: action === 'open' ? 'Open with' : 'Save or Share Document',
+              UTI: ext === 'pdf' ? 'com.adobe.pdf' : undefined,
+            });
+            setDownloadSuccess(true);
+            setTimeout(() => setDownloadSuccess(false), 2500);
+            return;
+          }
         }
-      } else {
-        // Mobile Native: Direct launch browser download / intent handler
-        try {
-          await Linking.openURL(targetUrl);
-          setDownloadSuccess(true);
-          setTimeout(() => setDownloadSuccess(false), 2500);
-        } catch (err) {
-          console.warn('Could not open download URL on device:', err);
-        }
+      }
+
+      await Linking.openURL(targetUrl);
+      if (action === 'download') {
+        setDownloadSuccess(true);
+        setTimeout(() => setDownloadSuccess(false), 2500);
       }
     } catch (err) {
       console.warn('Error handling document action:', err);
+      showCrossPlatformAlert('Document Error', 'Could not open or download this file.');
     } finally {
       setDownloading(false);
     }

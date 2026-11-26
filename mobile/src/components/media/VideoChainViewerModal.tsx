@@ -17,6 +17,7 @@ import {
   VolumeX,
   Heart,
   MessageCircle,
+  Share2,
   RotateCcw,
   RotateCw,
   Play,
@@ -47,6 +48,7 @@ const formatTime = (secs: number): string => {
 interface VideoChainViewerModalProps {
   onToggleLike?: (postId: number) => void;
   onOpenComments?: (post: any) => void;
+  onOpenShare?: (post: any) => void;
   onOpenProfile?: (userId: number) => void;
   temporarilyHidden?: boolean;
 }
@@ -54,6 +56,7 @@ interface VideoChainViewerModalProps {
 export const VideoChainViewerModal: React.FC<VideoChainViewerModalProps> = ({
   onToggleLike,
   onOpenComments,
+  onOpenShare,
   onOpenProfile,
   temporarilyHidden = false,
 }) => {
@@ -81,6 +84,8 @@ export const VideoChainViewerModal: React.FC<VideoChainViewerModalProps> = ({
   const nativeVideoRef = useRef<any>(null);
   const scrubberWidthRef = useRef<number>(SCREEN_WIDTH - 32);
   const isDraggingScrubberRef = useRef<boolean>(false);
+  const pointerStartYRef = useRef<number | null>(null);
+  const pointerDraggedRef = useRef<boolean>(false);
   const lastTapRef = useRef<number>(0);
   const tapTimerRef = useRef<any>(null);
 
@@ -210,7 +215,10 @@ export const VideoChainViewerModal: React.FC<VideoChainViewerModalProps> = ({
 
   // Screen Tap Handler: Single Tap = Play/Pause, Double Tap Left/Right = -10s / +10s across 9:16 video
   const handleScreenPress = (e: any) => {
-    if (isDraggingScrubberRef.current) return;
+    if (isDraggingScrubberRef.current || pointerDraggedRef.current) {
+      pointerDraggedRef.current = false;
+      return;
+    }
     const now = Date.now();
     const DOUBLE_TAP_DELAY = 260;
 
@@ -369,10 +377,41 @@ export const VideoChainViewerModal: React.FC<VideoChainViewerModalProps> = ({
     onOpenComments?.(currentVideo.post);
   };
 
+  const handlePressShare = () => {
+    if (!currentVideo.post) return;
+    pausePlayback();
+    onOpenShare?.(currentVideo.post);
+  };
+
   const handlePressProfile = () => {
     if (currentVideo.isAnonymous || !currentVideo.authorId) return;
-    handleClose();
+    pausePlayback();
     onOpenProfile?.(currentVideo.authorId);
+  };
+
+  const handlePointerStart = (e: any) => {
+    if (isDraggingScrubberRef.current) return;
+    const y = e?.clientY ?? e?.nativeEvent?.pageY ?? e?.touches?.[0]?.clientY;
+    if (typeof y === 'number') {
+      pointerStartYRef.current = y;
+      pointerDraggedRef.current = false;
+    }
+  };
+
+  const handlePointerEnd = (e: any) => {
+    if (pointerStartYRef.current === null || isDraggingScrubberRef.current) return;
+    const endY = e?.clientY ?? e?.nativeEvent?.pageY ?? e?.changedTouches?.[0]?.clientY;
+    if (typeof endY === 'number') {
+      const dy = endY - pointerStartYRef.current;
+      if (dy > 40) {
+        pointerDraggedRef.current = true;
+        handleNextVideo();
+      } else if (dy < -40) {
+        pointerDraggedRef.current = true;
+        handlePrevVideo();
+      }
+    }
+    pointerStartYRef.current = null;
   };
 
   return (
@@ -383,7 +422,13 @@ export const VideoChainViewerModal: React.FC<VideoChainViewerModalProps> = ({
       onRequestClose={handleClose}
       statusBarTranslucent
     >
-      <View style={styles.container} {...panResponder.panHandlers} onWheel={handleWheel as any}>
+      <View
+        style={styles.container}
+        {...panResponder.panHandlers}
+        onWheel={handleWheel as any}
+        onPointerDown={handlePointerStart as any}
+        onPointerUp={handlePointerEnd as any}
+      >
         {/* Fullscreen 9:16 Video Player Layer */}
         {Platform.OS === 'web' ? (
           <video
@@ -530,6 +575,11 @@ export const VideoChainViewerModal: React.FC<VideoChainViewerModalProps> = ({
             <TouchableOpacity style={styles.actionColBtn} onPress={handlePressComment} activeOpacity={0.75}>
               <MessageCircle size={26} color="#ffffff" />
               <Text style={styles.actionColLabel}>{commentsCount}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionColBtn} onPress={handlePressShare} activeOpacity={0.75}>
+              <Share2 size={24} color="#ffffff" />
+              <Text style={styles.actionColLabel}>Share</Text>
             </TouchableOpacity>
           </View>
         </View>

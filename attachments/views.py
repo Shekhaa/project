@@ -124,28 +124,80 @@ class AttachmentDownloadView(APIView):
         except Exception:
             pass
 
-        # 2. Remote Cloudinary / S3 storage: stream directly to guarantee proper headers & zero CDN transformation errors
+        # 2. Remote Cloudinary / S3 storage: stream directly via server (with Cloudinary signed private_download_url fallback for PDFs/RAW)
         if hasattr(attachment.file, "url"):
+            import urllib.request
+            from django.http import StreamingHttpResponse
+            from django.conf import settings
+
             target_file_url = attachment.file.url
-            try:
-                import urllib.request
-                from django.http import StreamingHttpResponse
-                req = urllib.request.Request(
-                    target_file_url,
-                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) CampusConnect/1.0"}
-                )
-                remote_stream = urllib.request.urlopen(req, timeout=15)
-                ct = attachment.mime_type or remote_stream.headers.get_content_type() or "application/octet-stream"
-                response = StreamingHttpResponse(remote_stream, content_type=ct)
-                disposition = "attachment" if as_attachment else "inline"
-                safe_name = (attachment.file_name or "document").replace('"', '').replace('\n', '').strip()
-                response["Content-Disposition"] = f'{disposition}; filename="{safe_name}"'
-                response["Access-Control-Allow-Origin"] = "*"
-                response["Access-Control-Expose-Headers"] = "Content-Disposition"
-                return response
-            except Exception:
-                from django.shortcuts import redirect
-                return redirect(target_file_url)
+            urls_to_try = [target_file_url]
+
+            # If Cloudinary URL, prepare authenticated private_download_url to bypass raw/PDF ACL blocks (HTTP 401)
+            if "cloudinary.com" in target_file_url and getattr(settings, "CLOUDINARY_API_SECRET", None):
+                try:
+                    import cloudinary
+                    import cloudinary.utils
+                    cloudinary.config(
+                        cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+                        api_key=settings.CLOUDINARY_API_KEY,
+                        api_secret=settings.CLOUDINARY_API_SECRET,
+                    )
+                    # Determine public_id from stored file name or URL path
+                    public_id = getattr(attachment.file, "name", "") or ""
+                    if "/upload/" in target_file_url:
+                        after_upload = target_file_url.split("/upload/", 1)[1]
+                        # Strip version segment like v1234567890/
+                        parts = after_upload.split("/", 1)
+                        if parts[0].startswith("v") and parts[0][1:].isdigit() and len(parts) > 1:
+                            public_id = parts[1]
+                        else:
+                            public_id = after_upload
+                    res_type = "raw" if "/raw/" in target_file_url or attachment.file_type == "DOCUMENT" else "image"
+                    if "/video/" in target_file_url:
+                        res_type = "video"
+                    signed_dl = cloudinary.utils.private_download_url(
+                        public_id,
+                        "",
+                        resource_type=res_type,
+                        attachment=as_attachment,
+                    )
+                    urls_to_try.append(signed_dl)
+                    # Also try without folder prefix if public_id has leading slash
+                    if public_id.startswith("/"):
+                        urls_to_try.append(
+                            cloudinary.utils.private_download_url(
+                                public_id.lstrip("/"),
+                                "",
+                                resource_type=res_type,
+                                attachment=as_attachment,
+                            )
+                        )
+                except Exception:
+                    pass
+
+            for candidate_url in urls_to_try:
+                try:
+                    req = urllib.request.Request(
+                        candidate_url,
+                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) CampusConnect/1.0"}
+                    )
+                    remote_stream = urllib.request.urlopen(req, timeout=20)
+                    ct = attachment.mime_type or remote_stream.headers.get_content_type() or "application/octet-stream"
+                    response = StreamingHttpResponse(remote_stream, content_type=ct)
+                    disposition = "attachment" if as_attachment else "inline"
+                    safe_name = (attachment.file_name or "document").replace('"', '').replace('\n', '').strip()
+                    response["Content-Disposition"] = f'{disposition}; filename="{safe_name}"'
+                    response["Access-Control-Allow-Origin"] = "*"
+                    response["Access-Control-Expose-Headers"] = "Content-Disposition"
+                    return response
+                except Exception:
+                    continue
+
+            return Response(
+                {"error": "Document unavailable or access denied on storage server."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
 
         raise Http404("File not found.")
 

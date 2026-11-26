@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { Message } from '../../services/chatService';
-import { ExternalLink, Heart, MessageCircle, Play, AlertCircle, CornerDownRight } from 'lucide-react-native';
+import { ExternalLink, Heart, MessageCircle, Play, CornerDownRight, Share2 } from 'lucide-react-native';
 import { MediaGrid } from '../media/MediaGrid';
 import { DocumentCard } from '../media/DocumentCard';
 import { AudioPlayerPill, splitMediaAttachments } from '../media/VoiceNotePlayer';
@@ -48,6 +48,7 @@ interface MessageBubbleProps {
   onPostCardPress?: (cardData: SharedPostCardData) => void;
   onSenderPress?: (senderId: number) => void;
   onSwipeReply?: (msg: Message) => void;
+  onForward?: (msg: Message) => void;
 }
 
 const VideoPlayerPill: React.FC<{ url: string; fileName: string; isMe: boolean }> = ({ url, fileName, isMe }) => {
@@ -101,6 +102,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   onPostCardPress,
   onSenderPress,
   onSwipeReply,
+  onForward,
 }) => {
   const { colors, isDark } = useTheme();
   const { cleanText, cardData } = parseSharedPostCard(message.text);
@@ -312,16 +314,55 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         )}
 
         {imageAttachments.length > 0 && (
-          <View style={{ marginBottom: displayText ? 6 : 2 }}>
+          <View style={{ marginBottom: displayText ? 6 : 2, position: 'relative' }}>
             <MediaGrid images={imageAttachments} />
+            {onForward && (
+              <TouchableOpacity
+                onPress={() => onForward(message)}
+                style={{
+                  position: 'absolute',
+                  top: 6,
+                  right: 6,
+                  width: 26,
+                  height: 26,
+                  borderRadius: 13,
+                  backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                accessibilityLabel="Forward image"
+              >
+                <Share2 size={13} color="#ffffff" />
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
         {videoAttachments.length > 0 && (
-          <View style={{ marginBottom: displayText ? 6 : 2, gap: 4 }}>
+          <View style={{ marginBottom: displayText ? 6 : 2, gap: 4, position: 'relative' }}>
             {videoAttachments.map((vid, idx) => (
               <VideoPlayerPill key={vid.id || idx} url={vid.file_url} fileName={vid.file_name} isMe={isMe} />
             ))}
+            {onForward && (
+              <TouchableOpacity
+                onPress={() => onForward(message)}
+                style={{
+                  position: 'absolute',
+                  top: 8,
+                  right: 8,
+                  width: 26,
+                  height: 26,
+                  borderRadius: 13,
+                  backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 20,
+                }}
+                accessibilityLabel="Forward video"
+              >
+                <Share2 size={13} color="#ffffff" />
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -364,37 +405,18 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             activeOpacity={0.9}
           >
             {cardData.is_deleted ? (
-              // Tombstone when post was deleted by owner
-              <View style={{ padding: 12, alignItems: 'center' }}>
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 6,
-                    marginBottom: 4,
-                  }}
-                >
-                  <AlertCircle size={15} color="#ef4444" />
-                  <Text
-                    style={{
-                      fontSize: 12.5,
-                      fontWeight: '700',
-                      color: colors.textPrimary,
-                    }}
-                  >
-                    Content Deleted by Owner
-                  </Text>
-                </View>
-                <Text
-                  style={{
-                    fontSize: 11.5,
-                    color: colors.textMuted,
-                    textAlign: 'center',
-                  }}
-                >
-                  This {cardData.kind === 'LOST_FOUND' ? 'notice' : 'post'} is no longer available.
-                </Text>
-              </View>
+              // Small unobtrusive tombstone when attachment/post was deleted by owner
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontStyle: 'italic',
+                  color: colors.textMuted,
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                }}
+              >
+                Message unavailable · deleted by user
+              </Text>
             ) : cardData.kind === 'LOST_FOUND' ? (
               // Lost & Found Notice Postcard
               <>
@@ -630,6 +652,21 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
               ⚠️ Failed · Tap
             </Text>
           )}
+          {isMe && !isSending && !isFailed && (
+            <Text
+              style={{
+                fontSize: 10,
+                fontWeight: '700',
+                color: message.is_read
+                  ? '#38bdf8'
+                  : isDark
+                  ? 'rgba(247, 248, 248, 0.55)'
+                  : 'rgba(255, 255, 255, 0.72)',
+              }}
+            >
+              {message.is_read ? '✓✓ Seen' : '✓ Sent'}
+            </Text>
+          )}
         </View>
       </TouchableOpacity>
       </Animated.View>
@@ -738,9 +775,9 @@ const styles = StyleSheet.create({
   },
   postCardThumb: {
     width: '100%',
-    height: 110,
+    height: 92,
     borderRadius: 6,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   postCardSnippet: {
     fontSize: 12,

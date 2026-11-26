@@ -6,8 +6,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from accounts.permissions import IsCampusVerified
 from django.shortcuts import get_object_or_404
-from django.db.models import Count, Q, Exists, OuterRef, Subquery, IntegerField
-from django.db.models.functions import Coalesce
+from django.db.models import Count, Q, Exists, OuterRef, Subquery, IntegerField, Case, When, Value
+from django.db.models.functions import Coalesce, TruncDate
 from django.contrib.auth import get_user_model
 from communities.models import Community, CommunityMember
 from notifications.views import create_notification, resolve_mentioned_users
@@ -43,6 +43,31 @@ def annotate_post_metrics(queryset, user=None):
             user_has_liked=Exists(PostLike.objects.filter(post=OuterRef("pk"), user=user))
         )
     return qs
+
+
+def apply_credibility_ranking(queryset):
+    """
+    Ranks posts within the same day so Green-badge (Official College ID) and high-credibility
+    students' posts surface faster while preserving chronological recency across days.
+    """
+    from profiles.models import CredibilityEndorsement
+    cred_sub = Subquery(
+        CredibilityEndorsement.objects.filter(recipient=OuterRef("author_id"))
+        .values("recipient")
+        .annotate(c=Count("id"))
+        .values("c")[:1],
+        output_field=IntegerField(),
+    )
+    return queryset.annotate(
+        post_day=TruncDate("created_at"),
+        badge_rank=Case(
+            When(author__profile__verification_method__in=["MICROSOFT_SSO", "ADMIN_VERIFIED"], then=Value(2)),
+            When(author__is_verified_student=True, then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        ),
+        author_cred=Coalesce(cred_sub, 0),
+    ).order_by("-post_day", "-badge_rank", "-author_cred", "-created_at")
 
 
 class FeedView(generics.ListAPIView):
@@ -113,7 +138,7 @@ class FeedView(generics.ListAPIView):
                         )
                     )
                 ).distinct()
-            return annotate_post_metrics(qs, user=None)
+            return apply_credibility_ranking(annotate_post_metrics(qs, user=None))
 
         user_community_ids = list(CommunityMember.objects.filter(
             user=user
@@ -222,7 +247,7 @@ class FeedView(generics.ListAPIView):
                 )
             ).distinct()
 
-        return annotate_post_metrics(qs, user=user)
+        return apply_credibility_ranking(annotate_post_metrics(qs, user=user))
 
 
 class CommunityFeedView(generics.ListAPIView):

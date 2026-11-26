@@ -704,12 +704,24 @@ class MicrosoftSSOView(APIView):
 
         email_prefix, roll_no, admission_year = _extract_roll_and_year(email)
 
-        # Match either primary login email OR previously linked college_email to avoid duplicate users
-        user = (
+        # If already signed in (e.g. Yellow Badge ID-Card user upgrading to Green Badge), upgrade in-place!
+        existing_sso_owner = (
             User.objects.filter(Q(email__iexact=email) | Q(profile__college_email__iexact=email))
             .distinct()
             .first()
         )
+        is_upgrade = False
+        if request.user and request.user.is_authenticated:
+            if existing_sso_owner and existing_sso_owner.id != request.user.id:
+                return Response(
+                    {"error": "This official college ID is already linked to another Campus Connect account."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            user = request.user
+            is_upgrade = True
+        else:
+            user = existing_sso_owner
+
         is_new_user = False
         if not user:
             user = User.objects.create(
@@ -727,7 +739,7 @@ class MicrosoftSSOView(APIView):
         if is_new_user:
             deletion_reverted = False
 
-        # Update verified status & name if not set
+        # Update verified status & official name (replace name on upgrade so official ID name is enforced)
         fields_to_update = []
         if not user.is_email_verified:
             user.is_email_verified = True
@@ -735,7 +747,7 @@ class MicrosoftSSOView(APIView):
         if not user.is_verified_student:
             user.is_verified_student = True
             fields_to_update.append("is_verified_student")
-        if display_name and not user.full_name:
+        if display_name and (is_upgrade or not user.full_name):
             user.full_name = display_name
             fields_to_update.append("full_name")
 
@@ -806,9 +818,16 @@ class MicrosoftSSOView(APIView):
             if profile.is_flagged_fake:
                 profile.is_flagged_fake = False
                 profile_fields.append("is_flagged_fake")
-            if not profile.admission_number and roll_no and not StudentProfile.objects.filter(admission_number__iexact=roll_no).exclude(id=profile.id).exists():
+            if (is_upgrade or not profile.admission_number) and roll_no and not StudentProfile.objects.filter(admission_number__iexact=roll_no).exclude(id=profile.id).exists():
                 profile.admission_number = roll_no
                 profile_fields.append("admission_number")
+            if is_upgrade and college and profile.college_id != college.id:
+                profile.college = college
+                profile_fields.append("college")
+            if is_upgrade and profile.college_email != email:
+                profile.college_email = email
+                if "college_email" not in profile_fields:
+                    profile_fields.append("college_email")
             if profile_fields:
                 profile.save(update_fields=profile_fields)
 

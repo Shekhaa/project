@@ -16,6 +16,7 @@ import {
   Share,
   Animated,
   PanResponder,
+  Linking,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../theme/colors';
@@ -26,6 +27,8 @@ import {
   DemoUser,
   CampusInviteCodeItem,
   computeCanParticipate,
+  buildMicrosoftAuthUrl,
+  setMsOAuthMode,
 } from '../services/authService';
 import { profileService } from '../services/profileService';
 import { postService, Post } from '../services/postService';
@@ -35,6 +38,7 @@ import { StudentProfileModal } from '../components/profile/StudentProfileModal';
 import { AvatarZoomModal } from '../components/profile/AvatarZoomModal';
 import { SocialListModal, SocialModalType } from '../components/profile/SocialListModal';
 import { UserAvatar } from '../components/common/UserAvatar';
+import { ImageCropperModal } from '../components/media/ImageCropperModal';
 import { CollegeCatalogItem, CollegePickerModal, getCollegeCity } from '../components/common/CollegePickerModal';
 import { processWebImageForUpload, showCrossPlatformAlert } from '../utils/mediaUtils';
 import { backHandlerRegistry } from '../services/backHandlerRegistry';
@@ -178,6 +182,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [verifyEmailError, setVerifyEmailError] = useState<string | null>(null);
   const [verifyEmailInfo, setVerifyEmailInfo] = useState<string | null>(null);
   const [verifyEmailDevCode, setVerifyEmailDevCode] = useState<string | null>(null);
+  const [croppingAvatarUri, setCroppingAvatarUri] = useState<string | null>(null);
+  const [badgeInfoModalVisible, setBadgeInfoModalVisible] = useState(false);
 
   useEffect(() => {
     const placeholder = !currentUser.email || currentUser.email.toLowerCase().endsWith('.local');
@@ -764,8 +770,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         const reader = new FileReader();
         reader.onload = (uploadEvent: any) => {
           const base64Str = uploadEvent.target.result as string;
-          setEditAvatarBase64(base64Str);
-          setEditAvatarPreview(base64Str);
+          setCroppingAvatarUri(base64Str);
         };
         reader.readAsDataURL(file);
       };
@@ -785,26 +790,36 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.85,
-        base64: true,
+        allowsEditing: false,
+        quality: 0.9,
       });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        const mime = asset.mimeType || 'image/jpeg';
-        const dataUrl = asset.base64 ? `data:${mime};base64,${asset.base64}` : null;
-        if (dataUrl) {
-          setEditAvatarBase64(dataUrl);
-          setEditAvatarPreview(asset.uri || dataUrl);
-        } else if (asset.uri) {
-          setEditAvatarPreview(asset.uri);
-        }
+      if (!result.canceled && result.assets && result.assets.length > 0 && result.assets[0].uri) {
+        setCroppingAvatarUri(result.assets[0].uri);
       }
     } catch (err: any) {
       showCrossPlatformAlert('Photo Error', err?.message || 'Could not select a profile photo.');
     }
+  };
+
+  const handleAvatarCropComplete = async (croppedUri: string) => {
+    setCroppingAvatarUri(null);
+    setEditAvatarPreview(croppedUri);
+    if (croppedUri.startsWith('data:')) {
+      setEditAvatarBase64(croppedUri);
+      return;
+    }
+    try {
+      const resp = await fetch(croppedUri);
+      const blob = await resp.blob();
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          setEditAvatarBase64(reader.result);
+        }
+      };
+      reader.readAsDataURL(blob);
+    } catch {}
   };
 
   // Save Profile Details
@@ -1107,27 +1122,29 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <View style={styles.heroIdentity}>
             <View style={styles.nameBadgeRow}>
               <Text style={[styles.fullName, { color: colors.textPrimary }]}>{currentUser.full_name || 'Campus Student'}</Text>
-              {verificationTier === 'FULLY_VERIFIED' ? (
-                <View style={styles.verifiedTag}>
-                  <ShieldCheck size={12} color="#27a644" />
-                  <Text style={styles.verifiedTagText}>OFFICIAL ID</Text>
-                </View>
-              ) : verificationTier === 'INVITE_VERIFIED' ? (
-                <View style={styles.inviteVerifiedTag}>
-                  <Ticket size={11} color="#2997ff" />
-                  <Text style={styles.inviteVerifiedTagText}>INVITE VERIFIED</Text>
-                </View>
-              ) : verificationTier === 'SEMI_VERIFIED' ? (
-                <View style={styles.semiVerifiedTag}>
-                  <Clock size={11} color="#f59e0b" />
-                  <Text style={styles.semiVerifiedTagText}>ID PENDING</Text>
-                </View>
-              ) : (
-                <View style={styles.unverifiedTag}>
-                  <AlertCircle size={11} color={colors.textMuted} />
-                  <Text style={[styles.unverifiedTagText, { color: colors.textMuted }]}>READ-ONLY</Text>
-                </View>
-              )}
+              <TouchableOpacity onPress={() => setBadgeInfoModalVisible(true)} activeOpacity={0.75}>
+                {verificationTier === 'FULLY_VERIFIED' ? (
+                  <View style={styles.verifiedTag}>
+                    <ShieldCheck size={12} color="#10b981" />
+                    <Text style={styles.verifiedTagText}>OFFICIAL ID</Text>
+                  </View>
+                ) : verificationTier === 'INVITE_VERIFIED' ? (
+                  <View style={styles.semiVerifiedTag}>
+                    <Ticket size={11} color="#f59e0b" />
+                    <Text style={styles.semiVerifiedTagText}>INVITE VERIFIED</Text>
+                  </View>
+                ) : verificationTier === 'SEMI_VERIFIED' ? (
+                  <View style={styles.semiVerifiedTag}>
+                    <Clock size={11} color="#f59e0b" />
+                    <Text style={styles.semiVerifiedTagText}>ID CARD</Text>
+                  </View>
+                ) : (
+                  <View style={styles.unverifiedTag}>
+                    <AlertCircle size={11} color={colors.textMuted} />
+                    <Text style={[styles.unverifiedTagText, { color: colors.textMuted }]}>READ-ONLY</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
             </View>
             <Text style={[styles.handleText, { color: colors.primary }]}>
               @{profile?.username || currentUser.email.split('@')[0]}
@@ -3598,9 +3615,118 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         imageUrl={profile?.profile_picture || currentUser.profile_picture || currentUser.avatar}
         name={currentUser.full_name || profile?.username || currentUser.email}
         username={profile?.username || currentUser.username}
-        collegeName={profile?.college_name || (currentUser as any)?.college?.name || 'Graphic Era University'}
+        collegeName={profile?.college_name || (currentUser as any)?.college?.name || 'Campus'}
         onClose={() => setAvatarZoomVisible(false)}
       />
+
+      {/* Profile Photo Cropper (Reused ImageCropperModal) */}
+      {croppingAvatarUri && (
+        <ImageCropperModal
+          visible={!!croppingAvatarUri}
+          imageUri={croppingAvatarUri}
+          onClose={() => setCroppingAvatarUri(null)}
+          onCropComplete={handleAvatarCropComplete}
+          initialAspectRatio="1:1"
+        />
+      )}
+
+      {/* Verification Badges Meaning & Yellow -> Green Upgrade Modal */}
+      {badgeInfoModalVisible && (
+        <Modal
+          visible={badgeInfoModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setBadgeInfoModalVisible(false)}
+        >
+          <TouchableOpacity
+            style={[styles.modalBackdrop, { backgroundColor: colors.modalOverlay, justifyContent: 'center', padding: 16 }]}
+            activeOpacity={1}
+            onPress={() => setBadgeInfoModalVisible(false)}
+          >
+            <View
+              style={{
+                backgroundColor: colors.surface,
+                borderRadius: 18,
+                padding: 18,
+                borderWidth: 1,
+                borderColor: colors.cardBorder,
+                width: '100%',
+                maxWidth: 460,
+                alignSelf: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary, marginBottom: 4 }}>
+                Campus Verification Badges
+              </Text>
+              <Text style={{ fontSize: 12.5, color: colors.textMuted, marginBottom: 14 }}>
+                Badges reflect how your student identity is verified and boost your credibility & post ranking.
+              </Text>
+
+              {/* Green Badge Explanation */}
+              <View style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.35)', borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <ShieldCheck size={16} color="#10b981" />
+                  <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#10b981' }}>Green Badge · Official .ac.in ID</Text>
+                </View>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>
+                  Verified directly via your official college (.ac.in) portal. Grants maximum credibility & priority feed visibility.
+                </Text>
+              </View>
+
+              {/* Yellow Badge Explanation */}
+              <View style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', borderColor: 'rgba(245, 158, 11, 0.35)', borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 14 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Clock size={15} color="#f59e0b" />
+                  <Text style={{ fontSize: 13.5, fontWeight: '800', color: '#f59e0b' }}>Yellow Badge · Manual ID / Invite</Text>
+                </View>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>
+                  Verified via physical student ID card or peer invite code. Upgrade anytime with your official .ac.in ID to sync your official name & roll number.
+                </Text>
+              </View>
+
+              {verificationTier !== 'FULLY_VERIFIED' && (
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: '#10b981',
+                    paddingVertical: 11,
+                    borderRadius: 12,
+                    alignItems: 'center',
+                    marginBottom: 8,
+                  }}
+                  onPress={async () => {
+                    setBadgeInfoModalVisible(false);
+                    await setMsOAuthMode('link');
+                    const authUrl = buildMicrosoftAuthUrl();
+                    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                      window.location.href = authUrl;
+                    } else {
+                      Linking.openURL(authUrl);
+                    }
+                  }}
+                >
+                  <Text style={{ color: '#ffffff', fontSize: 13.5, fontWeight: '800' }}>
+                    Get Green Verified (.ac.in Official ID)
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                style={{
+                  backgroundColor: colors.surfaceLight,
+                  paddingVertical: 10,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                  borderWidth: 1,
+                  borderColor: colors.cardBorder,
+                }}
+                onPress={() => setBadgeInfoModalVisible(false)}
+              >
+                <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: '700' }}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </ScrollView>
   );
 };

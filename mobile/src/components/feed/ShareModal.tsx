@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Share as NativeShare,
   Platform,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { useTheme } from '../../theme/ThemeContext';
@@ -42,8 +44,40 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   const [directoryStudents, setDirectoryStudents] = useState<any[]>([]);
   const [searchingDirectory, setSearchingDirectory] = useState(false);
 
+  // Slide-down gesture to dismiss (matching CommentsModal)
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gs) =>
+        gs.dy > 8 && Math.abs(gs.dy) > Math.abs(gs.dx) * 1.2,
+      onPanResponderMove: (_, gs) => {
+        if (gs.dy > 0) slideAnim.setValue(gs.dy);
+      },
+      onPanResponderRelease: (_, gs) => {
+        if (gs.dy > 80 || gs.vy > 0.55) {
+          Animated.timing(slideAnim, {
+            toValue: 500,
+            duration: 180,
+            useNativeDriver: true,
+          }).start(() => {
+            slideAnim.setValue(0);
+            onClose();
+          });
+        } else {
+          Animated.spring(slideAnim, {
+            toValue: 0,
+            bounciness: 6,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
   useEffect(() => {
     if (visible) {
+      slideAnim.setValue(0);
       loadInbox();
       setSearchQuery('');
       setDirectoryStudents([]);
@@ -317,19 +351,25 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       <View style={[styles.backdrop, { backgroundColor: themeColors.modalOverlay }]}>
         <TouchableOpacity style={styles.dismissOverlay} onPress={onClose} activeOpacity={1} />
 
-        <View
+        <Animated.View
           style={[
             styles.sheetContainer,
-            { backgroundColor: themeColors.surface, borderColor: themeColors.cardBorder },
+            {
+              backgroundColor: themeColors.surface,
+              borderColor: themeColors.cardBorder,
+              transform: [{ translateY: slideAnim }],
+            },
           ]}
         >
-          <View style={[styles.dragHandle, { backgroundColor: themeColors.hairline }]} />
+          <View {...panResponder.panHandlers} style={{ width: '100%' }}>
+            <View style={[styles.dragHandle, { backgroundColor: themeColors.hairline }]} />
 
-          <View style={[styles.header, { borderBottomColor: themeColors.cardBorder }]}>
-            <Text style={[styles.headerTitle, { color: themeColors.textPrimary }]}>Share Post</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X size={20} color={themeColors.textPrimary} />
-            </TouchableOpacity>
+            <View style={[styles.header, { borderBottomColor: themeColors.cardBorder }]}>
+              <Text style={[styles.headerTitle, { color: themeColors.textPrimary }]}>Share Post</Text>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                <X size={20} color={themeColors.textPrimary} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Quick Search Bar */}
@@ -428,7 +468,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
               }
             />
           )}
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );

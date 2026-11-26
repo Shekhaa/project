@@ -103,7 +103,10 @@ interface FeedScreenProps {
   onRequireVerify?: (reason?: string) => void;
   composerTrigger?: number;
   feedRefreshTrigger?: number;
+  isProfileModalOpen?: boolean;
   onNavigateToChat?: (conversationId?: string | number) => void;
+  onNavigateToArena?: () => void;
+  onNavigateToCommunities?: () => void;
   onOpenProfile?: (userId: number) => void;
 }
 
@@ -114,7 +117,10 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   onRequireVerify,
   composerTrigger,
   feedRefreshTrigger,
+  isProfileModalOpen = false,
   onNavigateToChat,
+  onNavigateToArena,
+  onNavigateToCommunities,
   onOpenProfile,
 }) => {
   const { width } = useWindowDimensions();
@@ -361,6 +367,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
 
   const handleSelectNotification = useCallback(
     async (notif: NotificationItem) => {
+      setNotificationsVisible(false);
       if (notif.data?.post_id) {
         const postId = Number(notif.data.post_id);
         const found = posts.find((p) => p.id === postId);
@@ -377,14 +384,17 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           }
         }
       } else if (notif.data?.conversation_id) {
-        if (onNavigateToChat) {
-          onNavigateToChat(notif.data.conversation_id);
-        }
-      } else if (notif.data?.discussion_id) {
-        showCrossPlatformAlert('Hub Discussion', notif.message);
+        onNavigateToChat?.(notif.data.conversation_id);
+      } else if (notif.data?.lost_found_id || notif.notification_type === 'LOST_FOUND') {
+        onNavigateToArena?.();
+      } else if (notif.data?.community_id || notif.data?.discussion_id) {
+        onNavigateToCommunities?.();
+      } else if (notif.data?.sender_id || notif.data?.user_id || notif.data?.follower_id) {
+        const uid = Number(notif.data.sender_id || notif.data.user_id || notif.data.follower_id);
+        if (uid) onOpenProfile?.(uid);
       }
     },
-    [posts, onNavigateToChat]
+    [posts, onNavigateToChat, onNavigateToArena, onNavigateToCommunities, onOpenProfile]
   );
 
   const syncNotifications = useCallback(async () => {
@@ -1511,13 +1521,6 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         onRequireVerify={onRequireVerify}
       />
 
-      {/* Share Modal */}
-      <ShareModal
-        visible={!!activeSharePost}
-        post={activeSharePost}
-        onClose={() => setActiveSharePost(null)}
-      />
-
       {/* Notifications Modal */}
       <NotificationsModal
         visible={notificationsVisible}
@@ -1530,11 +1533,23 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       <VideoChainViewerModal
         onToggleLike={handleLikePost}
         onOpenComments={(post) => setActiveCommentsPost(post)}
+        onOpenShare={(post) => setActiveSharePost(post)}
         onOpenProfile={(authorId) => onOpenProfile?.(authorId)}
-        temporarilyHidden={!!activeCommentsPost}
+        temporarilyHidden={
+          Platform.OS === 'web'
+            ? isProfileModalOpen
+            : Boolean(activeCommentsPost || activeSharePost || isProfileModalOpen)
+        }
       />
 
-      {/* Comments Modal (rendered after VideoChainViewerModal so it layers cleanly above) */}
+      {/* Share Modal (rendered after VideoChainViewerModal so it opens inside Video Chain) */}
+      <ShareModal
+        visible={!!activeSharePost}
+        post={activeSharePost}
+        onClose={() => setActiveSharePost(null)}
+      />
+
+      {/* Comments Modal (rendered after VideoChainViewerModal so it opens inside Video Chain) */}
       <CommentsModal
         visible={!!activeCommentsPost}
         post={activeCommentsPost}
