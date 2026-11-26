@@ -419,6 +419,17 @@ class LoginView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
+        is_verified = bool(
+            user.is_email_verified
+            or getattr(user, "is_verified_student", False)
+            or (hasattr(user, "profile") and user.profile and getattr(user.profile, "is_verified_student", False))
+        )
+        if not is_verified:
+            return Response(
+                {"error": "Your account email is not verified. Only registered, verified accounts can log in."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         allowed, del_err, deletion_reverted = _handle_pending_deletion_on_login(user)
         if not allowed:
             return Response({"error": del_err}, status=status.HTTP_403_FORBIDDEN)
@@ -1390,11 +1401,22 @@ class ForgotPasswordView(APIView):
             )
         user = User.objects.filter(email__iexact=email).first()
         if not user:
-            # Prevent User Enumeration: return standard message without disclosing non-existence
-            return Response({
-                "message": f"If an account is associated with {email}, a password reset OTP has been dispatched.",
-                "email": email,
-            }, status=status.HTTP_200_OK)
+            return Response(
+                {"error": "Please enter a valid email. This user is not registered."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if email is verified
+        is_verified = bool(
+            user.is_email_verified
+            or getattr(user, "is_verified_student", False)
+            or (hasattr(user, "profile") and user.profile and getattr(user.profile, "is_verified_student", False))
+        )
+        if not is_verified:
+            return Response(
+                {"error": "This email address is not verified. Please verify your email before requesting a password reset."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         success, msg, otp_record = OTPService.send_email_otp(email, purpose="PASSWORD_RESET", return_record=True)
         if not success:
@@ -1822,7 +1844,7 @@ class SearchUsersView(APIView):
     Searches by name, username, email, roll number.
     Returns live connection and follower relationship statuses.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request):
         from profiles.models import Connection, Follow, UserBlock

@@ -66,6 +66,7 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
     return containerWidth || (isWeb ? 580 : Dimensions.get('window').width - 24);
   });
   const [singleRatio, setSingleRatio] = useState<number | null>(null);
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
   const mediaItems: UnifiedMediaItem[] = (rawMedia || []).map((m, idx) => {
     const rawUrl = m.file_url || m.uri || '';
@@ -241,6 +242,11 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
                     borderRadius={10}
                   />
                 </View>
+              ) : failedImages[item.id || idx] ? (
+                <View style={[styles.imageSlideBox, { justifyContent: 'center', alignItems: 'center', backgroundColor: isDark ? '#111827' : '#f1f5f9' }]}>
+                  <ImageOff size={28} color={colors.textMuted} style={{ marginBottom: 6 }} />
+                  <Text style={{ color: colors.textMuted, fontSize: 11.5, fontWeight: '600' }}>Image unavailable</Text>
+                </View>
               ) : (
                 <TouchableOpacity
                   activeOpacity={0.92}
@@ -251,6 +257,7 @@ export const MediaDeckCarousel: React.FC<MediaDeckCarouselProps> = ({
                     source={{ uri: itemUrl }}
                     style={styles.deckImage}
                     resizeMode="cover"
+                    onError={() => setFailedImages((prev) => ({ ...prev, [item.id || idx]: true }))}
                   />
                 </TouchableOpacity>
               )}

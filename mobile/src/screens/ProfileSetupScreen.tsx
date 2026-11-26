@@ -844,7 +844,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
               style={[styles.usernameInput, { color: colors.textPrimary }]}
               value={username}
               onChangeText={(txt) => setUsername(txt.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-              placeholder="e.g. shekhar_rana"
+              placeholder="e.g. your_username"
               placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
               maxLength={30}

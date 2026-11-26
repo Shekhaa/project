@@ -44,6 +44,21 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
 
+  // Drag / Slide down gesture to close full screen image view (Hook declared unconditionally at top level)
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return scale === 1 && gestureState.dy > 12 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2;
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 55 || gestureState.vy > 0.45) {
+          onClose();
+        }
+      },
+    })
+  ).current;
+
   useEffect(() => {
     if (visible) {
       setCurrentIndex(Math.min(Math.max(0, initialIndex), Math.max(0, images.length - 1)));
@@ -134,21 +149,6 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
       console.warn('Could not trigger download:', err);
     }
   };
-
-  // Drag / Slide down gesture to close full screen image view
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        return scale === 1 && gestureState.dy > 12 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2;
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy > 55 || gestureState.vy > 0.45) {
-          onClose();
-        }
-      },
-    })
-  ).current;
 
   if (!visible) return null;
 

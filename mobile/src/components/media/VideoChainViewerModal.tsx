@@ -199,20 +199,54 @@ export const VideoChainViewerModal: React.FC = () => {
     }
   };
 
+  // Keyboard & Wheel controls for desktop web
+  const lastWheelTime = useRef<number>(0);
+  const handleWheel = (e: any) => {
+    const now = Date.now();
+    if (now - lastWheelTime.current < 500) return;
+    if (e.deltaY > 25) {
+      lastWheelTime.current = now;
+      handleNextVideo();
+    } else if (e.deltaY < -25) {
+      lastWheelTime.current = now;
+      handleClose();
+    }
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown' || e.key === 'j') {
+        handleNextVideo();
+      } else if (e.key === 'ArrowUp' || e.key === 'k') {
+        handlePrevVideo();
+      } else if (e.key === 'Escape') {
+        handleClose();
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        handleTogglePlay();
+      }
+    };
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [visible, currentIndex, videos.length, isPlaying]);
+
   // PanResponder for vertical dragging:
-  // Upper drag (dy < -40) -> Closes viewer!
-  // Down slide (dy > 40) -> Goes to next video in chain!
+  // Upper drag (dy < -30) -> Closes viewer!
+  // Down slide (dy > 30) -> Goes to next video in chain!
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dy) > 15 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.5;
+        return Math.abs(gestureState.dy) > 10;
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy < -45 || gestureState.vy < -0.4) {
+        if (gestureState.dy < -30 || gestureState.vy < -0.3) {
           // Upper drag: Close
           handleClose();
-        } else if (gestureState.dy > 45 || gestureState.vy > 0.4) {
+        } else if (gestureState.dy > 30 || gestureState.vy > 0.3) {
           // Down slide: Next video in chain
           handleNextVideo();
         }
@@ -232,7 +266,7 @@ export const VideoChainViewerModal: React.FC = () => {
       onRequestClose={handleClose}
       statusBarTranslucent
     >
-      <View style={styles.container} {...panResponder.panHandlers}>
+      <View style={styles.container} {...panResponder.panHandlers} onWheel={handleWheel as any}>
         {/* Fullscreen Video Player Layer */}
         {Platform.OS === 'web' ? (
           <video

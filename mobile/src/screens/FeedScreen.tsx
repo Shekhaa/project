@@ -114,7 +114,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   onOpenProfile,
 }) => {
   const { width } = useWindowDimensions();
-  const isCompactViewport = width < 410;
+  const isCompactViewport = width < 480;
   const { colors, isDark, resolvedTheme, toggleTheme } = useTheme();
   const [posts, setPosts] = useState<Post[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -1598,7 +1598,10 @@ const styles = StyleSheet.create({
   navActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 6,
+    flexShrink: 1,
+    minWidth: 0,
+    justifyContent: 'flex-end',
   },
   navVerifyPill: {
     paddingHorizontal: 11,

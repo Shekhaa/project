@@ -689,7 +689,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                   <User size={16} color={colors.textMuted} />
                   <TextInput
                     style={[styles.fieldTextInput, { color: colors.textPrimary }]}
-                    placeholder="e.g. 2313812137, shekhar_rana, or email"
+                    placeholder="Roll No., student ID, or registered email"
                     placeholderTextColor={colors.textTertiary}
                     value={loginIdentifier}
                     onChangeText={(val) => {
@@ -837,11 +837,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                     <AlertCircle size={16} color="#ef4444" />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.errorAlertText}>{ssoError}</Text>
-                      <TouchableOpacity onPress={() => setSsoTokenModal(true)} style={{ marginTop: 4 }}>
-                        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
-                          Paste Entra token instead
-                        </Text>
-                      </TouchableOpacity>
                     </View>
                   </View>
                 )}
@@ -870,11 +865,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
                   )}
                 </TouchableOpacity>
 
-                <View style={{ alignItems: 'flex-end', marginTop: 8 }}>
-                  <TouchableOpacity onPress={() => setSsoTokenModal(true)} style={styles.devLinkPill}>
-                    <Text style={[styles.devLinkText, { color: colors.textMuted }]}>Have an Entra token? Paste Token</Text>
-                  </TouchableOpacity>
-                </View>
+                {__DEV__ && (
+                  <View style={{ alignItems: 'flex-end', marginTop: 8 }}>
+                    <TouchableOpacity onPress={() => setSsoTokenModal(true)} style={styles.devLinkPill}>
+                      <Text style={[styles.devLinkText, { color: colors.textMuted }]}>[DEV ONLY] Paste Token</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
 
               {/* #2 PHYSICAL STUDENT ID CARD (ALL 32 UTTARAKHAND COLLEGES + CONTACT EMAIL) */}
@@ -1333,9 +1330,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onDismis
       )}
 
       {/* ========================================================= */}
-      {/* MICROSOFT SSO TOKEN & DEV MODAL                           */}
+      {/* MICROSOFT SSO TOKEN & DEV MODAL (DEV ONLY)                */}
       {/* ========================================================= */}
-      {ssoTokenModal && (
+      {__DEV__ && ssoTokenModal && (
       <Modal
         visible={ssoTokenModal}
         transparent

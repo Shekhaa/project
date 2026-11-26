@@ -80,7 +80,12 @@ class FeedView(generics.ListAPIView):
                 media_q = Q(media_type__in=["IMAGE", "VIDEO"]) | Q(images__isnull=False) | Q(attachments__file_type="IMAGE")
                 qs_filter = public_q & media_q
             elif scope_param == "RESOURCES":
-                resource_q = Q(media_type="DOCUMENT") | Q(document__isnull=False) | Q(attachments__file_type="DOCUMENT")
+                resource_q = (
+                    Q(media_type="DOCUMENT") |
+                    (Q(document__isnull=False) & ~Q(document="")) |
+                    (Q(document_name__isnull=False) & ~Q(document_name="")) |
+                    Q(attachments__file_type="DOCUMENT")
+                )
                 qs_filter = public_q & resource_q
             elif scope_param == "CONFESSIONS":
                 qs_filter = public_q & (Q(is_confession=True) | Q(is_anonymous=True, anonymous_alias__in=["Owl", "Tiger", "Ghost", "Ninja", "Falcon", "🦉 Night Owl", "🐅 Brave Tiger", "👻 Campus Ghost", "🥷 Stealth Ninja", "🦅 High Falcon"]))
@@ -101,8 +106,12 @@ class FeedView(generics.ListAPIView):
                     Q(content__icontains=search_query) |
                     Q(poll__question__icontains=search_query) |
                     Q(document_name__icontains=search_query) |
-                    Q(author__full_name__icontains=search_query) |
-                    Q(author__profile__username__icontains=search_query)
+                    (
+                        Q(is_anonymous=False) & (
+                            Q(author__full_name__icontains=search_query) |
+                            Q(author__profile__username__icontains=search_query)
+                        )
+                    )
                 ).distinct()
             return annotate_post_metrics(qs, user=None)
 
@@ -152,7 +161,12 @@ class FeedView(generics.ListAPIView):
             media_q = Q(media_type__in=["IMAGE", "VIDEO"]) | Q(images__isnull=False) | Q(attachments__file_type="IMAGE")
             qs_filter = base_permitted & media_q & Q(is_confession=False)
         elif scope_param == "RESOURCES":
-            resource_q = Q(media_type="DOCUMENT") | Q(document__isnull=False) | Q(attachments__file_type="DOCUMENT")
+            resource_q = (
+                Q(media_type="DOCUMENT") |
+                (Q(document__isnull=False) & ~Q(document="")) |
+                (Q(document_name__isnull=False) & ~Q(document_name="")) |
+                Q(attachments__file_type="DOCUMENT")
+            )
             qs_filter = base_permitted & resource_q & Q(is_confession=False)
         elif scope_param == "CONFESSIONS":
             conf_level = str(self.request.query_params.get("level") or self.request.query_params.get("confession_scope") or "ALL").upper().strip()
@@ -200,8 +214,12 @@ class FeedView(generics.ListAPIView):
                 Q(content__icontains=search_query) |
                 Q(poll__question__icontains=search_query) |
                 Q(document_name__icontains=search_query) |
-                Q(author__full_name__icontains=search_query) |
-                Q(author__profile__username__icontains=search_query)
+                (
+                    Q(is_anonymous=False) & (
+                        Q(author__full_name__icontains=search_query) |
+                        Q(author__profile__username__icontains=search_query)
+                    )
+                )
             ).distinct()
 
         return annotate_post_metrics(qs, user=user)

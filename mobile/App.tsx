@@ -706,9 +706,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     zIndex: 100,
     elevation: 10,
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 620 : undefined,
+    alignSelf: 'center',
   },
   tabItem: {
     flex: 1,
+    minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 3,
