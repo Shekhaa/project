@@ -111,7 +111,10 @@ class DeleteLostFoundPostView(APIView):
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, item_id):
-        post = get_object_or_404(LostFoundPost, id=item_id, author=request.user)
+        if request.user.is_staff or getattr(request.user, "is_superuser", False):
+            post = get_object_or_404(LostFoundPost, id=item_id)
+        else:
+            post = get_object_or_404(LostFoundPost, id=item_id, author=request.user)
         post.delete()
         return Response({"message": "Lost & Found post deleted successfully."}, status=status.HTTP_200_OK)
 
@@ -125,8 +128,11 @@ class ContactReporterView(APIView):
 
     def post(self, request, item_id):
         item = get_object_or_404(LostFoundPost, id=item_id)
-        if item.author == request.user:
-            return Response({"error": "You created this post."}, status=status.HTTP_400_BAD_REQUEST)
+        if item.author_id == request.user.id:
+            return Response(
+                {"error": "You created this notice. Other students will reach out to you directly."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # Get or create 1-to-1 conversation
         conversation = Conversation.objects.filter(
@@ -144,7 +150,8 @@ class ContactReporterView(APIView):
         image_url = ""
         if item.image:
             try:
-                image_url = request.build_absolute_uri(item.image.url)
+                from config.media_utils import resolve_media_url
+                image_url = resolve_media_url(request, item.image)
             except Exception:
                 image_url = item.image.url if hasattr(item.image, "url") else ""
 
@@ -168,14 +175,22 @@ class ContactReporterView(APIView):
             f"Hi! I'm reaching out regarding your [{item.item_type}] notice: '{item.description[:60]}' at {item.location}.\n"
             f"[CAMPUS_POST_CARD:{json.dumps(card_payload)}]"
         )
-        Message.objects.create(
+        recent_msg = Message.objects.filter(
             conversation=conversation,
             sender=request.user,
-            text=intro_text
-        )
+            text__contains=f"[CAMPUS_POST_CARD:{json.dumps(card_payload)}]"
+        ).first()
+        if not recent_msg:
+            Message.objects.create(
+                conversation=conversation,
+                sender=request.user,
+                text=intro_text
+            )
 
         return Response({
             "conversation_id": str(conversation.id),
             "recipient_email": item.author.email,
+            "recipient_id": item.author.id,
+            "recipient_name": author_display,
             "message": "Chat thread opened with reporter."
         }, status=status.HTTP_201_CREATED)

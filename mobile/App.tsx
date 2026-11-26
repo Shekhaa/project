@@ -393,6 +393,12 @@ function AppMain() {
             onRequireAuth={handleRequireAuth}
             onRequireVerify={handleRequireVerify}
             onOpenProfile={(uid) => setViewingProfileUserId(uid)}
+            onNavigateToChat={(convId) => {
+              if (convId) {
+                setSelectedCommunityConv({ id: String(convId) });
+              }
+              navigateToTab('CHAT');
+            }}
           />
         )}
         {displayedTab === 'PROFILE' && currentUser && (
@@ -694,8 +700,8 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    paddingTop: 8,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
+    paddingTop: 6,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 8,
     alignItems: 'center',
     justifyContent: 'space-around',
     zIndex: 100,
@@ -705,19 +711,19 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
+    paddingVertical: 3,
   },
   tabIconPill: {
-    width: 44,
-    height: 28,
-    borderRadius: 14,
+    width: 40,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '500',
-    marginTop: 3,
+    marginTop: 2,
   },
   tabActiveText: {
     fontWeight: '700',

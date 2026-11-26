@@ -125,7 +125,11 @@ class AttachmentDownloadView(APIView):
 
         if hasattr(attachment.file, "url"):
             from django.shortcuts import redirect
-            return redirect(attachment.file.url)
+            target_file_url = attachment.file.url
+            if as_attachment and "cloudinary.com" in target_file_url and "/upload/" in target_file_url:
+                clean_name = (attachment.file_name or "document").replace("/", "_").replace(" ", "_")
+                target_file_url = target_file_url.replace("/upload/", f"/upload/fl_attachment:{clean_name}/")
+            return redirect(target_file_url)
 
         raise Http404("File not found.")
 

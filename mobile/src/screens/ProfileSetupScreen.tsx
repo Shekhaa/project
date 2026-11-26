@@ -41,7 +41,7 @@ import {
 import { CollegeCatalogItem, CollegePickerModal, getCollegeCity } from '../components/common/CollegePickerModal';
 
 interface ProfileSetupScreenProps {
-  currentUser: User;
+  currentUser?: User | null;
   onProfileComplete: (user?: User) => void;
   onBack?: () => void;
   onUserUpdated?: (user: User) => void;

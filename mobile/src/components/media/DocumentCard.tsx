@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,9 @@ import {
   StyleSheet,
   Linking,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   FileText,
   FileSpreadsheet,
@@ -14,10 +16,11 @@ import {
   File,
   Download,
   ExternalLink,
+  Check,
 } from 'lucide-react-native';
 import { AttachmentItem } from '../../services/chatService';
-
 import { useTheme } from '../../theme/ThemeContext';
+import { getFullMediaUrl, api } from '../../config/api';
 
 interface DocumentCardProps {
   attachment: AttachmentItem;
@@ -31,6 +34,9 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
   onPress,
 }) => {
   const { colors } = useTheme();
+  const [downloading, setDownloading] = useState(false);
+  const [downloadSuccess, setDownloadSuccess] = useState(false);
+
   const ext = (attachment.file_extension || '').toLowerCase();
 
   // Determine doc type styling & icons
@@ -89,7 +95,7 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
 
   const config = getDocTypeConfig();
   const IconComponent = config.icon;
-  const targetUrl = attachment.download_url || attachment.file_url;
+  const rawTargetUrl = attachment.download_url || attachment.file_url;
 
   const handleOpenOrDownload = async (action: 'open' | 'download') => {
     if (onPress) {
@@ -97,28 +103,93 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
       return;
     }
 
-    if (!targetUrl) return;
+    if (!rawTargetUrl) return;
 
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined') {
-        const urlWithParam =
-          action === 'open' && ext === 'pdf' ? `${targetUrl}?preview=true` : targetUrl;
-        window.open(urlWithParam, '_blank');
+    let targetUrl = getFullMediaUrl(rawTargetUrl);
+
+    try {
+      if (action === 'download') {
+        setDownloading(true);
       }
-    } else {
-      try {
-        const supported = await Linking.canOpenURL(targetUrl);
-        if (supported) {
-          await Linking.openURL(targetUrl);
+
+      // Attach auth token if available so authenticated endpoints succeed
+      const token = await AsyncStorage.getItem('access_token');
+      if (token && !targetUrl.includes('token=')) {
+        const separator = targetUrl.includes('?') ? '&' : '?';
+        targetUrl = `${targetUrl}${separator}token=${encodeURIComponent(token)}`;
+      }
+
+      if (action === 'open') {
+        if (Platform.OS === 'web') {
+          if (typeof window !== 'undefined') {
+            const separator = targetUrl.includes('?') ? '&' : '?';
+            const urlWithParam = ext === 'pdf' ? `${targetUrl}${separator}preview=true` : targetUrl;
+            window.open(urlWithParam, '_blank');
+          }
+        } else {
+          // Native mobile: open in system browser or registered PDF viewer
+          try {
+            await Linking.openURL(targetUrl);
+          } catch (err) {
+            console.warn('Could not launch external URL directly:', err);
+          }
         }
-      } catch (err) {
-        console.warn('Cannot open document url:', err);
+        return;
       }
+
+      // Download Action
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        try {
+          // Attempt authenticated blob download first for true cross-origin file saving
+          const response = await api.get(targetUrl, { responseType: 'blob' });
+          const blob = new Blob([response.data], {
+            type: attachment.mime_type || 'application/octet-stream',
+          });
+          const blobUrl = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = attachment.file_name || `document.${ext || 'pdf'}`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(blobUrl);
+
+          setDownloadSuccess(true);
+          setTimeout(() => setDownloadSuccess(false), 2500);
+        } catch {
+          // Fallback to standard anchor download trigger
+          const link = document.createElement('a');
+          link.href = targetUrl;
+          link.download = attachment.file_name || `document.${ext || 'pdf'}`;
+          link.target = '_blank';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          setDownloadSuccess(true);
+          setTimeout(() => setDownloadSuccess(false), 2500);
+        }
+      } else {
+        // Mobile Native: Direct launch browser download / intent handler
+        try {
+          await Linking.openURL(targetUrl);
+          setDownloadSuccess(true);
+          setTimeout(() => setDownloadSuccess(false), 2500);
+        } catch (err) {
+          console.warn('Could not open download URL on device:', err);
+        }
+      }
+    } catch (err) {
+      console.warn('Error handling document action:', err);
+    } finally {
+      setDownloading(false);
     }
   };
 
   return (
-    <View
+    <TouchableOpacity
+      activeOpacity={0.88}
+      onPress={() => handleOpenOrDownload(ext === 'pdf' ? 'open' : 'download')}
       style={[
         styles.container,
         compact && styles.containerCompact,
@@ -140,7 +211,7 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
           numberOfLines={1}
           ellipsizeMode="middle"
         >
-          {attachment.file_name}
+          {attachment.file_name || `Document.${ext || 'pdf'}`}
         </Text>
         <View style={styles.metaRow}>
           <Text style={[styles.fileSize, { color: colors.textMuted }]}>
@@ -148,7 +219,7 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
           </Text>
           <Text style={[styles.dotSeparator, { color: colors.textTertiary }]}>•</Text>
           <Text style={[styles.extensionText, { color: colors.textMuted }]}>
-            {ext ? `.${ext}` : 'Academic Doc'}
+            {ext ? `.${ext.toUpperCase()}` : 'Academic Doc'}
           </Text>
         </View>
       </View>
@@ -161,23 +232,47 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
               styles.actionBtn,
               { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
             ]}
-            onPress={() => handleOpenOrDownload('open')}
+            onPress={(e) => {
+              e.stopPropagation?.();
+              handleOpenOrDownload('open');
+            }}
             activeOpacity={0.7}
             accessibilityLabel="Preview PDF"
           >
-            <ExternalLink size={16} color={colors.primary} />
+            <ExternalLink size={15} color={colors.primary} />
           </TouchableOpacity>
         )}
+
         <TouchableOpacity
-          style={[styles.actionBtn, { backgroundColor: colors.primary, borderColor: colors.primary }]}
-          onPress={() => handleOpenOrDownload('download')}
+          style={[
+            styles.actionBtn,
+            {
+              backgroundColor: downloadSuccess
+                ? colors.success
+                : colors.primary,
+              borderColor: downloadSuccess
+                ? colors.success
+                : colors.primary,
+            },
+          ]}
+          onPress={(e) => {
+            e.stopPropagation?.();
+            handleOpenOrDownload('download');
+          }}
+          disabled={downloading}
           activeOpacity={0.7}
           accessibilityLabel="Download Document"
         >
-          <Download size={16} color={colors.onPrimary} />
+          {downloading ? (
+            <ActivityIndicator size="small" color={colors.onPrimary} />
+          ) : downloadSuccess ? (
+            <Check size={15} color="#ffffff" />
+          ) : (
+            <Download size={15} color={colors.onPrimary} />
+          )}
         </TouchableOpacity>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
@@ -196,8 +291,8 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   iconBox: {
-    width: 48,
-    height: 48,
+    width: 46,
+    height: 46,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',

@@ -67,6 +67,7 @@ interface ChatScreenProps {
   initialConversation?: Conversation | null;
   onClearInitialConversation?: () => void;
   onOpenProfile?: (userId: number) => void;
+  onStartCall?: (receiverId: number, receiverName: string, callType: any) => Promise<void> | void;
 }
 
 const extractApiError = (err: any, fallback: string): string => {

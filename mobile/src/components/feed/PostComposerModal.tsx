@@ -716,14 +716,16 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
               >
                 {submitting ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <ActivityIndicator size="small" color="#ffffff" />
-                    <Text style={styles.postBtnText}>Publishing...</Text>
+                    <ActivityIndicator size="small" color={canPublish ? colors.onPrimary : colors.textMuted} />
+                    <Text style={[styles.postBtnText, { color: canPublish ? colors.onPrimary : colors.textMuted }]}>
+                      Publishing...
+                    </Text>
                   </View>
                 ) : (
                   <Text
                     style={[
                       styles.postBtnText,
-                      { color: canPublish ? '#ffffff' : colors.textMuted },
+                      { color: canPublish ? colors.onPrimary : colors.textMuted },
                     ]}
                   >
                     Publish Post

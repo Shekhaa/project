@@ -49,6 +49,7 @@ interface ArenaScreenProps {
   onRequireAuth?: () => void;
   onRequireVerify?: (reason?: string) => void;
   onOpenProfile?: (userId: number) => void;
+  onNavigateToChat?: (conversationId?: string | number) => void;
 }
 
 const MASCOTS = [
@@ -74,6 +75,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
   onRequireAuth,
   onRequireVerify,
   onOpenProfile,
+  onNavigateToChat,
 }) => {
   const { colors, isDark } = useTheme();
   const [activeSlab, setActiveSlab] = useState<'LOST_FOUND' | 'CONFESSIONS'>('LOST_FOUND');
@@ -335,7 +337,17 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
       onRequireVerify?.('Verify your campus ID or enter an invite code to contact reporters.');
       return;
     }
-    if (item.is_mine) {
+
+    const isMyNotice =
+      item.is_mine === true ||
+      (item as any).is_owner === true ||
+      (currentUser && (
+        (item.reporter_id && item.reporter_id === currentUser.id) ||
+        ((item as any).author && (item as any).author === currentUser.id) ||
+        ((item as any).author_email && currentUser.email && (item as any).author_email === currentUser.email)
+      ));
+
+    if (isMyNotice) {
       const msg = 'This is your own report. Classmates who find or claim this item will message you directly.';
       setBanner({ kind: 'notice', text: msg });
       if (Platform.OS !== 'web') Alert.alert('Your Notice', msg);
@@ -343,13 +355,16 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
     }
 
     try {
-      await lostFoundService.contactReporter(item.id);
-      const okMsg = `Direct chat started with ${item.reporter_name}. Open Chats to coordinate pickup.`;
+      const res: any = await lostFoundService.contactReporter(item.id);
+      const okMsg = `Direct chat opened with ${item.reporter_name || 'student'}.`;
       setBanner({ kind: 'notice', text: okMsg });
-      if (Platform.OS !== 'web') {
+
+      if (res?.conversation_id && onNavigateToChat) {
+        onNavigateToChat(res.conversation_id);
+      } else if (Platform.OS !== 'web') {
         Alert.alert(
           'Chat Thread Opened! 💬',
-          `Direct chat started with ${item.reporter_name}.\nMessage context: "${item.description.slice(0, 40)}..."`
+          `Direct chat started with ${item.reporter_name || 'student'}.\nMessage context sent.`
         );
       }
     } catch (e: any) {
@@ -476,19 +491,19 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Top Header */}
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.cardBorder }]}>
-        <TouchableOpacity onPress={handleRefresh} activeOpacity={0.75}>
+        <TouchableOpacity onPress={handleRefresh} activeOpacity={0.75} style={{ flex: 1, minWidth: 0, marginRight: 10 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Flame size={20} color={colors.ephemeralFire || '#f97316'} />
-            <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>The Arena</Text>
+            <Text style={[styles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>The Arena</Text>
           </View>
-          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]} numberOfLines={1} ellipsizeMode="tail">
             {activeSlab === 'LOST_FOUND'
               ? 'Campus Recovery • 1-Click Pickup'
               : '100% Anonymous Campus Confessions'}
           </Text>
         </TouchableOpacity>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <TouchableOpacity
             style={[
               styles.refreshBtn,
@@ -503,7 +518,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
             {refreshing ? (
               <ActivityIndicator size="small" color={colors.primary} />
             ) : (
-              <RotateCw size={15} color={colors.textPrimary} />
+              <RotateCw size={14} color={colors.textPrimary} />
             )}
           </TouchableOpacity>
 
@@ -512,7 +527,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
             onPress={activeSlab === 'LOST_FOUND' ? handleOpenReportModal : handleOpenConfessionModal}
             activeOpacity={0.85}
           >
-            <Plus size={15} color={colors.onPrimary} style={{ marginRight: 4 }} />
+            <Plus size={14} color={colors.onPrimary} style={{ marginRight: 3 }} />
             <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>
               {activeSlab === 'LOST_FOUND' ? 'Report Item' : 'Spill Tea 🎭'}
             </Text>
@@ -736,86 +751,105 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
                   </View>
 
                   {/* Claim / Contact / Delete Action Row */}
-                  {item.is_mine ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <View
-                        style={[
-                          styles.contactBtn,
-                          {
-                            flex: 1,
-                            backgroundColor: colors.surfaceLight,
-                            borderColor: colors.cardBorder,
-                            opacity: 0.85,
-                          },
-                        ]}
-                      >
-                        <View style={styles.actionBtnInner}>
-                          <HelpCircle size={15} color={colors.textMuted} style={{ marginRight: 6 }} />
-                          <Text style={[styles.contactBtnText, { color: colors.textMuted }]} numberOfLines={1}>
-                            Your Notice · Active
-                          </Text>
-                        </View>
-                      </View>
+                  {(() => {
+                    const isMyNotice =
+                      item.is_mine === true ||
+                      (item as any).is_owner === true ||
+                      (currentUser && (
+                        (item.reporter_id && item.reporter_id === currentUser.id) ||
+                        ((item as any).author && (item as any).author === currentUser.id) ||
+                        ((item as any).author_email && currentUser.email && (item as any).author_email === currentUser.email)
+                      ));
 
-                      {/* Delete Button for Author */}
+                    if (isMyNotice) {
+                      return (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <View
+                            style={[
+                              styles.contactBtn,
+                              {
+                                flex: 1,
+                                backgroundColor: colors.surfaceLight,
+                                borderColor: colors.cardBorder,
+                                opacity: 0.85,
+                              },
+                            ]}
+                          >
+                            <View style={styles.actionBtnInner}>
+                              <HelpCircle size={15} color={colors.textMuted} style={{ marginRight: 6 }} />
+                              <Text style={[styles.contactBtnText, { color: colors.textMuted }]} numberOfLines={1}>
+                                Your Notice · Active
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Delete Button for Author */}
+                          <TouchableOpacity
+                            style={[
+                              styles.contactBtn,
+                              {
+                                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                                borderColor: 'rgba(239, 68, 68, 0.35)',
+                                paddingHorizontal: 12,
+                              },
+                            ]}
+                            onPress={() => handleDeleteLf(item.id)}
+                            activeOpacity={0.8}
+                            accessibilityLabel="Delete your notice"
+                          >
+                            <View style={styles.actionBtnInner}>
+                              <Trash2 size={15} color="#ef4444" style={{ marginRight: 5 }} />
+                              <Text style={[styles.contactBtnText, { color: '#ef4444' }]}>Delete</Text>
+                            </View>
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    }
+
+                    if (item.item_type === 'FOUND') {
+                      return (
+                        <TouchableOpacity
+                          style={[
+                            styles.contactBtn,
+                            {
+                              backgroundColor: isDark ? 'rgba(0, 112, 243, 0.16)' : 'rgba(0, 102, 204, 0.08)',
+                              borderColor: isDark ? 'rgba(0, 112, 243, 0.4)' : 'rgba(0, 102, 204, 0.28)',
+                            },
+                          ]}
+                          onPress={() => handleContactLf(item)}
+                          activeOpacity={0.8}
+                        >
+                          <View style={styles.actionBtnInner}>
+                            <ShieldCheck size={16} color={colors.primary} style={{ marginRight: 7 }} />
+                            <Text style={[styles.contactBtnText, { color: colors.primary }]}>
+                              Claim Item · Contact Finder
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    }
+
+                    return (
                       <TouchableOpacity
                         style={[
                           styles.contactBtn,
                           {
-                            backgroundColor: 'rgba(239, 68, 68, 0.12)',
-                            borderColor: 'rgba(239, 68, 68, 0.35)',
-                            paddingHorizontal: 12,
+                            backgroundColor: isDark ? 'rgba(39, 166, 68, 0.16)' : 'rgba(22, 163, 74, 0.08)',
+                            borderColor: isDark ? 'rgba(39, 166, 68, 0.4)' : 'rgba(22, 163, 74, 0.28)',
                           },
                         ]}
-                        onPress={() => handleDeleteLf(item.id)}
+                        onPress={() => handleContactLf(item)}
                         activeOpacity={0.8}
-                        accessibilityLabel="Delete your notice"
                       >
                         <View style={styles.actionBtnInner}>
-                          <Trash2 size={15} color="#ef4444" style={{ marginRight: 5 }} />
-                          <Text style={[styles.contactBtnText, { color: '#ef4444' }]}>Delete</Text>
+                          <MessageCircle size={16} color={colors.accent} style={{ marginRight: 7 }} />
+                          <Text style={[styles.contactBtnText, { color: colors.accent }]}>
+                            I Found This · Message Owner
+                          </Text>
                         </View>
                       </TouchableOpacity>
-                    </View>
-                  ) : item.item_type === 'FOUND' ? (
-                    <TouchableOpacity
-                      style={[
-                        styles.contactBtn,
-                        {
-                          backgroundColor: isDark ? 'rgba(0, 112, 243, 0.16)' : 'rgba(0, 102, 204, 0.08)',
-                          borderColor: isDark ? 'rgba(0, 112, 243, 0.4)' : 'rgba(0, 102, 204, 0.28)',
-                        },
-                      ]}
-                      onPress={() => handleContactLf(item)}
-                      activeOpacity={0.8}
-                    >
-                      <View style={styles.actionBtnInner}>
-                        <ShieldCheck size={16} color={colors.primary} style={{ marginRight: 7 }} />
-                        <Text style={[styles.contactBtnText, { color: colors.primary }]}>
-                          Claim Item · Contact Finder
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      style={[
-                        styles.contactBtn,
-                        {
-                          backgroundColor: isDark ? 'rgba(39, 166, 68, 0.16)' : 'rgba(22, 163, 74, 0.08)',
-                          borderColor: isDark ? 'rgba(39, 166, 68, 0.4)' : 'rgba(22, 163, 74, 0.28)',
-                        },
-                      ]}
-                      onPress={() => handleContactLf(item)}
-                      activeOpacity={0.8}
-                    >
-                      <View style={styles.actionBtnInner}>
-                        <MessageCircle size={16} color={colors.accent} style={{ marginRight: 7 }} />
-                        <Text style={[styles.contactBtnText, { color: colors.accent }]}>
-                          I Found This · Message Owner
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  )}
+                    );
+                  })()}
                 </View>
               )}
               ListEmptyComponent={
@@ -1308,26 +1342,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 12,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 10,
     borderBottomWidth: 1,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     letterSpacing: -0.3,
   },
   headerSubtitle: {
-    fontSize: 12,
+    fontSize: 11.5,
     marginTop: 2,
   },
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 13,
-    paddingVertical: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
     borderRadius: 20,
+    flexShrink: 0,
+  },
+  refreshBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    flexShrink: 0,
   },
   refreshBtn: {
     width: 36,
