@@ -556,17 +556,6 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
               <Text style={styles.timeText}>
                 {formatTime(currentTime)} / {formatTime(duration)}
               </Text>
-
-              <View style={{ flex: 1 }} />
-
-              {/* Fullscreen Button */}
-              <TouchableOpacity onPress={handleToggleFullscreen} style={styles.ctrlBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                {isFullscreen ? (
-                  <Minimize2 size={16} color="#ffffff" />
-                ) : (
-                  <Maximize2 size={16} color="#ffffff" />
-                )}
-              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -816,13 +805,6 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
               <Text style={styles.timeText}>
                 {formatTime(currentTime)} / {formatTime(duration)}
               </Text>
-
-              <View style={{ flex: 1 }} />
-
-              {/* Fullscreen Button */}
-              <TouchableOpacity onPress={handleToggleFullscreenNative} style={styles.ctrlBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Maximize2 size={16} color="#ffffff" />
-              </TouchableOpacity>
             </View>
           </View>
         )}

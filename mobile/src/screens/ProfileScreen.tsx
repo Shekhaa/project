@@ -3733,9 +3733,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#38bdf8',
   },
   scrollContent: {
-    padding: 16,
-    paddingTop: 45,
-    paddingBottom: 60,
+    paddingHorizontal: 8,
+    paddingTop: 10,
+    paddingBottom: 34,
   },
   loadingContainer: {
     flex: 1,
@@ -3750,11 +3750,11 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    marginBottom: 16,
+    marginBottom: 13,
     position: 'relative',
   },
   heroTopActions: {

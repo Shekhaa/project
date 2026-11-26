@@ -106,6 +106,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
   const [sharePost, setSharePost] = useState<Post | null>(null);
 
   const [banner, setBanner] = useState<{ kind: 'error' | 'notice'; text: string } | null>(null);
+  const [lfModalError, setLfModalError] = useState<string | null>(null);
 
   // Load Lost & Found Items
   const loadLfItems = useCallback(async () => {
@@ -273,6 +274,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
       return;
     }
     setBanner(null);
+    setLfModalError(null);
     setLfModalVisible(true);
   };
 
@@ -284,13 +286,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
     }
     if (!description.trim() || !location.trim()) {
       const msg = 'Please describe the item and where it was lost or found.';
-      setBanner({ kind: 'error', text: msg });
+      setLfModalError(msg);
       if (Platform.OS !== 'web') Alert.alert('Required', msg);
       return;
     }
 
     setSubmittingLf(true);
     setBanner(null);
+    setLfModalError(null);
     try {
       let payload: any;
       if (itemImage) {
@@ -331,7 +334,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
         setLfModalVisible(false);
         onRequireVerify?.(e.response?.data?.error || 'Campus verification required to report items.');
       } else {
-        const msg = e.response?.data?.error || 'Failed to submit report.';
+        const msg = e?.response?.data?.error || e?.response?.data?.detail || 'Failed to submit report. Please try again.';
+        setLfModalError(msg);
         setBanner({ kind: 'error', text: msg });
         if (Platform.OS !== 'web') Alert.alert('Error', msg);
       }
@@ -1106,7 +1110,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
               placeholder="What item? (e.g. Black boAt Earphones, Blue ID Card Holder)"
               placeholderTextColor={colors.textMuted}
               value={description}
-              onChangeText={setDescription}
+              onChangeText={(txt) => { setDescription(txt); setLfModalError(null); }}
             />
 
             <TextInput
@@ -1114,8 +1118,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
               placeholder="Where? (e.g. Central Library 2nd Floor, Ground Canteen)"
               placeholderTextColor={colors.textMuted}
               value={location}
-              onChangeText={setLocation}
+              onChangeText={(txt) => { setLocation(txt); setLfModalError(null); }}
             />
+
+            {lfModalError ? (
+              <View style={{ backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.35)', borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 10 }}>
+                <Text style={{ color: '#ef4444', fontSize: 12.5, fontWeight: '600' }}>{lfModalError}</Text>
+              </View>
+            ) : null}
 
             {/* Photo Attachment Picker with Crop Studio */}
             {itemImage ? (

@@ -15,11 +15,8 @@ import {
   ArrowLeft,
   Volume2,
   VolumeX,
-  ChevronDown,
-  ChevronUp,
   Heart,
   MessageCircle,
-  Share2,
   RotateCcw,
   RotateCw,
   Play,
@@ -27,6 +24,7 @@ import {
 } from 'lucide-react-native';
 import { VideoChainItem, videoFeedManager } from '../../services/videoFeedManager';
 import { getFullMediaUrl } from '../../config/api';
+import { backHandlerRegistry } from '../../services/backHandlerRegistry';
 import { UserAvatar } from '../common/UserAvatar';
 
 let ExpoVideo: any = null;
@@ -37,7 +35,7 @@ try {
   if (av.ResizeMode) ResizeMode = av.ResizeMode;
 } catch {}
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const formatTime = (secs: number): string => {
   if (isNaN(secs) || secs < 0) return '0:00';
@@ -46,7 +44,19 @@ const formatTime = (secs: number): string => {
   return `${mins}:${remainingSecs < 10 ? '0' : ''}${remainingSecs}`;
 };
 
-export const VideoChainViewerModal: React.FC = () => {
+interface VideoChainViewerModalProps {
+  onToggleLike?: (postId: number) => void;
+  onOpenComments?: (post: any) => void;
+  onOpenProfile?: (userId: number) => void;
+  temporarilyHidden?: boolean;
+}
+
+export const VideoChainViewerModal: React.FC<VideoChainViewerModalProps> = ({
+  onToggleLike,
+  onOpenComments,
+  onOpenProfile,
+  temporarilyHidden = false,
+}) => {
   const [visible, setVisible] = useState(false);
   const [videos, setVideos] = useState<VideoChainItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -57,6 +67,9 @@ export const VideoChainViewerModal: React.FC = () => {
   const [duration, setDuration] = useState(0);
   const [buffering, setBuffering] = useState(false);
 
+  // Optimistic like tracking keyed by postId/item id
+  const [likedOverrides, setLikedOverrides] = useState<Record<string, { liked: boolean; count: number }>>({});
+
   // Low-fade subtle feedback for Play/Pause and Skip
   const [centerFeedback, setCenterFeedback] = useState<'PLAY' | 'PAUSE' | null>(null);
   const [skipFeedback, setSkipFeedback] = useState<string | null>(null);
@@ -66,6 +79,8 @@ export const VideoChainViewerModal: React.FC = () => {
 
   const videoRef = useRef<any>(null);
   const nativeVideoRef = useRef<any>(null);
+  const scrubberWidthRef = useRef<number>(SCREEN_WIDTH - 32);
+  const isDraggingScrubberRef = useRef<boolean>(false);
   const lastTapRef = useRef<number>(0);
   const tapTimerRef = useRef<any>(null);
 
@@ -76,6 +91,7 @@ export const VideoChainViewerModal: React.FC = () => {
       setVisible(true);
       setIsPlaying(true);
       setCurrentTime(0);
+      setLikedOverrides({});
     });
 
     return () => {
@@ -83,16 +99,26 @@ export const VideoChainViewerModal: React.FC = () => {
     };
   }, []);
 
+  // Register hardware back button on phone to return to Feed/Home
+  useEffect(() => {
+    if (visible && !temporarilyHidden) {
+      backHandlerRegistry.push('VideoChainViewerModal', () => {
+        handleClose();
+        return true;
+      });
+      return () => backHandlerRegistry.pop('VideoChainViewerModal');
+    }
+  }, [visible, temporarilyHidden]);
+
   const currentVideo = videos[currentIndex];
   const fullUrl = currentVideo ? getFullMediaUrl(currentVideo.videoUrl) : '';
 
-  // Trigger low-fade center indicator that gently fades out without blocking video quality
   const showCenterFeedback = (type: 'PLAY' | 'PAUSE') => {
     setCenterFeedback(type);
     fadeAnim.setValue(0.85);
     Animated.timing(fadeAnim, {
       toValue: 0,
-      duration: 650,
+      duration: 600,
       useNativeDriver: true,
     }).start(() => setCenterFeedback(null));
   };
@@ -102,9 +128,18 @@ export const VideoChainViewerModal: React.FC = () => {
     skipAnim.setValue(0.9);
     Animated.timing(skipAnim, {
       toValue: 0,
-      duration: 700,
+      duration: 650,
       useNativeDriver: true,
     }).start(() => setSkipFeedback(null));
+  };
+
+  const pausePlayback = () => {
+    if (Platform.OS === 'web' && videoRef.current) {
+      videoRef.current.pause();
+    } else if (nativeVideoRef.current) {
+      nativeVideoRef.current.pauseAsync?.().catch(() => {});
+    }
+    setIsPlaying(false);
   };
 
   const handleTogglePlay = () => {
@@ -122,57 +157,62 @@ export const VideoChainViewerModal: React.FC = () => {
     } else {
       if (!nativeVideoRef.current) return;
       if (isPlaying) {
-        nativeVideoRef.current.pauseAsync?.();
+        nativeVideoRef.current.pauseAsync?.().catch(() => {});
         setIsPlaying(false);
         showCenterFeedback('PAUSE');
       } else {
-        nativeVideoRef.current.playAsync?.();
+        nativeVideoRef.current.playAsync?.().catch(() => {});
         setIsPlaying(true);
         showCenterFeedback('PLAY');
       }
     }
   };
 
-  const handleSkip = (seconds: number) => {
-    const target = Math.max(0, Math.min(duration, currentTime + seconds));
-    if (Platform.OS === 'web') {
-      if (videoRef.current) {
-        videoRef.current.currentTime = target;
-        setCurrentTime(target);
-      }
-    } else {
-      nativeVideoRef.current?.setPositionAsync?.(target * 1000);
-      setCurrentTime(target);
+  const handleSeekToSeconds = (targetSec: number) => {
+    const dur = duration > 0 ? duration : (videoRef.current?.duration || 0);
+    const clamped = Math.max(0, Math.min(dur > 0 ? dur : 999999, targetSec));
+    if (Platform.OS === 'web' && videoRef.current) {
+      videoRef.current.currentTime = clamped;
+    } else if (nativeVideoRef.current) {
+      nativeVideoRef.current.setPositionAsync?.(clamped * 1000).catch(() => {});
     }
-    showSkipFeedback(seconds > 0 ? `+${seconds}s` : `${seconds}s`);
+    setCurrentTime(clamped);
   };
 
+  const handleSkip = (secs: number) => {
+    const cur = Platform.OS === 'web' && videoRef.current ? videoRef.current.currentTime : currentTime;
+    handleSeekToSeconds(cur + secs);
+    showSkipFeedback(secs > 0 ? '+10s' : '-10s');
+  };
+
+  // Slide DOWN -> Next video
   const handleNextVideo = () => {
     if (currentIndex < videos.length - 1) {
       setCurrentIndex((prev) => prev + 1);
       setCurrentTime(0);
       setIsPlaying(true);
-    } else {
-      // Loop back or close
-      setCurrentIndex(0);
+    }
+  };
+
+  // Slide UP -> Previous (old) video; if on first video, do nothing
+  const handlePrevVideo = () => {
+    if (currentIndex > 0) {
+      setCurrentIndex((prev) => prev - 1);
       setCurrentTime(0);
+      setIsPlaying(true);
     }
   };
 
   const handleClose = () => {
-    if (Platform.OS === 'web' && videoRef.current) {
-      videoRef.current.pause();
-    } else if (nativeVideoRef.current) {
-      nativeVideoRef.current.pauseAsync?.();
-    }
-    setIsPlaying(false);
+    pausePlayback();
     setVisible(false);
   };
 
-  // Screen Tap Handler: Single Tap = Play/Pause, Double Tap = Skip 10s
+  // Screen Tap Handler: Single Tap = Play/Pause, Double Tap Left/Right = -10s / +10s across 9:16 video
   const handleScreenPress = (e: any) => {
+    if (isDraggingScrubberRef.current) return;
     const now = Date.now();
-    const DOUBLE_TAP_DELAY = 280;
+    const DOUBLE_TAP_DELAY = 260;
 
     if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
       if (tapTimerRef.current) {
@@ -181,11 +221,11 @@ export const VideoChainViewerModal: React.FC = () => {
       }
       lastTapRef.current = 0;
 
-      // Determine click location for left/right double tap skip
-      const clickX = e?.nativeEvent?.locationX ?? SCREEN_WIDTH / 2;
-      if (clickX < SCREEN_WIDTH * 0.4) {
+      const clickX = e?.nativeEvent?.locationX ?? e?.nativeEvent?.offsetX ?? SCREEN_WIDTH / 2;
+      const surfaceW = Platform.OS === 'web' && typeof window !== 'undefined' ? window.innerWidth : SCREEN_WIDTH;
+      if (clickX < surfaceW * 0.42) {
         handleSkip(-10);
-      } else if (clickX > SCREEN_WIDTH * 0.6) {
+      } else if (clickX > surfaceW * 0.58) {
         handleSkip(10);
       } else {
         handleTogglePlay();
@@ -199,27 +239,36 @@ export const VideoChainViewerModal: React.FC = () => {
     }
   };
 
-  // Keyboard & Wheel controls for desktop web
+  // Desktop Web Wheel & Keyboard Controls:
+  // Down (deltaY > 0 / ArrowDown) -> Next Video
+  // Up (deltaY < 0 / ArrowUp) -> Old/Previous Video (no-op if first)
+  // Escape -> Close to Feed
   const lastWheelTime = useRef<number>(0);
   const handleWheel = (e: any) => {
     const now = Date.now();
-    if (now - lastWheelTime.current < 500) return;
+    if (now - lastWheelTime.current < 480) return;
     if (e.deltaY > 25) {
       lastWheelTime.current = now;
       handleNextVideo();
     } else if (e.deltaY < -25) {
       lastWheelTime.current = now;
-      handleClose();
+      handlePrevVideo();
     }
   };
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || temporarilyHidden) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowDown' || e.key === 'j') {
         handleNextVideo();
       } else if (e.key === 'ArrowUp' || e.key === 'k') {
         handlePrevVideo();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleSkip(-10);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleSkip(10);
       } else if (e.key === 'Escape') {
         handleClose();
       } else if (e.key === ' ') {
@@ -231,43 +280,111 @@ export const VideoChainViewerModal: React.FC = () => {
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
     }
-  }, [visible, currentIndex, videos.length, isPlaying]);
+  }, [visible, temporarilyHidden, currentIndex, videos.length, isPlaying, duration, currentTime]);
 
-  // PanResponder for vertical dragging:
-  // Upper drag (dy < -30) -> Closes viewer!
-  // Down slide (dy > 30) -> Goes to next video in chain!
+  // PanResponder for vertical swiping:
+  // Slide DOWN (dy > 30) -> Next video
+  // Slide UP (dy < -30) -> Previous (old) video; if first, does nothing
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dy) > 10;
+        return !isDraggingScrubberRef.current && Math.abs(gestureState.dy) > 12 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.3;
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy < -30 || gestureState.vy < -0.3) {
-          // Upper drag: Close
-          handleClose();
-        } else if (gestureState.dy > 30 || gestureState.vy > 0.3) {
-          // Down slide: Next video in chain
+        if (gestureState.dy > 30 || gestureState.vy > 0.3) {
           handleNextVideo();
+        } else if (gestureState.dy < -30 || gestureState.vy < -0.3) {
+          handlePrevVideo();
         }
       },
     })
   ).current;
 
-  if (!visible || !currentVideo) return null;
+  // Draggable Scrubber PanResponder (Native + Touch)
+  const scrubberPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => {
+        isDraggingScrubberRef.current = true;
+        const x = e.nativeEvent.locationX ?? 0;
+        const w = scrubberWidthRef.current || 1;
+        const pct = Math.max(0, Math.min(1, x / w));
+        if (duration > 0) handleSeekToSeconds(pct * duration);
+      },
+      onPanResponderMove: (e) => {
+        const x = e.nativeEvent.locationX ?? 0;
+        const w = scrubberWidthRef.current || 1;
+        const pct = Math.max(0, Math.min(1, x / w));
+        if (duration > 0) handleSeekToSeconds(pct * duration);
+      },
+      onPanResponderRelease: () => {
+        setTimeout(() => {
+          isDraggingScrubberRef.current = false;
+        }, 60);
+      },
+      onPanResponderTerminate: () => {
+        isDraggingScrubberRef.current = false;
+      },
+    })
+  ).current;
+
+  // Web pointer drag for smooth scrubber seeking
+  const handleWebScrub = (e: any) => {
+    e?.stopPropagation?.();
+    if (!duration) return;
+    try {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      handleSeekToSeconds(pct * duration);
+    } catch {}
+  };
+
+  if (!visible || temporarilyHidden || !currentVideo) return null;
 
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
+  // Live like state
+  const itemKey = String(currentVideo.postId || currentVideo.id);
+  const override = likedOverrides[itemKey];
+  const isLiked = override ? override.liked : Boolean(currentVideo.isLiked);
+  const likesCount = override ? override.count : (currentVideo.likesCount ?? 0);
+  const commentsCount = currentVideo.commentsCount ?? 0;
+
+  const handlePressLike = () => {
+    if (!currentVideo.postId) return;
+    const nextLiked = !isLiked;
+    const nextCount = Math.max(0, likesCount + (nextLiked ? 1 : -1));
+    setLikedOverrides((prev) => ({
+      ...prev,
+      [itemKey]: { liked: nextLiked, count: nextCount },
+    }));
+    onToggleLike?.(currentVideo.postId);
+  };
+
+  const handlePressComment = () => {
+    if (!currentVideo.post) return;
+    pausePlayback();
+    onOpenComments?.(currentVideo.post);
+  };
+
+  const handlePressProfile = () => {
+    if (currentVideo.isAnonymous || !currentVideo.authorId) return;
+    handleClose();
+    onOpenProfile?.(currentVideo.authorId);
+  };
+
   return (
     <Modal
-      visible={visible}
+      visible={visible && !temporarilyHidden}
       transparent={false}
       animationType="fade"
       onRequestClose={handleClose}
       statusBarTranslucent
     >
       <View style={styles.container} {...panResponder.panHandlers} onWheel={handleWheel as any}>
-        {/* Fullscreen Video Player Layer */}
+        {/* Fullscreen 9:16 Video Player Layer */}
         {Platform.OS === 'web' ? (
           <video
             ref={videoRef}
@@ -287,7 +404,9 @@ export const VideoChainViewerModal: React.FC = () => {
               cursor: 'pointer',
             }}
             onTimeUpdate={() => {
-              if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
+              if (videoRef.current && !isDraggingScrubberRef.current) {
+                setCurrentTime(videoRef.current.currentTime);
+              }
             }}
             onLoadedMetadata={() => {
               if (videoRef.current) setDuration(videoRef.current.duration || 0);
@@ -310,7 +429,9 @@ export const VideoChainViewerModal: React.FC = () => {
               onPlaybackStatusUpdate={(status: any) => {
                 if (!status.isLoaded) return;
                 setIsPlaying(status.isPlaying);
-                setCurrentTime((status.positionMillis || 0) / 1000);
+                if (!isDraggingScrubberRef.current) {
+                  setCurrentTime((status.positionMillis || 0) / 1000);
+                }
                 setDuration((status.durationMillis || 0) / 1000);
                 setBuffering(status.isBuffering);
                 if (status.didJustFinish) handleNextVideo();
@@ -326,79 +447,66 @@ export const VideoChainViewerModal: React.FC = () => {
           </View>
         )}
 
-        {/* Minimalist Low-Fade Play/Pause Icon (No heavy black circle!) */}
+        {/* Minimalist Low-Fade Play/Pause Icon */}
         {centerFeedback && (
           <Animated.View style={[styles.lowFadeCenterBox, { opacity: fadeAnim }]} pointerEvents="none">
             {centerFeedback === 'PAUSE' ? (
-              <Pause size={48} color="rgba(255, 255, 255, 0.85)" fill="rgba(255, 255, 255, 0.85)" />
+              <Pause size={46} color="rgba(255, 255, 255, 0.85)" fill="rgba(255, 255, 255, 0.85)" />
             ) : (
-              <Play size={48} color="rgba(255, 255, 255, 0.85)" fill="rgba(255, 255, 255, 0.85)" style={{ marginLeft: 4 }} />
+              <Play size={46} color="rgba(255, 255, 255, 0.85)" fill="rgba(255, 255, 255, 0.85)" style={{ marginLeft: 4 }} />
             )}
           </Animated.View>
         )}
 
-        {/* Minimalist Low-Fade Skip 10s Feedback (Soft text glow, no dark circle!) */}
+        {/* Minimalist Low-Fade Skip 10s Feedback */}
         {skipFeedback && (
           <Animated.View style={[styles.lowFadeSkipBox, { opacity: skipAnim }]} pointerEvents="none">
             <Text style={styles.lowFadeSkipText}>{skipFeedback}</Text>
           </Animated.View>
         )}
 
-        {/* Top Header: Back, Video Counter, Mute Toggle */}
+        {/* Clean Top Header: Back Button + Mute Toggle (No video count or swipe hint clutter) */}
         <View style={styles.topHeaderBar} pointerEvents="box-none">
-          <TouchableOpacity style={styles.glassBtn} onPress={handleClose} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.glassBtn} onPress={handleClose} activeOpacity={0.7} accessibilityLabel="Back to feed">
             <ArrowLeft size={20} color="#ffffff" />
           </TouchableOpacity>
-
-          <View style={styles.counterPill}>
-            <Text style={styles.counterText}>
-              Video {currentIndex + 1} of {videos.length}
-            </Text>
-          </View>
 
           <TouchableOpacity
             style={styles.glassBtn}
             onPress={() => setIsMuted((prev) => !prev)}
             activeOpacity={0.7}
+            accessibilityLabel={isMuted ? 'Unmute' : 'Mute'}
           >
             {isMuted ? <VolumeX size={19} color="#ffffff" /> : <Volume2 size={19} color="#ffffff" />}
           </TouchableOpacity>
         </View>
 
-        {/* Upper Drag & Down Slide Gesture Guidance Hints */}
-        <View style={styles.gestureHintsRow} pointerEvents="none">
-          <View style={styles.gestureHintItem}>
-            <ChevronUp size={14} color="rgba(255, 255, 255, 0.5)" />
-            <Text style={styles.gestureHintText}>Slide Up: Close</Text>
-          </View>
-          <View style={styles.gestureHintItem}>
-            <ChevronDown size={14} color="rgba(255, 255, 255, 0.5)" />
-            <Text style={styles.gestureHintText}>Slide Down: Next Video</Text>
-          </View>
-        </View>
-
-        {/* Bottom Post Metadata & Actions Overlay */}
+        {/* Bottom Overlay: Author Profile (Clickable) + Caption + Interactive Likes/Comments */}
         <View style={styles.bottomOverlay} pointerEvents="box-none">
           <View style={styles.bottomMetaLeft} pointerEvents="box-none">
-            {/* Author Row */}
-            <View style={styles.authorRow}>
+            <TouchableOpacity
+              style={styles.authorRow}
+              onPress={handlePressProfile}
+              disabled={Boolean(currentVideo.isAnonymous || !currentVideo.authorId)}
+              activeOpacity={0.75}
+            >
               <UserAvatar
                 uri={currentVideo.authorAvatar}
                 name={currentVideo.authorName || 'Campus User'}
-                size={34}
-                style={{ marginRight: 8 }}
+                size={36}
+                isAnonymous={currentVideo.isAnonymous}
+                style={{ marginRight: 10 }}
               />
-              <View>
+              <View style={{ flexShrink: 1 }}>
                 <Text style={styles.authorName} numberOfLines={1}>
                   {currentVideo.authorName || 'Campus Peer'}
                 </Text>
-                {currentVideo.communityName && (
+                {currentVideo.communityName ? (
                   <Text style={styles.communityTag}>c/{currentVideo.communityName}</Text>
-                )}
+                ) : null}
               </View>
-            </View>
+            </TouchableOpacity>
 
-            {/* Post Caption */}
             {currentVideo.content ? (
               <Text style={styles.captionText} numberOfLines={3} ellipsizeMode="tail">
                 {currentVideo.content}
@@ -406,37 +514,126 @@ export const VideoChainViewerModal: React.FC = () => {
             ) : null}
           </View>
 
-          {/* Quick Floating Action Right Column (Like, Comment, Next) */}
+          {/* Right Action Column: Real Like & Real Comment (No lower-right down button) */}
           <View style={styles.actionColumn} pointerEvents="box-none">
-            <TouchableOpacity style={styles.actionColBtn} activeOpacity={0.75}>
-              <Heart size={24} color="#ffffff" />
-              <Text style={styles.actionColLabel}>
-                {currentVideo.likesCount !== undefined ? currentVideo.likesCount : 'Like'}
+            <TouchableOpacity style={styles.actionColBtn} onPress={handlePressLike} activeOpacity={0.75}>
+              <Heart
+                size={26}
+                color={isLiked ? '#ef4444' : '#ffffff'}
+                fill={isLiked ? '#ef4444' : 'transparent'}
+              />
+              <Text style={[styles.actionColLabel, isLiked && { color: '#ef4444' }]}>
+                {likesCount}
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionColBtn} activeOpacity={0.75}>
-              <MessageCircle size={24} color="#ffffff" />
-              <Text style={styles.actionColLabel}>
-                {currentVideo.commentsCount !== undefined ? currentVideo.commentsCount : 'Chat'}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Next Video Button */}
-            <TouchableOpacity style={styles.nextVideoBtn} onPress={handleNextVideo} activeOpacity={0.8}>
-              <ChevronDown size={20} color="#000000" />
+            <TouchableOpacity style={styles.actionColBtn} onPress={handlePressComment} activeOpacity={0.75}>
+              <MessageCircle size={26} color="#ffffff" />
+              <Text style={styles.actionColLabel}>{commentsCount}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Bottom Scrubbing Progress Timeline */}
-        <View style={styles.scrubberBar} pointerEvents="none">
-          <View style={[styles.scrubberFill, { width: `${progressPercent}%` }]} />
-          <View style={styles.timeBadgeRow}>
+        {/* Bottom Scrubbing Controls: Larger Draggable Seek Bar + 10s Skip + Time */}
+        <View style={styles.scrubberSection} pointerEvents="box-none">
+          <View style={styles.scrubberTopRow}>
+            <TouchableOpacity style={styles.miniCtrlBtn} onPress={handleTogglePlay} activeOpacity={0.75}>
+              {isPlaying ? (
+                <Pause size={16} color="#ffffff" fill="#ffffff" />
+              ) : (
+                <Play size={16} color="#ffffff" fill="#ffffff" />
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.miniSkipBtn} onPress={() => handleSkip(-10)} activeOpacity={0.75}>
+              <RotateCcw size={14} color="#ffffff" />
+              <Text style={styles.miniSkipText}>10s</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.miniSkipBtn} onPress={() => handleSkip(10)} activeOpacity={0.75}>
+              <RotateCw size={14} color="#ffffff" />
+              <Text style={styles.miniSkipText}>10s</Text>
+            </TouchableOpacity>
+
+            <View style={{ flex: 1 }} />
+
             <Text style={styles.timeText}>
               {formatTime(currentTime)} / {formatTime(duration)}
             </Text>
           </View>
+
+          {/* Larger Interactive Draggable Progress Bar */}
+          {Platform.OS === 'web' ? (
+            <div
+              onMouseDown={(e) => {
+                isDraggingScrubberRef.current = true;
+                handleWebScrub(e);
+              }}
+              onMouseMove={(e) => {
+                if (e.buttons === 1) handleWebScrub(e);
+              }}
+              onMouseUp={() => {
+                setTimeout(() => {
+                  isDraggingScrubberRef.current = false;
+                }, 50);
+              }}
+              onClick={handleWebScrub}
+              style={{
+                width: '100%',
+                height: '28px',
+                display: 'flex',
+                alignItems: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <div
+                style={{
+                  width: '100%',
+                  height: '6px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.28)',
+                  borderRadius: '3px',
+                  position: 'relative',
+                }}
+              >
+                <div
+                  style={{
+                    width: `${progressPercent}%`,
+                    height: '100%',
+                    backgroundColor: '#ffffff',
+                    borderRadius: '3px',
+                    position: 'relative',
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: '-7px',
+                      top: '-5px',
+                      width: '16px',
+                      height: '16px',
+                      borderRadius: '50%',
+                      backgroundColor: '#ffffff',
+                      boxShadow: '0 0 8px rgba(0,0,0,0.65)',
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <View
+              style={styles.nativeScrubberHitArea}
+              onLayout={(e) => {
+                scrubberWidthRef.current = e.nativeEvent.layout.width;
+              }}
+              {...scrubberPanResponder.panHandlers}
+            >
+              <View style={styles.nativeScrubberTrack}>
+                <View style={[styles.nativeScrubberFill, { width: `${progressPercent}%` }]}>
+                  <View style={styles.nativeScrubberThumb} />
+                </View>
+              </View>
+            </View>
+          )}
         </View>
       </View>
     </Modal>
@@ -463,27 +660,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 20,
-    backgroundColor: 'transparent', // NO dark solid circle!
+    backgroundColor: 'transparent',
   },
   lowFadeSkipBox: {
     position: 'absolute',
     alignSelf: 'center',
-    top: '42%',
+    top: '44%',
     paddingHorizontal: 16,
     paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     zIndex: 25,
   },
   lowFadeSkipText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
   topHeaderBar: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 44 : 20,
+    top: Platform.OS === 'ios' ? 44 : 18,
     left: 16,
     right: 16,
     flexDirection: 'row',
@@ -492,59 +689,26 @@ const styles = StyleSheet.create({
     zIndex: 30,
   },
   glassBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    alignItems: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.42)',
     justifyContent: 'center',
-  },
-  counterPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 14,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-  },
-  counterText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  gestureHintsRow: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 92 : 68,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    gap: 16,
-    zIndex: 25,
-  },
-  gestureHintItem: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  gestureHintText: {
-    color: 'rgba(255, 255, 255, 0.65)',
-    fontSize: 10,
-    fontWeight: '600',
   },
   bottomOverlay: {
     position: 'absolute',
-    bottom: 24,
+    bottom: 68,
     left: 16,
-    right: 16,
+    right: 14,
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    zIndex: 30,
+    zIndex: 25,
   },
   bottomMetaLeft: {
     flex: 1,
-    marginRight: 16,
+    paddingRight: 16,
   },
   authorRow: {
     flexDirection: 'row',
@@ -553,69 +717,103 @@ const styles = StyleSheet.create({
   },
   authorName: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   communityTag: {
     color: '#38bdf8',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
-    marginTop: 1,
   },
   captionText: {
-    color: '#f8fafc',
-    fontSize: 13,
-    lineHeight: 18,
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    color: 'rgba(255, 255, 255, 0.94)',
+    fontSize: 13.5,
+    lineHeight: 19,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
   actionColumn: {
     alignItems: 'center',
-    gap: 14,
-    marginBottom: 4,
+    gap: 18,
+    paddingBottom: 6,
   },
   actionColBtn: {
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 4,
   },
   actionColLabel: {
     color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 3,
+    fontSize: 12,
+    fontWeight: '700',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
-  nextVideoBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-    elevation: 4,
-  },
-  scrubberBar: {
+  scrubberSection: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    bottom: Platform.OS === 'ios' ? 20 : 10,
+    left: 16,
+    right: 16,
     zIndex: 35,
   },
-  scrubberFill: {
-    height: '100%',
-    backgroundColor: '#38bdf8',
+  scrubberTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 4,
   },
-  timeBadgeRow: {
-    position: 'absolute',
-    bottom: 8,
-    right: 16,
+  miniCtrlBtn: {
+    padding: 4,
+  },
+  miniSkipBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  miniSkipText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   timeText: {
-    color: 'rgba(255, 255, 255, 0.65)',
-    fontSize: 10,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 12,
+    fontWeight: '700',
     fontVariant: ['tabular-nums'],
+  },
+  nativeScrubberHitArea: {
+    width: '100%',
+    height: 30,
+    justifyContent: 'center',
+  },
+  nativeScrubberTrack: {
+    width: '100%',
+    height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.28)',
+    borderRadius: 3,
+    overflow: 'visible',
+  },
+  nativeScrubberFill: {
+    height: '100%',
+    backgroundColor: '#ffffff',
+    borderRadius: 3,
+    position: 'relative',
+  },
+  nativeScrubberThumb: {
+    position: 'absolute',
+    right: -8,
+    top: -5,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
   },
 });

@@ -571,19 +571,19 @@ const PostCardComponent: React.FC<PostCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 14,
+    borderRadius: 13,
     borderWidth: 1,
-    marginBottom: 12,
-    marginHorizontal: Platform.OS === 'web' ? 0 : 12,
+    marginBottom: 10,
+    marginHorizontal: Platform.OS === 'web' ? 0 : 6,
     overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
+    paddingHorizontal: 13,
     paddingTop: 11,
-    paddingBottom: 4,
+    paddingBottom: 5,
   },
   authorRow: {
     flexDirection: 'row',

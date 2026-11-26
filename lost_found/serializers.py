@@ -70,6 +70,10 @@ class LostFoundPostSerializer(serializers.ModelSerializer):
         return self.get_is_mine(obj)
 
     def get_reporter_name(self, obj):
-        if hasattr(obj.author, "profile") and obj.author.profile and obj.author.profile.full_name:
-            return obj.author.profile.full_name
-        return obj.author.get_full_name() or obj.author.username
+        if getattr(obj.author, "full_name", None):
+            return obj.author.full_name
+        prof = getattr(obj.author, "profile", None)
+        if prof and getattr(prof, "username", None):
+            return prof.username
+        email = getattr(obj.author, "email", "") or ""
+        return email.split("@")[0] if "@" in email else "Campus Student"

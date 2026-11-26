@@ -52,21 +52,30 @@ const SCOPE_TABS: Array<{
 const extractVideosFromPosts = (postsList: Post[]): VideoChainItem[] => {
   const videoItems: VideoChainItem[] = [];
   postsList.forEach((p) => {
+    const baseItem = {
+      postId: p.id,
+      post: p,
+      authorId: typeof p.author === 'number' ? p.author : (p.author as any)?.id,
+      authorName: p.author_name || (p.author as any)?.username,
+      authorAvatar: p.author_avatar || (p.author as any)?.avatar,
+      isAnonymous: p.is_anonymous,
+      communityName: p.community_name,
+      content: p.content,
+      likesCount: p.likes_count,
+      isLiked: p.is_liked,
+      commentsCount: p.comments_count,
+    };
+
     (p.attachments || []).forEach((att) => {
       const isVid = att.file_type === 'VIDEO' || att.file_extension?.match(/^(mp4|webm|mov|mkv|avi|m4v)$/i);
       if (isVid && att.file_url) {
         const fullUrl = getFullMediaUrl(att.file_url);
         if (!videoItems.some((v) => v.videoUrl === fullUrl)) {
           videoItems.push({
+            ...baseItem,
             id: att.id || `${p.id}_${att.file_url}`,
             videoUrl: fullUrl,
             poster: att.thumbnail_url ? getFullMediaUrl(att.thumbnail_url) : undefined,
-            authorName: p.author_name || p.author?.username,
-            authorAvatar: p.author_avatar || p.author?.avatar,
-            communityName: p.community_name,
-            content: p.content,
-            likesCount: p.likes_count,
-            commentsCount: p.comments_count,
           });
         }
       }
@@ -77,14 +86,9 @@ const extractVideosFromPosts = (postsList: Post[]): VideoChainItem[] => {
       const isVid = p.media_type === 'VIDEO' || Boolean(full.match(/\.(mp4|webm|mov|mkv|avi|m4v)(\?.*)?$/i));
       if (isVid && !videoItems.some((v) => v.videoUrl === full)) {
         videoItems.push({
+          ...baseItem,
           id: `media_${p.id}`,
           videoUrl: full,
-          authorName: p.author_name || p.author?.username,
-          authorAvatar: p.author_avatar || p.author?.avatar,
-          communityName: p.community_name,
-          content: p.content,
-          likesCount: p.likes_count,
-          commentsCount: p.comments_count,
         });
       }
     }
@@ -1507,18 +1511,6 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         onRequireVerify={onRequireVerify}
       />
 
-      {/* Comments Modal */}
-      <CommentsModal
-        visible={!!activeCommentsPost}
-        post={activeCommentsPost}
-        currentUser={currentUser}
-        canParticipate={canParticipate}
-        onRequireAuth={onRequireAuth}
-        onRequireVerify={onRequireVerify}
-        onClose={() => setActiveCommentsPost(null)}
-        onOpenProfile={onOpenProfile}
-      />
-
       {/* Share Modal */}
       <ShareModal
         visible={!!activeSharePost}
@@ -1534,8 +1526,25 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         onUnreadCountChange={(c) => setUnreadNotifCount(c)}
       />
 
-      {/* Fullscreen Video Chain Viewer Modal (Instagram/Twitter reels swipe flow) */}
-      <VideoChainViewerModal />
+      {/* Fullscreen Video Chain Viewer Modal (Reels/Shorts swipe flow) */}
+      <VideoChainViewerModal
+        onToggleLike={handleLikePost}
+        onOpenComments={(post) => setActiveCommentsPost(post)}
+        onOpenProfile={(authorId) => onOpenProfile?.(authorId)}
+        temporarilyHidden={!!activeCommentsPost}
+      />
+
+      {/* Comments Modal (rendered after VideoChainViewerModal so it layers cleanly above) */}
+      <CommentsModal
+        visible={!!activeCommentsPost}
+        post={activeCommentsPost}
+        currentUser={currentUser}
+        canParticipate={canParticipate}
+        onRequireAuth={onRequireAuth}
+        onRequireVerify={onRequireVerify}
+        onClose={() => setActiveCommentsPost(null)}
+        onOpenProfile={onOpenProfile}
+      />
     </View>
   );
 
@@ -1555,7 +1564,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   webCenteredContainer: {
-    maxWidth: 620,
+    maxWidth: 680,
     width: '100%',
     alignSelf: 'center',
   },
@@ -2064,11 +2073,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   listContent: {
-    paddingTop: 8,
-    paddingBottom: 24,
+    paddingTop: 6,
+    paddingBottom: 21,
   },
   webListContent: {
-    maxWidth: 620,
+    maxWidth: 680,
     width: '100%',
     alignSelf: 'center',
   },

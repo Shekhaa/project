@@ -1,12 +1,17 @@
 export interface VideoChainItem {
   id: string | number;
+  postId?: number;
+  post?: any;
   videoUrl: string;
   poster?: string;
+  authorId?: number;
   authorName?: string;
   authorAvatar?: string;
+  isAnonymous?: boolean;
   communityName?: string;
   content?: string;
   likesCount?: number;
+  isLiked?: boolean;
   commentsCount?: number;
 }
 

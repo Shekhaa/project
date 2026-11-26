@@ -683,7 +683,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: (Platform.OS === 'web' ? '100dvh' : '100%') as any,
     maxHeight: (Platform.OS === 'web' ? '100dvh' : undefined) as any,
-    maxWidth: Platform.OS === 'web' ? 620 : undefined,
+    maxWidth: Platform.OS === 'web' ? 680 : undefined,
     width: '100%',
     alignSelf: 'center',
     overflow: 'hidden',
@@ -707,7 +707,7 @@ const styles = StyleSheet.create({
     zIndex: 100,
     elevation: 10,
     width: '100%',
-    maxWidth: Platform.OS === 'web' ? 620 : undefined,
+    maxWidth: Platform.OS === 'web' ? 680 : undefined,
     alignSelf: 'center',
   },
   tabItem: {
