@@ -19,6 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../theme/ThemeContext';
 import { colors } from '../theme/colors';
 import { postService, Post } from '../services/postService';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { communityService, Community } from '../services/communityService';
 import { authService } from '../services/authService';
 import { UserAvatar } from '../components/common/UserAvatar';
@@ -27,9 +28,11 @@ import { PostComposerModal } from '../components/feed/PostComposerModal';
 import { CommentsModal } from '../components/feed/CommentsModal';
 import { ShareModal } from '../components/feed/ShareModal';
 import { NotificationsModal } from '../components/notifications/NotificationsModal';
+import { VideoChainViewerModal } from '../components/media/VideoChainViewerModal';
+import { videoFeedManager, VideoChainItem } from '../services/videoFeedManager';
 import { notificationService, NotificationItem } from '../services/notificationService';
 import { backHandlerRegistry } from '../services/backHandlerRegistry';
-import { api } from '../config/api';
+import { api, getFullMediaUrl } from '../config/api';
 import { showCrossPlatformAlert } from '../utils/mediaUtils';
 import { Plus, Bell, Sparkles, SlidersHorizontal, Check, X, Sun, Moon, Search, ArrowLeft, ShieldCheck } from 'lucide-react-native';
 
@@ -45,6 +48,49 @@ const SCOPE_TABS: Array<{
   { key: 'MEDIA', label: 'Photos', icon: '🖼️' },
   { key: 'RESOURCES', label: 'Notes', icon: '📄' },
 ];
+
+const extractVideosFromPosts = (postsList: Post[]): VideoChainItem[] => {
+  const videoItems: VideoChainItem[] = [];
+  postsList.forEach((p) => {
+    (p.attachments || []).forEach((att) => {
+      const isVid = att.file_type === 'VIDEO' || att.file_extension?.match(/^(mp4|webm|mov|mkv|avi|m4v)$/i);
+      if (isVid && att.file_url) {
+        const fullUrl = getFullMediaUrl(att.file_url);
+        if (!videoItems.some((v) => v.videoUrl === fullUrl)) {
+          videoItems.push({
+            id: att.id || `${p.id}_${att.file_url}`,
+            videoUrl: fullUrl,
+            poster: att.thumbnail_url ? getFullMediaUrl(att.thumbnail_url) : undefined,
+            authorName: p.author_name || p.author?.username,
+            authorAvatar: p.author_avatar || p.author?.avatar,
+            communityName: p.community_name,
+            content: p.content,
+            likesCount: p.likes_count,
+            commentsCount: p.comments_count,
+          });
+        }
+      }
+    });
+
+    if (p.media_url) {
+      const full = getFullMediaUrl(p.media_url);
+      const isVid = p.media_type === 'VIDEO' || Boolean(full.match(/\.(mp4|webm|mov|mkv|avi|m4v)(\?.*)?$/i));
+      if (isVid && !videoItems.some((v) => v.videoUrl === full)) {
+        videoItems.push({
+          id: `media_${p.id}`,
+          videoUrl: full,
+          authorName: p.author_name || p.author?.username,
+          authorAvatar: p.author_avatar || p.author?.avatar,
+          communityName: p.community_name,
+          content: p.content,
+          likesCount: p.likes_count,
+          commentsCount: p.comments_count,
+        });
+      }
+    }
+  });
+  return videoItems;
+};
 
 interface FeedScreenProps {
   currentUser?: any;
@@ -97,6 +143,12 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       isMounted = false;
     };
   }, [currentUser]);
+
+  // Sync feed videos with videoFeedManager for full screen video chain
+  useEffect(() => {
+    const vids = extractVideosFromPosts(posts);
+    videoFeedManager.setFeedVideos(vids);
+  }, [posts]);
 
   const handleSelectScope = (scope: 'ALL' | 'GLOBAL' | 'COLLEGE' | 'FOLLOWING' | 'MEDIA' | 'RESOURCES' | 'SAVED' | undefined) => {
     if (!currentUser && (scope === 'FOLLOWING' || scope === 'SAVED' || scope === 'COLLEGE')) {
@@ -499,6 +551,9 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
       setRefreshBannerVisible(false);
     }, 1400);
   }, [loadCommunities, loadData]);
+
+  // Automatically refresh feed when reopening app or switching back to window/tab
+  useAutoRefresh(handleRefresh, 25000);
 
   useEffect(() => {
     if (feedRefreshTrigger) {
@@ -1478,6 +1533,9 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         onSelectNotification={handleSelectNotification}
         onUnreadCountChange={(c) => setUnreadNotifCount(c)}
       />
+
+      {/* Fullscreen Video Chain Viewer Modal (Instagram/Twitter reels swipe flow) */}
+      <VideoChainViewerModal />
     </View>
   );
 

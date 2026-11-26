@@ -14,6 +14,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import {
   chatService,
   Conversation,
@@ -332,6 +333,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       setLoadingInbox(false);
     }
   };
+
+  // Automatically refresh chats on app switch or tab return
+  useAutoRefresh(loadInbox, 20000);
 
   const handleToggleChatMode = (newMode: 'NORMAL' | 'ANONYMOUS') => {
     if (newMode === 'ANONYMOUS') {

@@ -112,8 +112,9 @@ class AttachmentDownloadView(APIView):
             )
         )
 
+        # 1. If local file exists, serve it directly with proper Content-Disposition
         try:
-            if os.path.exists(attachment.file.path):
+            if hasattr(attachment.file, "path") and os.path.exists(attachment.file.path):
                 return FileResponse(
                     open(attachment.file.path, "rb"),
                     content_type=attachment.mime_type or "application/octet-stream",
@@ -123,13 +124,28 @@ class AttachmentDownloadView(APIView):
         except Exception:
             pass
 
+        # 2. Remote Cloudinary / S3 storage: stream directly to guarantee proper headers & zero CDN transformation errors
         if hasattr(attachment.file, "url"):
-            from django.shortcuts import redirect
             target_file_url = attachment.file.url
-            if as_attachment and "cloudinary.com" in target_file_url and "/upload/" in target_file_url:
-                clean_name = (attachment.file_name or "document").replace("/", "_").replace(" ", "_")
-                target_file_url = target_file_url.replace("/upload/", f"/upload/fl_attachment:{clean_name}/")
-            return redirect(target_file_url)
+            try:
+                import urllib.request
+                from django.http import StreamingHttpResponse
+                req = urllib.request.Request(
+                    target_file_url,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) CampusConnect/1.0"}
+                )
+                remote_stream = urllib.request.urlopen(req, timeout=15)
+                ct = attachment.mime_type or remote_stream.headers.get_content_type() or "application/octet-stream"
+                response = StreamingHttpResponse(remote_stream, content_type=ct)
+                disposition = "attachment" if as_attachment else "inline"
+                safe_name = (attachment.file_name or "document").replace('"', '').replace('\n', '').strip()
+                response["Content-Disposition"] = f'{disposition}; filename="{safe_name}"'
+                response["Access-Control-Allow-Origin"] = "*"
+                response["Access-Control-Expose-Headers"] = "Content-Disposition"
+                return response
+            except Exception:
+                from django.shortcuts import redirect
+                return redirect(target_file_url)
 
         raise Http404("File not found.")
 

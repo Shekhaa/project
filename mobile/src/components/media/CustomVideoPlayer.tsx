@@ -7,6 +7,7 @@ import {
   Platform,
   ActivityIndicator,
   Linking,
+  Animated,
 } from 'react-native';
 import {
   Play,
@@ -23,6 +24,7 @@ import {
 import { useTheme } from '../../theme/ThemeContext';
 import { getFullMediaUrl } from '../../config/api';
 import { activeVideoManager } from '../../services/activeVideoManager';
+import { videoFeedManager } from '../../services/videoFeedManager';
 
 let ExpoVideo: any = null;
 let ResizeMode: any = { CONTAIN: 'contain', COVER: 'cover', STRETCH: 'stretch' };
@@ -77,6 +79,32 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
   const [detectedRatio, setDetectedRatio] = useState<number | null>(null);
   const [skipFeedback, setSkipFeedback] = useState<string | null>(null);
 
+  const lastTapRef = useRef<number>(0);
+  const singleTapTimerRef = useRef<any>(null);
+  const [fadeIndicator, setFadeIndicator] = useState<'PLAY' | 'PAUSE' | null>(null);
+  const fadeIndicatorAnim = useRef(new Animated.Value(0)).current;
+
+  const triggerFadeIndicator = (type: 'PLAY' | 'PAUSE') => {
+    setFadeIndicator(type);
+    fadeIndicatorAnim.setValue(0.85);
+    Animated.timing(fadeIndicatorAnim, {
+      toValue: 0,
+      duration: 600,
+      useNativeDriver: true,
+    }).start(() => setFadeIndicator(null));
+  };
+
+  const handleOpenFullscreenChain = (e?: any) => {
+    e?.stopPropagation?.();
+    if (Platform.OS === 'web' && videoRef.current) {
+      videoRef.current.pause();
+    } else if (nativeVideoRef.current) {
+      nativeVideoRef.current.pauseAsync?.().catch(() => {});
+    }
+    setIsPlaying(false);
+    videoFeedManager.openChain(fullUrl);
+  };
+
   const fullUrl = getFullMediaUrl(url);
   const hideTimerRef = useRef<any>(null);
   const feedbackTimerRef = useRef<any>(null);
@@ -103,6 +131,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
       setIsPlaying(false);
       activeVideoManager.pause(playerId);
       setControlsVisible(true);
+      triggerFadeIndicator('PAUSE');
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     } else {
       activeVideoManager.play(playerId, () => {
@@ -115,6 +144,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         .play()
         .then(() => {
           setIsPlaying(true);
+          triggerFadeIndicator('PLAY');
           scheduleHideControls();
         })
         .catch(() => {
@@ -126,11 +156,34 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
               .play()
               .then(() => {
                 setIsPlaying(true);
+                triggerFadeIndicator('PLAY');
                 scheduleHideControls();
               })
               .catch(() => setHasError(true));
           }
         });
+    }
+  };
+
+  const handleVideoPress = (e?: any) => {
+    e?.stopPropagation?.();
+    const now = Date.now();
+    const DOUBLE_TAP_GAP = 280;
+
+    if (now - lastTapRef.current < DOUBLE_TAP_GAP) {
+      // Double tap -> Open full video chain
+      if (singleTapTimerRef.current) {
+        clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+      lastTapRef.current = 0;
+      handleOpenFullscreenChain(e);
+    } else {
+      lastTapRef.current = now;
+      singleTapTimerRef.current = setTimeout(() => {
+        handleTogglePlay();
+        singleTapTimerRef.current = null;
+      }, DOUBLE_TAP_GAP);
     }
   };
 
@@ -308,7 +361,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
             backgroundColor: '#000000',
             cursor: 'pointer',
           }}
-          onClick={handleTogglePlay}
+          onClick={handleVideoPress}
           onPlay={() => {
             setIsPlaying(true);
             activeVideoManager.play(playerId, () => {
@@ -362,7 +415,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           </View>
         )}
 
-        {/* Fast-Forward / Rewind Visual Splash Badge */}
+        {/* Fast-Forward / Rewind Visual Splash Badge (low fade, no dark disc) */}
         {skipFeedback && (
           <View style={styles.skipFeedbackBadge} pointerEvents="none">
             <Text style={styles.skipFeedbackText}>{skipFeedback}</Text>
@@ -381,45 +434,30 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           </View>
         )}
 
-        {/* Screen-Level Twitter/X Style Overlay: Left -10s, Center Play/Pause, Right +10s */}
-        {(controlsVisible || !isPlaying) && !hasError && !buffering && (
-          <View style={styles.screenLevelOverlay} pointerEvents="box-none">
-            {/* Left -10s Rewind Button */}
-            <TouchableOpacity
-              style={styles.screenSkipBtn}
-              onPress={(e) => handleSkip(-10, e)}
-              activeOpacity={0.8}
-              accessibilityLabel="Rewind 10 seconds"
-            >
-              <RotateCcw size={20} color="#ffffff" />
-              <Text style={styles.screenSkipText}>10s</Text>
-            </TouchableOpacity>
+        {/* Subtle low-fade indicator on tap (fades away smoothly, preserving video clarity) */}
+        {fadeIndicator && (
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.lowFadeIndicatorBox, { opacity: fadeIndicatorAnim }]}
+          >
+            {fadeIndicator === 'PAUSE' ? (
+              <Pause size={30} color="rgba(255, 255, 255, 0.9)" fill="rgba(255, 255, 255, 0.9)" />
+            ) : (
+              <Play size={30} color="rgba(255, 255, 255, 0.9)" fill="rgba(255, 255, 255, 0.9)" style={{ marginLeft: 3 }} />
+            )}
+          </Animated.View>
+        )}
 
-            {/* Center Play / Pause Button */}
-            <TouchableOpacity
-              style={styles.screenCenterPlayBtn}
-              onPress={handleTogglePlay}
-              activeOpacity={0.85}
-              accessibilityLabel={isPlaying ? 'Pause video' : 'Play video'}
-            >
-              {isPlaying ? (
-                <Pause size={28} color="#ffffff" fill="#ffffff" />
-              ) : (
-                <Play size={28} color="#ffffff" fill="#ffffff" style={{ marginLeft: 3 }} />
-              )}
-            </TouchableOpacity>
-
-            {/* Right +10s Forward Button */}
-            <TouchableOpacity
-              style={styles.screenSkipBtn}
-              onPress={(e) => handleSkip(10, e)}
-              activeOpacity={0.8}
-              accessibilityLabel="Forward 10 seconds"
-            >
-              <RotateCw size={20} color="#ffffff" />
-              <Text style={styles.screenSkipText}>10s</Text>
-            </TouchableOpacity>
-          </View>
+        {/* Low-fade resting play button when paused (no ugly big black circle) */}
+        {!isPlaying && !fadeIndicator && !buffering && !hasError && (
+          <TouchableOpacity
+            style={styles.lowFadeRestingPlayBtn}
+            onPress={handleTogglePlay}
+            activeOpacity={0.8}
+            accessibilityLabel="Play video"
+          >
+            <Play size={22} color="rgba(255, 255, 255, 0.9)" fill="rgba(255, 255, 255, 0.9)" style={{ marginLeft: 3 }} />
+          </TouchableOpacity>
         )}
 
         {/* Bottom Controls Bar */}
@@ -546,6 +584,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         setIsPlaying(false);
         activeVideoManager.pause(playerId);
         setControlsVisible(true);
+        triggerFadeIndicator('PAUSE');
         if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
       } else {
         activeVideoManager.play(playerId, () => {
@@ -556,7 +595,30 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
         });
         await nativeVideoRef.current.playAsync().catch(() => setHasError(true));
         setIsPlaying(true);
+        triggerFadeIndicator('PLAY');
         scheduleHideControls();
+      }
+    };
+
+    const handleVideoPressNative = (e?: any) => {
+      e?.stopPropagation?.();
+      const now = Date.now();
+      const DOUBLE_TAP_GAP = 280;
+
+      if (now - lastTapRef.current < DOUBLE_TAP_GAP) {
+        // Double tap -> Open full video chain viewer
+        if (singleTapTimerRef.current) {
+          clearTimeout(singleTapTimerRef.current);
+          singleTapTimerRef.current = null;
+        }
+        lastTapRef.current = 0;
+        handleOpenFullscreenChain(e);
+      } else {
+        lastTapRef.current = now;
+        singleTapTimerRef.current = setTimeout(() => {
+          handleTogglePlayNative();
+          singleTapTimerRef.current = null;
+        }, DOUBLE_TAP_GAP);
       }
     };
 
@@ -596,11 +658,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
 
     const handleToggleFullscreenNative = async (e?: any) => {
       e?.stopPropagation?.();
-      if (nativeVideoRef.current?.presentFullscreenPlayer) {
-        try {
-          await nativeVideoRef.current.presentFullscreenPlayer();
-        } catch {}
-      }
+      handleOpenFullscreenChain(e);
     };
 
     const handleRetryNative = async () => {
@@ -655,11 +713,11 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           style={StyleSheet.absoluteFillObject}
         />
 
-        {/* Tap video surface to toggle controls */}
+        {/* Tap video surface: single tap = toggle play/pause, double tap = open full video chain */}
         <TouchableOpacity
           style={StyleSheet.absoluteFillObject}
           activeOpacity={1}
-          onPress={showControlsTemporarily}
+          onPress={handleVideoPressNative}
         />
 
         {/* Buffering Indicator */}
@@ -669,7 +727,7 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           </View>
         )}
 
-        {/* Fast-Forward / Rewind Visual Splash Badge */}
+        {/* Fast-Forward / Rewind Visual Splash Badge (low fade, no dark disc) */}
         {skipFeedback && (
           <View style={styles.skipFeedbackBadge} pointerEvents="none">
             <Text style={styles.skipFeedbackText}>{skipFeedback}</Text>
@@ -688,45 +746,30 @@ export const CustomVideoPlayer: React.FC<CustomVideoPlayerProps> = ({
           </View>
         )}
 
-        {/* Screen-Level Twitter/X Style Overlay: Left -10s, Center Play/Pause, Right +10s */}
-        {(controlsVisible || !isPlaying) && !hasError && !buffering && (
-          <View style={styles.screenLevelOverlay} pointerEvents="box-none">
-            {/* Left -10s Rewind Button */}
-            <TouchableOpacity
-              style={styles.screenSkipBtn}
-              onPress={(e) => handleSkipNative(-10, e)}
-              activeOpacity={0.8}
-              accessibilityLabel="Rewind 10 seconds"
-            >
-              <RotateCcw size={20} color="#ffffff" />
-              <Text style={styles.screenSkipText}>10s</Text>
-            </TouchableOpacity>
+        {/* Subtle low-fade indicator on tap (fades away smoothly, preserving video clarity) */}
+        {fadeIndicator && (
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.lowFadeIndicatorBox, { opacity: fadeIndicatorAnim }]}
+          >
+            {fadeIndicator === 'PAUSE' ? (
+              <Pause size={30} color="rgba(255, 255, 255, 0.9)" fill="rgba(255, 255, 255, 0.9)" />
+            ) : (
+              <Play size={30} color="rgba(255, 255, 255, 0.9)" fill="rgba(255, 255, 255, 0.9)" style={{ marginLeft: 3 }} />
+            )}
+          </Animated.View>
+        )}
 
-            {/* Center Play / Pause Button */}
-            <TouchableOpacity
-              style={styles.screenCenterPlayBtn}
-              onPress={handleTogglePlayNative}
-              activeOpacity={0.85}
-              accessibilityLabel={isPlaying ? 'Pause video' : 'Play video'}
-            >
-              {isPlaying ? (
-                <Pause size={28} color="#ffffff" fill="#ffffff" />
-              ) : (
-                <Play size={28} color="#ffffff" fill="#ffffff" style={{ marginLeft: 3 }} />
-              )}
-            </TouchableOpacity>
-
-            {/* Right +10s Forward Button */}
-            <TouchableOpacity
-              style={styles.screenSkipBtn}
-              onPress={(e) => handleSkipNative(10, e)}
-              activeOpacity={0.8}
-              accessibilityLabel="Forward 10 seconds"
-            >
-              <RotateCw size={20} color="#ffffff" />
-              <Text style={styles.screenSkipText}>10s</Text>
-            </TouchableOpacity>
-          </View>
+        {/* Low-fade resting play button when paused (no ugly big black circle) */}
+        {!isPlaying && !fadeIndicator && !buffering && !hasError && (
+          <TouchableOpacity
+            style={styles.lowFadeRestingPlayBtn}
+            onPress={handleTogglePlayNative}
+            activeOpacity={0.8}
+            accessibilityLabel="Play video"
+          >
+            <Play size={22} color="rgba(255, 255, 255, 0.9)" fill="rgba(255, 255, 255, 0.9)" style={{ marginLeft: 3 }} />
+          </TouchableOpacity>
         )}
 
         {/* Bottom Controls Bar */}
@@ -840,21 +883,51 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '44%',
     alignSelf: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     zIndex: 12,
   },
   skipFeedbackText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '800',
+    color: 'rgba(255, 255, 255, 0.95)',
+    fontSize: 14,
+    fontWeight: '700',
     fontVariant: ['tabular-nums'],
     letterSpacing: 0.5,
   },
+  lowFadeIndicatorBox: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: '42%',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(0, 0, 0, 0.38)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 14,
+    ...(Platform.OS === 'web' ? { backdropFilter: 'blur(8px)' } : {}),
+  } as any,
+  lowFadeRestingPlayBtn: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: '42%',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+    ...(Platform.OS === 'web' ? { backdropFilter: 'blur(6px)' } : {}),
+  } as any,
   screenLevelOverlay: {
     ...StyleSheet.absoluteFillObject,
     flexDirection: 'row',

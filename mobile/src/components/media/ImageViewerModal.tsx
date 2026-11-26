@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal,
   View,
@@ -10,9 +10,11 @@ import {
   Platform,
   Linking,
   ActivityIndicator,
+  PanResponder,
 } from 'react-native';
 import {
   X,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ZoomIn,
@@ -133,6 +135,21 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
     }
   };
 
+  // Drag / Slide down gesture to close full screen image view
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return scale === 1 && gestureState.dy > 12 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2;
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 55 || gestureState.vy > 0.45) {
+          onClose();
+        }
+      },
+    })
+  ).current;
+
   if (!visible) return null;
 
   return (
@@ -146,11 +163,13 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
         {/* Top Header Bar */}
         <View style={styles.header}>
           <TouchableOpacity
-            style={styles.headerBtn}
+            style={[styles.headerBtn, { flexDirection: 'row', width: 'auto', paddingHorizontal: 10, gap: 4 }]}
             onPress={onClose}
             activeOpacity={0.7}
+            accessibilityLabel="Slide down to close image"
           >
-            <X size={22} color="#ffffff" />
+            <ChevronDown size={20} color="#ffffff" />
+            <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '700' }}>Close</Text>
           </TouchableOpacity>
 
           <View style={styles.headerCenter}>
@@ -207,8 +226,8 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
           </View>
         </View>
 
-        {/* Main Image Stage */}
-        <View style={styles.imageStage}>
+        {/* Main Image Stage with Swipe-Down Gesture */}
+        <View style={styles.imageStage} {...panResponder.panHandlers}>
           {loading && (
             <ActivityIndicator
               size="large"
@@ -278,6 +297,12 @@ export const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
             <Text style={styles.captionText}>{caption}</Text>
           </View>
         ) : null}
+
+        {/* Slide Down Hint Button */}
+        <TouchableOpacity style={styles.slideDownPill} onPress={onClose} activeOpacity={0.8}>
+          <ChevronDown size={14} color="rgba(255, 255, 255, 0.85)" style={{ marginRight: 4 }} />
+          <Text style={styles.slideDownText}>Slide down to close</Text>
+        </TouchableOpacity>
       </View>
     </Modal>
   );
@@ -409,5 +434,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  slideDownPill: {
+    position: 'absolute',
+    bottom: 24,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(30, 41, 59, 0.75)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    zIndex: 15,
+  },
+  slideDownText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

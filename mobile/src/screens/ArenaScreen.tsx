@@ -15,6 +15,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { lostFoundService, LostFoundItem } from '../services/lostFoundService';
 import { Post, postService } from '../services/postService';
 import { CommentsModal } from '../components/feed/CommentsModal';
@@ -152,6 +153,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
     }
   }, [activeSlab, loadLfItems, loadConfessions]);
 
+  // Auto-refresh Lost & Found / Confessions when switching back to app
+  useAutoRefresh(handleRefresh, 25000);
+
   useEffect(() => {
     if (activeSlab === 'LOST_FOUND') {
       loadLfItems();
@@ -288,11 +292,12 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
     setSubmittingLf(true);
     setBanner(null);
     try {
-      const formData = new FormData();
-      formData.append('item_type', reportType);
-      formData.append('description', description.trim());
-      formData.append('location', location.trim());
+      let payload: any;
       if (itemImage) {
+        const formData = new FormData();
+        formData.append('item_type', reportType);
+        formData.append('description', description.trim());
+        formData.append('location', location.trim());
         if (Platform.OS === 'web') {
           const blob = await fetch(itemImage.uri).then((r) => r.blob());
           formData.append('image', blob, 'item_photo.jpg');
@@ -303,15 +308,22 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({
             type: 'image/jpeg',
           } as any);
         }
+        payload = formData;
+      } else {
+        payload = {
+          item_type: reportType,
+          description: description.trim(),
+          location: location.trim(),
+        };
       }
 
-      await lostFoundService.reportItem(formData);
+      await lostFoundService.reportItem(payload);
       setLfModalVisible(false);
       setDescription('');
       setLocation('');
       setItemImage(null);
       await loadLfItems();
-      const okMsg = 'Your notice is now live on campus with photo!';
+      const okMsg = 'Your notice is now live on campus!';
       setBanner({ kind: 'notice', text: okMsg });
       if (Platform.OS !== 'web') Alert.alert('Reported! 📢', okMsg);
     } catch (e: any) {

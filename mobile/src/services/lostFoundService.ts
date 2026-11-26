@@ -44,10 +44,7 @@ export const lostFoundService = {
     description: string;
     location: string;
   }) {
-    const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
-    const res = await api.post('/lost-found/create/', data, isFormData ? {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    } : undefined);
+    const res = await api.post('/lost-found/create/', data);
     return res.data;
   },
 
