@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { useTheme } from '../../theme/ThemeContext';
+import { colors } from '../../theme/colors';
 import { profileService, PublicProfile } from '../../services/profileService';
 import { chatService } from '../../services/chatService';
 import { postService, Post } from '../../services/postService';

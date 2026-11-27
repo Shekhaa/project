@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Check, RefreshCw, RotateCw, X } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
+import { colors } from '../../theme/colors';
 
 export type AspectRatioOption = 'FREE' | 'ORIGINAL' | '1:1' | '4:5' | '9:16' | '16:9';
 

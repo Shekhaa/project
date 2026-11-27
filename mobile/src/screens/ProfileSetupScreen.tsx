@@ -13,6 +13,7 @@ import {
   Modal,
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
+import { colors } from '../theme/colors';
 import { profileService } from '../services/profileService';
 import {
   authService,

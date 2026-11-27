@@ -18,6 +18,7 @@ import {
   Image,
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
+import { colors } from '../theme/colors';
 import {
   communityService,
   Community,

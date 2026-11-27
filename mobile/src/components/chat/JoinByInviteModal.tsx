@@ -10,6 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { useTheme } from '../../theme/ThemeContext';
+import { colors } from '../../theme/colors';
 import { communityService } from '../../services/communityService';
 import { chatService } from '../../services/chatService';
 import { Link2, Users, X, ArrowRight } from 'lucide-react-native';
