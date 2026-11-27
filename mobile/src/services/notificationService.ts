@@ -1,6 +1,5 @@
 import { api } from '../config/api';
 import { Platform, PermissionsAndroid } from 'react-native';
-
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type NotificationType =
@@ -10,7 +9,17 @@ export type NotificationType =
   | 'TAG'
   | 'SHARE'
   | 'MESSAGE'
-  | 'ANNOUNCEMENT';
+  | 'ANNOUNCEMENT'
+  | 'CONNECTION_REQUEST'
+  | 'CONNECTION_ACCEPTED'
+  | 'FOLLOW'
+  | 'FOLLOW_REQUEST'
+  | 'FOLLOW_ACCEPTED'
+  | 'MESSAGE_REQUEST'
+  | 'MESSAGE_REQUEST_ACCEPTED'
+  | 'ACCEPTED_ANSWER'
+  | 'CREDIBILITY_ENDORSEMENT'
+  | 'MENTION';
 
 export interface NotificationItem {
   id: number;
@@ -34,9 +43,66 @@ export interface NotificationResponse {
   results: NotificationItem[];
 }
 
+type NotificationListener = (notification: NotificationItem) => void;
+type UnreadCountListener = (count: number) => void;
+
 class NotificationService {
+  private notificationListeners: Set<NotificationListener> = new Set();
+  private unreadCountListeners: Set<UnreadCountListener> = new Set();
+  private seenNotificationIds: Set<number> = new Set();
+  private pollingTimer: any = null;
+  private isInitialFetch: boolean = true;
+  private lastUnreadCount: number = 0;
+  private activeConversationId: string | null = null;
+
   /**
-   * Fetch current user's notifications + unread count
+   * Subscribe to incoming notifications (triggers Instagram-style In-App Toast)
+   */
+  onNotification(listener: NotificationListener): () => void {
+    this.notificationListeners.add(listener);
+    return () => {
+      this.notificationListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Subscribe to unread count updates (keeps bell badge synced everywhere)
+   */
+  onUnreadCountChange(listener: UnreadCountListener): () => void {
+    this.unreadCountListeners.add(listener);
+    // Immediately emit latest known unread count
+    listener(this.lastUnreadCount);
+    return () => {
+      this.unreadCountListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Manually trigger an in-app toast notification
+   */
+  triggerInAppToast(notification: NotificationItem) {
+    this.notificationListeners.forEach((listener) => {
+      try {
+        listener(notification);
+      } catch (err) {
+        console.warn('Notification listener error:', err);
+      }
+    });
+  }
+
+  private emitUnreadCount(count: number) {
+    this.lastUnreadCount = Math.max(0, count);
+    this.unreadCountListeners.forEach((listener) => {
+      try {
+        listener(this.lastUnreadCount);
+      } catch (err) {
+        console.warn('Unread count listener error:', err);
+      }
+    });
+  }
+
+  /**
+   * Fetch current user's notifications + unread count from Django API
    */
   async getNotifications(): Promise<NotificationResponse> {
     const res = await api.get<NotificationResponse>('/notifications/');
@@ -47,14 +113,109 @@ class NotificationService {
    * Mark a single notification as read
    */
   async markAsRead(id: number): Promise<void> {
-    await api.post(`/notifications/${id}/read/`);
+    try {
+      await api.post(`/notifications/${id}/read/`);
+      this.emitUnreadCount(Math.max(0, this.lastUnreadCount - 1));
+    } catch (e) {
+      console.warn('Error marking notification read:', e);
+    }
   }
 
   /**
    * Mark all notifications as read
    */
   async markAllAsRead(): Promise<void> {
-    await api.post('/notifications/read-all/');
+    try {
+      await api.post('/notifications/read-all/');
+      this.emitUnreadCount(0);
+    } catch (e) {
+      console.warn('Error marking all notifications read:', e);
+    }
+  }
+
+  /**
+   * Start polling for notifications across the entire app
+   */
+  startPolling(intervalMs: number = 15000) {
+    this.stopPolling();
+    this.checkNotifications();
+    this.pollingTimer = setInterval(() => {
+      this.checkNotifications();
+    }, intervalMs);
+  }
+
+  /**
+   * Stop polling
+   */
+  stopPolling() {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
+    }
+    this.isInitialFetch = true;
+  }
+
+  /**
+   * Check for new notifications and dispatch in-app toasts
+   */
+  async checkNotifications(): Promise<void> {
+    try {
+      const res = await this.getNotifications();
+      const items = res.results || [];
+      const newUnreadCount = res.unread_count || 0;
+
+      if (this.isInitialFetch) {
+        // On initial fetch, record existing IDs so we do not spam toasts for historical notifications
+        items.forEach((item) => this.seenNotificationIds.add(item.id));
+        this.isInitialFetch = false;
+        this.emitUnreadCount(newUnreadCount);
+        return;
+      }
+
+      // Detect brand new notifications
+      const newItems: NotificationItem[] = [];
+      for (const item of items) {
+        if (!this.seenNotificationIds.has(item.id)) {
+          this.seenNotificationIds.add(item.id);
+          if (!item.is_read) {
+            newItems.push(item);
+          }
+        }
+      }
+
+      // Trigger In-App Toasts for fresh notifications (latest first)
+      if (newItems.length > 0) {
+        for (const item of newItems) {
+          // Skip toast if user is actively reading this exact chat conversation
+          const isCurrentChat =
+            this.activeConversationId &&
+            item.data?.conversation_id &&
+            String(item.data.conversation_id) === String(this.activeConversationId);
+
+          if (!isCurrentChat) {
+            this.triggerInAppToast(item);
+            this.showExternalNotification(item.title, item.message, item);
+          }
+        }
+      }
+
+      if (newUnreadCount !== this.lastUnreadCount) {
+        this.emitUnreadCount(newUnreadCount);
+      }
+    } catch (err) {
+      // Background check failed silently
+    }
+  }
+
+  /**
+   * Set active chat conversation so in-app toasts don't interrupt active messaging
+   */
+  setActiveConversationId(convId: string | null) {
+    this.activeConversationId = convId ? String(convId) : null;
+  }
+
+  getActiveConversationId(): string | null {
+    return this.activeConversationId;
   }
 
   /**
@@ -86,7 +247,7 @@ class NotificationService {
   }
 
   /**
-   * Show external system notification (appears outside phone screen, in notification tray / desktop / browser)
+   * Show external system notification (Web/Desktop)
    */
   async showExternalNotification(
     title: string,
@@ -97,7 +258,7 @@ class NotificationService {
     try {
       const isBlocked = await AsyncStorage.getItem('@campus_connect_notifications_blocked');
       if (isBlocked === 'true') {
-        return; // Notifications blocked by student
+        return;
       }
     } catch {
       // ignore
@@ -126,7 +287,6 @@ class NotificationService {
 
   /**
    * Registers for native push notifications. Requests runtime permission on Android 13+.
-   * Completely safe and non-crashing in standalone APKs.
    */
   async registerForNativePushNotifications(): Promise<string | null> {
     try {
@@ -139,21 +299,22 @@ class NotificationService {
    * Syncs the device push token with the Django backend devices API
    */
   async syncPushTokenWithBackend(pushToken: string): Promise<void> {
-    return;
-  }
-
-  private activeConversationId: string | null = null;
-
-  setActiveConversationId(convId: string | null) {
-    this.activeConversationId = convId ? String(convId) : null;
-  }
-
-  getActiveConversationId(): string | null {
-    return this.activeConversationId;
+    if (!pushToken) return;
+    try {
+      await api.post('/devices/register/', {
+        device_uuid: `mobile_${Platform.OS}_${Date.now()}`,
+        device_name: `${Platform.OS === 'android' ? 'Android Device' : 'iOS Device'}`,
+        os: Platform.OS,
+        push_token: pushToken,
+        is_primary: true,
+      });
+    } catch (e) {
+      console.warn('Failed to register device push token with backend:', e);
+    }
   }
 
   /**
-   * Attaches lockscreen tap listener to deep link into posts or chats
+   * Attaches lockscreen tap listener
    */
   attachNativeResponseListener(onNotificationTap: (payload: any) => void) {
     return () => {};

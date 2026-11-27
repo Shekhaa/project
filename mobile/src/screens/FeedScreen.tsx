@@ -104,6 +104,8 @@ interface FeedScreenProps {
   composerTrigger?: number;
   feedRefreshTrigger?: number;
   isProfileModalOpen?: boolean;
+  targetPostId?: number | null;
+  onClearTargetPost?: () => void;
   onNavigateToChat?: (conversationId?: string | number) => void;
   onNavigateToArena?: () => void;
   onNavigateToCommunities?: () => void;
@@ -118,6 +120,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   composerTrigger,
   feedRefreshTrigger,
   isProfileModalOpen = false,
+  targetPostId,
+  onClearTargetPost,
   onNavigateToChat,
   onNavigateToArena,
   onNavigateToCommunities,
@@ -397,43 +401,40 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
     [posts, onNavigateToChat, onNavigateToArena, onNavigateToCommunities, onOpenProfile]
   );
 
-  const syncNotifications = useCallback(async () => {
-    if (!currentUser) return;
-    try {
-      const res = await notificationService.getNotifications();
-      const newUnread = res.unread_count || 0;
-      if (newUnread > unreadNotifCount && res.results && res.results.length > 0) {
-        const latest = res.results[0];
-        const openConvId = notificationService.getActiveConversationId();
-        const isCurrentChatNotif =
-          openConvId &&
-          latest.data?.conversation_id &&
-          String(latest.data.conversation_id) === String(openConvId);
-
-        if (!latest.is_read && !isCurrentChatNotif) {
-          notificationService.showExternalNotification(
-            latest.title,
-            latest.message,
-            latest,
-            (notifData) => handleSelectNotification(notifData)
-          );
-        }
+  // Deep link to target post from notification banner tap
+  useEffect(() => {
+    if (targetPostId) {
+      const postId = Number(targetPostId);
+      const found = posts.find((p) => p.id === postId);
+      if (found) {
+        setActiveCommentsPost(found);
+      } else {
+        api
+          .get(`/posts/${postId}/`)
+          .then((res) => {
+            if (res.data) {
+              setActiveCommentsPost(res.data);
+            }
+          })
+          .catch(() => {});
       }
-      setUnreadNotifCount(newUnread);
-    } catch {
-      // background sync fail silently
+      onClearTargetPost?.();
     }
-  }, [currentUser, unreadNotifCount, handleSelectNotification]);
+  }, [targetPostId, posts, onClearTargetPost]);
 
+  // Subscribe to real-time notification unread badge count updates
   useEffect(() => {
     if (!currentUser) {
       setUnreadNotifCount(0);
       return;
     }
-    syncNotifications();
-    const interval = setInterval(syncNotifications, 45000);
-    return () => clearInterval(interval);
-  }, [currentUser, syncNotifications]);
+    const unsubscribe = notificationService.onUnreadCountChange((count) => {
+      setUnreadNotifCount(count);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [currentUser]);
 
   // Trigger from navigation/header
   useEffect(() => {

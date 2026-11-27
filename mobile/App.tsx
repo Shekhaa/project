@@ -54,7 +54,7 @@ import {
   computeCanParticipate,
   consumeMsOAuthMode,
 } from './src/services/authService';
-import { notificationService } from './src/services/notificationService';
+import { notificationService, NotificationItem } from './src/services/notificationService';
 import { backHandlerRegistry } from './src/services/backHandlerRegistry';
 import { setAuthExpiredListener } from './src/config/api';
 import { showCrossPlatformAlert } from './src/utils/mediaUtils';
@@ -67,6 +67,7 @@ import { LostFoundScreen } from './src/screens/LostFoundScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { StudentProfileModal } from './src/components/profile/StudentProfileModal';
 import { VerificationGateModal } from './src/components/common/VerificationGateModal';
+import { InAppNotificationBanner } from './src/components/notifications/InAppNotificationBanner';
 
 type TabType = 'FEED' | 'COMMUNITIES' | 'CHAT' | 'LOST_FOUND' | 'PROFILE';
 
@@ -82,6 +83,7 @@ function AppMain() {
   const [authModalVisible, setAuthModalVisible] = useState(false);
   const [verifyModalVisible, setVerifyModalVisible] = useState(false);
   const [verifyReason, setVerifyReason] = useState<string | undefined>(undefined);
+  const [targetFeedPostId, setTargetFeedPostId] = useState<number | null>(null);
 
   const canParticipate = computeCanParticipate(currentUser);
 
@@ -156,24 +158,40 @@ function AppMain() {
     };
   }, []);
 
-  // Register and listen for native push notifications when signed in
+  // Register, start polling and listen for native push/in-app notifications when signed in
   useEffect(() => {
     if (currentUser) {
       notificationService.registerForNativePushNotifications().catch(() => {});
+      notificationService.startPolling(12000);
       const unsubscribe = notificationService.attachNativeResponseListener((data) => {
         if (data?.conversation_id) {
+          setSelectedCommunityConv({ id: String(data.conversation_id) });
           navigateToTab('CHAT');
         } else if (data?.post_id) {
+          setTargetFeedPostId(Number(data.post_id));
           navigateToTab('FEED');
         }
       });
       return () => {
+        notificationService.stopPolling();
         if (typeof unsubscribe === 'function') {
           unsubscribe();
         }
       };
+    } else {
+      notificationService.stopPolling();
     }
   }, [currentUser]);
+
+  const handleNotificationBannerPress = (notif: NotificationItem) => {
+    if (notif.data?.conversation_id) {
+      setSelectedCommunityConv({ id: String(notif.data.conversation_id) });
+      navigateToTab('CHAT');
+    } else if (notif.data?.post_id) {
+      setTargetFeedPostId(Number(notif.data.post_id));
+      navigateToTab('FEED');
+    }
+  };
 
   const checkInitialSession = async () => {
     try {
@@ -339,6 +357,9 @@ function AppMain() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
 
+      {/* Floating Instagram-Style In-App Notification Toast */}
+      <InAppNotificationBanner onPressNotification={handleNotificationBannerPress} />
+
       {/* Screen Content */}
       <View style={styles.mainContent}>
         {displayedTab === 'FEED' && (
@@ -347,6 +368,8 @@ function AppMain() {
             feedRefreshTrigger={feedRefreshTrigger}
             currentUser={currentUser}
             canParticipate={canParticipate}
+            targetPostId={targetFeedPostId}
+            onClearTargetPost={() => setTargetFeedPostId(null)}
             onRequireAuth={handleRequireAuth}
             onRequireVerify={handleRequireVerify}
             onNavigateToChat={(convId) => {
