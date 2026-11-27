@@ -109,6 +109,7 @@ interface FeedScreenProps {
   onNavigateToChat?: (conversationId?: string | number) => void;
   onNavigateToArena?: () => void;
   onNavigateToCommunities?: () => void;
+  onNavigateToNotification?: (notif: NotificationItem) => void;
   onOpenProfile?: (userId: number) => void;
 }
 
@@ -125,6 +126,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   onNavigateToChat,
   onNavigateToArena,
   onNavigateToCommunities,
+  onNavigateToNotification,
   onOpenProfile,
 }) => {
   const { width } = useWindowDimensions();
@@ -372,6 +374,10 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
   const handleSelectNotification = useCallback(
     async (notif: NotificationItem) => {
       setNotificationsVisible(false);
+      if (onNavigateToNotification) {
+        onNavigateToNotification(notif);
+        return;
+      }
       if (notif.data?.post_id) {
         const postId = Number(notif.data.post_id);
         const found = posts.find((p) => p.id === postId);
@@ -398,7 +404,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
         if (uid) onOpenProfile?.(uid);
       }
     },
-    [posts, onNavigateToChat, onNavigateToArena, onNavigateToCommunities, onOpenProfile]
+    [posts, onNavigateToNotification, onNavigateToChat, onNavigateToArena, onNavigateToCommunities, onOpenProfile]
   );
 
   // Deep link to target post from notification banner tap

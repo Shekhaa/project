@@ -8,23 +8,23 @@ const getBaseUrl = (): string => {
       const stored = window.localStorage?.getItem('custom_backend_url');
       if (stored) return stored;
     } catch {}
+    if (window.location?.hostname) {
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return `http://${window.location.hostname}:8000/api`;
+      }
+      // Deployed on Vercel / production web domain: use same-origin /api proxy so Render URL is never exposed
+      return '/api';
+    }
   }
   const envApiUrl = (process.env as any)?.EXPO_PUBLIC_API_URL;
   if (envApiUrl) {
     return envApiUrl;
   }
-  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.hostname) {
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return `http://${window.location.hostname}:8000/api`;
-    }
-    // Deployed on Vercel or public domain -> use live Render API
-    return 'https://campus-connect-api-us3i.onrender.com/api';
-  }
   return 'https://campus-connect-api-us3i.onrender.com/api';
 };
 
 export const API_BASE_URL = getBaseUrl();
-export const BACKEND_ROOT_URL = API_BASE_URL.replace(/\/api\/?$/, '');
+export const BACKEND_ROOT_URL = API_BASE_URL === '/api' ? '' : API_BASE_URL.replace(/\/api\/?$/, '');
 
 /**
  * Resolves any relative media/document path to the absolute backend host URL.

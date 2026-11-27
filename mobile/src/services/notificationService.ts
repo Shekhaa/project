@@ -19,7 +19,9 @@ export type NotificationType =
   | 'MESSAGE_REQUEST_ACCEPTED'
   | 'ACCEPTED_ANSWER'
   | 'CREDIBILITY_ENDORSEMENT'
-  | 'MENTION';
+  | 'MENTION'
+  | 'LOST_FOUND'
+  | 'SYSTEM';
 
 export interface NotificationItem {
   id: number;
@@ -48,6 +50,7 @@ type UnreadCountListener = (count: number) => void;
 
 class NotificationService {
   private notificationListeners: Set<NotificationListener> = new Set();
+  private tapListeners: Set<NotificationListener> = new Set();
   private unreadCountListeners: Set<UnreadCountListener> = new Set();
   private seenNotificationIds: Set<number> = new Set();
   private pollingTimer: any = null;
@@ -75,6 +78,27 @@ class NotificationService {
     return () => {
       this.unreadCountListeners.delete(listener);
     };
+  }
+
+  onNotificationTap(listener: NotificationListener): () => void {
+    this.tapListeners.add(listener);
+    return () => {
+      this.tapListeners.delete(listener);
+    };
+  }
+
+  emitNotificationTap(notification: NotificationItem) {
+    if (!notification) return;
+    if (notification.id && !notification.is_read) {
+      this.markAsRead(notification.id).catch(() => {});
+    }
+    this.tapListeners.forEach((listener) => {
+      try {
+        listener(notification);
+      } catch (err) {
+        console.warn('Notification tap listener error:', err);
+      }
+    });
   }
 
   /**
@@ -194,7 +218,9 @@ class NotificationService {
 
           if (!isCurrentChat) {
             this.triggerInAppToast(item);
-            this.showExternalNotification(item.title, item.message, item);
+            this.showExternalNotification(item.title, item.message, item, (tappedItem) => {
+              this.emitNotificationTap(tappedItem);
+            });
           }
         }
       }
@@ -270,12 +296,16 @@ class NotificationService {
           const notif = new window.Notification(title, {
             body,
             icon: 'https://img.icons8.com/fluency/96/bell.png',
-            tag: 'campus-connect-notif',
+            tag: data?.id ? `campus-connect-notif-${data.id}` : 'campus-connect-notif',
           });
           notif.onclick = (e) => {
             e.preventDefault();
             window.focus();
-            if (onClick) onClick(data);
+            if (onClick) {
+              onClick(data);
+            } else if (data) {
+              this.emitNotificationTap(data);
+            }
             notif.close();
           };
         } catch (e) {
@@ -291,6 +321,17 @@ class NotificationService {
   async registerForNativePushNotifications(): Promise<string | null> {
     try {
       await this.requestPushPermission();
+    } catch {}
+    try {
+      const Notifications = require('expo-notifications');
+      if (Notifications?.getExpoPushTokenAsync) {
+        const tokenObj = await Notifications.getExpoPushTokenAsync();
+        const pushToken = tokenObj?.data;
+        if (pushToken) {
+          await this.syncPushTokenWithBackend(pushToken);
+          return pushToken;
+        }
+      }
     } catch {}
     return null;
   }
@@ -314,10 +355,36 @@ class NotificationService {
   }
 
   /**
-   * Attaches lockscreen tap listener
+   * Attaches OS notification tap listener (Web Notification.onclick + Native lockscreen push)
    */
   attachNativeResponseListener(onNotificationTap: (payload: any) => void) {
-    return () => {};
+    const unsubWeb = this.onNotificationTap((notif) => onNotificationTap(notif));
+    let nativeSub: { remove?: () => void } | null = null;
+
+    try {
+      const Notifications = require('expo-notifications');
+      if (Notifications?.addNotificationResponseReceivedListener) {
+        nativeSub = Notifications.addNotificationResponseReceivedListener((response: any) => {
+          const data = response?.notification?.request?.content?.data;
+          if (data) onNotificationTap(data);
+        });
+      }
+      if (Notifications?.getLastNotificationResponseAsync) {
+        Notifications.getLastNotificationResponseAsync()
+          .then((response: any) => {
+            const data = response?.notification?.request?.content?.data;
+            if (data) onNotificationTap(data);
+          })
+          .catch(() => {});
+      }
+    } catch {}
+
+    return () => {
+      unsubWeb();
+      try {
+        nativeSub?.remove?.();
+      } catch {}
+    };
   }
 }
 

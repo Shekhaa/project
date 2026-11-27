@@ -24,6 +24,8 @@ interface SocialListModalProps {
   type: SocialModalType;
   targetUserId: number;
   isSelf: boolean;
+  initialFollowersMode?: 'list' | 'requests';
+  initialConnectionsTab?: 'connected' | 'received' | 'sent';
   onClose: () => void;
   onSelectUser: (userId: number) => void;
 }
@@ -33,14 +35,27 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
   type,
   targetUserId,
   isSelf,
+  initialFollowersMode,
+  initialConnectionsTab,
   onClose,
   onSelectUser,
 }) => {
   const { colors: themeColors } = useTheme();
   // Connections tab state: 'connected' | 'received' | 'sent'
-  const [connectionsTab, setConnectionsTab] = useState<'connected' | 'received' | 'sent'>('connected');
+  const [connectionsTab, setConnectionsTab] = useState<'connected' | 'received' | 'sent'>(
+    initialConnectionsTab || 'connected'
+  );
   // Followers view mode: 'list' | 'requests'
-  const [followersMode, setFollowersMode] = useState<'list' | 'requests'>('list');
+  const [followersMode, setFollowersMode] = useState<'list' | 'requests'>(
+    initialFollowersMode || 'list'
+  );
+
+  useEffect(() => {
+    if (visible) {
+      if (initialFollowersMode) setFollowersMode(initialFollowersMode);
+      if (initialConnectionsTab) setConnectionsTab(initialConnectionsTab);
+    }
+  }, [visible, initialFollowersMode, initialConnectionsTab]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);

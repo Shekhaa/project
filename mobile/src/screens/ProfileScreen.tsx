@@ -111,6 +111,13 @@ interface ProfileScreenProps {
   onUserSwitched: (newUser: User) => void;
   onLogout: () => void;
   onStartCall?: (receiverId: number, receiverName: string, callType: 'AUDIO' | 'VIDEO') => void;
+  initialSocialTarget?: {
+    type: SocialModalType;
+    followersMode?: 'list' | 'requests';
+    connectionsTab?: 'connected' | 'received' | 'sent';
+    nonce: number;
+  } | null;
+  onClearInitialSocialTarget?: () => void;
 }
 
 type SettingsSection = 'PROFILE' | 'PASSWORD' | 'PREFERENCES' | 'AUDIT';
@@ -122,6 +129,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onUserSwitched,
   onLogout,
   onStartCall,
+  initialSocialTarget,
+  onClearInitialSocialTarget,
 }) => {
   const { colors, themeMode, setThemeMode, isDark } = useTheme();
   const effectiveCanParticipate =
@@ -140,6 +149,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [socialModalVisible, setSocialModalVisible] = useState(false);
   const [socialModalType, setSocialModalType] = useState<SocialModalType>('followers');
   const [socialModalUserId, setSocialModalUserId] = useState<number>(currentUser.id);
+  const [socialFollowersMode, setSocialFollowersMode] = useState<'list' | 'requests' | undefined>(undefined);
+  const [socialConnectionsTab, setSocialConnectionsTab] = useState<'connected' | 'received' | 'sent' | undefined>(undefined);
+
+  useEffect(() => {
+    if (initialSocialTarget) {
+      setSocialModalType(initialSocialTarget.type);
+      setSocialModalUserId(currentUser.id);
+      setSocialFollowersMode(initialSocialTarget.followersMode);
+      setSocialConnectionsTab(initialSocialTarget.connectionsTab);
+      setSocialModalVisible(true);
+      onClearInitialSocialTarget?.();
+    }
+  }, [initialSocialTarget?.nonce]);
 
   // Student Profile Modal State
   const [viewingStudentId, setViewingStudentId] = useState<number | null>(null);
@@ -2889,8 +2911,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         type={socialModalType}
         targetUserId={socialModalUserId}
         isSelf={socialModalUserId === currentUser.id}
+        initialFollowersMode={socialFollowersMode}
+        initialConnectionsTab={socialConnectionsTab}
         onClose={() => {
           setSocialModalVisible(false);
+          setSocialFollowersMode(undefined);
+          setSocialConnectionsTab(undefined);
           // Refresh own profile counts when closing social list
           profileService.getMyProfile().then((data) => {
             if (data) setProfile(data);

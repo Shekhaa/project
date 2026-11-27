@@ -69,6 +69,8 @@ interface ChatScreenProps {
   onRequireVerify?: (reason?: string) => void;
   initialConversation?: Conversation | null;
   onClearInitialConversation?: () => void;
+  openRequestsTrigger?: number;
+  onClearOpenRequests?: () => void;
   onOpenProfile?: (userId: number) => void;
   onStartCall?: (receiverId: number, receiverName: string, callType: any) => Promise<void> | void;
 }
@@ -96,6 +98,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   onRequireVerify,
   initialConversation,
   onClearInitialConversation,
+  openRequestsTrigger,
+  onClearOpenRequests,
   onOpenProfile,
 }) => {
   const { colors, isDark } = useTheme();
@@ -273,10 +277,30 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
   useEffect(() => {
     if (initialConversation) {
-      setActiveConv(initialConversation);
+      const matched = conversations.find((c) => String(c.id) === String(initialConversation.id));
+      setActiveConv(matched || initialConversation);
       if (onClearInitialConversation) onClearInitialConversation();
     }
   }, [initialConversation]);
+
+  // Hydrate stub conversation metadata (e.g. from notification tap) once inbox loads
+  useEffect(() => {
+    if (activeConv && !activeConv.name && !activeConv.other_user && conversations.length > 0) {
+      const matched = conversations.find((c) => String(c.id) === String(activeConv.id));
+      if (matched) {
+        setActiveConv(matched);
+      }
+    }
+  }, [conversations, activeConv?.id]);
+
+  // Open Message Requests modal directly when triggered by notification tap
+  useEffect(() => {
+    if (openRequestsTrigger && openRequestsTrigger > 0) {
+      setActiveConv(null);
+      setMessageRequestsVisible(true);
+      onClearOpenRequests?.();
+    }
+  }, [openRequestsTrigger]);
 
   // Clean up active voice recording/playback & banners when switching conversations
   useEffect(() => {

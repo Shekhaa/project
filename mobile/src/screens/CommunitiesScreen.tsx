@@ -73,6 +73,13 @@ interface CommunitiesScreenProps {
   onOpenCommunityChat?: (conversation: any) => void;
   onOpenPostDetail?: (postId: number) => void;
   onOpenProfile?: (userId: number) => void;
+  initialCommunityTarget?: {
+    slug?: string;
+    communityId?: number;
+    tab?: 'CHAT' | 'DISCUSS';
+    nonce: number;
+  } | null;
+  onClearInitialCommunityTarget?: () => void;
 }
 
 const extractApiError = (err: any, fallback: string): string => {
@@ -92,6 +99,8 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   onOpenCommunityChat,
   onOpenPostDetail,
   onOpenProfile,
+  initialCommunityTarget,
+  onClearInitialCommunityTarget,
 }) => {
   const { colors, isDark } = useTheme();
   // Discovery State
@@ -305,6 +314,33 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
   useEffect(() => {
     loadCommunities();
   }, []);
+
+  // Deep-link directly to a specific community & tab from notification tap
+  useEffect(() => {
+    if (!initialCommunityTarget) return;
+    const { slug, communityId, tab } = initialCommunityTarget;
+    const resolveTarget = async () => {
+      try {
+        let target: Community | undefined;
+        if (slug) {
+          target = communities.find((c) => c.slug === slug);
+          if (!target) {
+            target = await communityService.getCommunityDetail(slug);
+          }
+        } else if (communityId) {
+          target = communities.find((c) => c.id === Number(communityId));
+        }
+        if (target) {
+          setActiveCommunity(target);
+          if (tab) setActiveTab(tab);
+        }
+      } catch {
+      } finally {
+        onClearInitialCommunityTarget?.();
+      }
+    };
+    resolveTarget();
+  }, [initialCommunityTarget?.nonce]);
 
   // Back button handling in CommunitiesScreen: Step back from active community to list, or close modals cleanly in 1 press
   useEffect(() => {

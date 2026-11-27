@@ -84,6 +84,19 @@ function AppMain() {
   const [verifyModalVisible, setVerifyModalVisible] = useState(false);
   const [verifyReason, setVerifyReason] = useState<string | undefined>(undefined);
   const [targetFeedPostId, setTargetFeedPostId] = useState<number | null>(null);
+  const [openChatRequestsTrigger, setOpenChatRequestsTrigger] = useState(0);
+  const [initialCommunityTarget, setInitialCommunityTarget] = useState<{
+    slug?: string;
+    communityId?: number;
+    tab?: 'CHAT' | 'DISCUSS';
+    nonce: number;
+  } | null>(null);
+  const [profileSocialTarget, setProfileSocialTarget] = useState<{
+    type: 'followers' | 'connections';
+    followersMode?: 'list' | 'requests';
+    connectionsTab?: 'connected' | 'received' | 'sent';
+    nonce: number;
+  } | null>(null);
 
   const canParticipate = computeCanParticipate(currentUser);
 
@@ -158,19 +171,13 @@ function AppMain() {
     };
   }, []);
 
-  // Register, start polling and listen for native push/in-app notifications when signed in
+  // Register, start polling and listen for native/web OS push notification taps when signed in
   useEffect(() => {
     if (currentUser) {
       notificationService.registerForNativePushNotifications().catch(() => {});
       notificationService.startPolling(12000);
-      const unsubscribe = notificationService.attachNativeResponseListener((data) => {
-        if (data?.conversation_id) {
-          setSelectedCommunityConv({ id: String(data.conversation_id) });
-          navigateToTab('CHAT');
-        } else if (data?.post_id) {
-          setTargetFeedPostId(Number(data.post_id));
-          navigateToTab('FEED');
-        }
+      const unsubscribe = notificationService.attachNativeResponseListener((payload) => {
+        handleNotificationNavigation(payload);
       });
       return () => {
         notificationService.stopPolling();
@@ -183,14 +190,114 @@ function AppMain() {
     }
   }, [currentUser]);
 
-  const handleNotificationBannerPress = (notif: NotificationItem) => {
-    if (notif.data?.conversation_id) {
-      setSelectedCommunityConv({ id: String(notif.data.conversation_id) });
+  const handleNotificationNavigation = (rawPayload: any) => {
+    if (!rawPayload) return;
+    const notifType: string = rawPayload.notification_type || '';
+    const data: Record<string, any> =
+      rawPayload.data && typeof rawPayload.data === 'object' ? rawPayload.data : rawPayload;
+
+    // 1. Direct Message Requests -> open Chat tab + Message Requests modal
+    if (notifType === 'MESSAGE_REQUEST') {
+      setOpenChatRequestsTrigger((prev) => prev + 1);
       navigateToTab('CHAT');
-    } else if (notif.data?.post_id) {
-      setTargetFeedPostId(Number(notif.data.post_id));
-      navigateToTab('FEED');
+      return;
     }
+
+    // 2. Direct Messages, Group Chats, Accepted Message Requests
+    if (
+      notifType === 'MESSAGE' ||
+      notifType === 'MESSAGE_REQUEST_ACCEPTED' ||
+      data?.conversation_id
+    ) {
+      if (data?.conversation_id) {
+        setSelectedCommunityConv({ id: String(data.conversation_id) });
+      }
+      navigateToTab('CHAT');
+      return;
+    }
+
+    // 3. Follow Requests -> Profile tab + Follow Requests list
+    if (notifType === 'FOLLOW_REQUEST') {
+      setProfileSocialTarget({
+        type: 'followers',
+        followersMode: 'requests',
+        nonce: Date.now(),
+      });
+      navigateToTab('PROFILE');
+      return;
+    }
+
+    // 4. Connection Requests -> Profile tab + Received Connection Requests tab
+    if (notifType === 'CONNECTION_REQUEST') {
+      setProfileSocialTarget({
+        type: 'connections',
+        connectionsTab: 'received',
+        nonce: Date.now(),
+      });
+      navigateToTab('PROFILE');
+      return;
+    }
+
+    // 5. Followers, Accepted Connections, Endorsements -> Open sender/user profile
+    if (
+      notifType === 'FOLLOW' ||
+      notifType === 'FOLLOW_ACCEPTED' ||
+      notifType === 'CONNECTION_ACCEPTED' ||
+      notifType === 'CREDIBILITY_ENDORSEMENT'
+    ) {
+      const uid = Number(data?.user_id || data?.sender_id || data?.follower_id || rawPayload?.sender_id);
+      if (uid) {
+        setViewingProfileUserId(uid);
+        return;
+      }
+      navigateToTab('PROFILE');
+      return;
+    }
+
+    // 6. Lost & Found / Arena
+    if (notifType === 'LOST_FOUND' || data?.lost_found_id) {
+      navigateToTab('LOST_FOUND');
+      return;
+    }
+
+    // 7. Community Discussions, Replies, Accepted Answers, Community Tags
+    if (
+      data?.community_slug ||
+      data?.community_id ||
+      data?.discussion_id ||
+      (notifType === 'ACCEPTED_ANSWER' && !data?.post_id)
+    ) {
+      setInitialCommunityTarget({
+        slug: data?.community_slug ? String(data.community_slug) : undefined,
+        communityId: data?.community_id ? Number(data.community_id) : undefined,
+        tab: 'DISCUSS',
+        nonce: Date.now(),
+      });
+      navigateToTab('COMMUNITIES');
+      return;
+    }
+
+    // 8. Feed Posts (Likes, Comments, Replies, Tags, Mentions, Shares, Poll Votes)
+    if (data?.post_id) {
+      setTargetFeedPostId(Number(data.post_id));
+      navigateToTab('FEED');
+      return;
+    }
+
+    // 9. Profile / Verification / System fallback
+    const titleLower = String(rawPayload?.title || '').toLowerCase();
+    if (notifType === 'SYSTEM' || titleLower.includes('id') || titleLower.includes('verified')) {
+      navigateToTab('PROFILE');
+      return;
+    }
+
+    const fallbackUid = Number(data?.user_id || data?.sender_id || data?.follower_id);
+    if (fallbackUid) {
+      setViewingProfileUserId(fallbackUid);
+      return;
+    }
+
+    navigateToTab('FEED');
   };
 
   const checkInitialSession = async () => {
@@ -358,7 +465,7 @@ function AppMain() {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
 
       {/* Floating Instagram-Style In-App Notification Toast */}
-      <InAppNotificationBanner onPressNotification={handleNotificationBannerPress} />
+      <InAppNotificationBanner onPressNotification={handleNotificationNavigation} />
 
       {/* Screen Content */}
       <View style={styles.mainContent}>
@@ -384,6 +491,7 @@ function AppMain() {
             }}
             onNavigateToArena={() => navigateToTab('LOST_FOUND')}
             onNavigateToCommunities={() => navigateToTab('COMMUNITIES')}
+            onNavigateToNotification={handleNotificationNavigation}
             isProfileModalOpen={!!viewingProfileUserId}
             onOpenProfile={(uid) => {
               if (!currentUser) {
@@ -400,6 +508,8 @@ function AppMain() {
             canParticipate={canParticipate}
             onRequireVerify={handleRequireVerify}
             onOpenProfile={(uid) => setViewingProfileUserId(uid)}
+            initialCommunityTarget={initialCommunityTarget}
+            onClearInitialCommunityTarget={() => setInitialCommunityTarget(null)}
           />
         )}
         {displayedTab === 'CHAT' && currentUser && (
@@ -409,6 +519,8 @@ function AppMain() {
             onRequireVerify={handleRequireVerify}
             initialConversation={selectedCommunityConv}
             onClearInitialConversation={() => setSelectedCommunityConv(null)}
+            openRequestsTrigger={openChatRequestsTrigger}
+            onClearOpenRequests={() => setOpenChatRequestsTrigger(0)}
             onOpenProfile={(uid) => setViewingProfileUserId(uid)}
           />
         )}
@@ -434,6 +546,8 @@ function AppMain() {
             onRequireVerify={handleRequireVerify}
             onUserSwitched={handleUserSwitched}
             onLogout={handleLogout}
+            initialSocialTarget={profileSocialTarget}
+            onClearInitialSocialTarget={() => setProfileSocialTarget(null)}
           />
         )}
       </View>
