@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Platform,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import {
   FileText,
@@ -19,6 +20,7 @@ import {
 import { AttachmentItem } from '../../services/chatService';
 import { useTheme } from '../../theme/ThemeContext';
 import { showCrossPlatformAlert } from '../../utils/mediaUtils';
+import { getFullMediaUrl } from '../../config/api';
 import {
   resolveAndCacheDocument,
   isDocumentCachedLocally,
@@ -178,6 +180,16 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
       }
     } catch (err) {
       console.warn('Error handling document action:', err);
+      const rawTargetUrl = attachment.id
+        ? `/api/attachments/${attachment.id}/download/`
+        : (attachment.download_url || attachment.file_url);
+      if (rawTargetUrl) {
+        try {
+          const full = getFullMediaUrl(rawTargetUrl);
+          await Linking.openURL(full);
+          return;
+        } catch {}
+      }
       showCrossPlatformAlert('Document Unavailable', 'Could not load this document right now. Please try again later.');
     } finally {
       setDownloading(false);

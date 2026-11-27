@@ -12,6 +12,7 @@ import {
   LogBox,
   Modal,
 } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 
 // Suppress React Native Web synthetic responder warnings during DevTools touch emulation & file pickers
@@ -852,9 +853,11 @@ class RootErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundar
 export default function App() {
   return (
     <RootErrorBoundary>
-      <ThemeProvider>
-        <AppMain />
-      </ThemeProvider>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <AppMain />
+        </ThemeProvider>
+      </SafeAreaProvider>
     </RootErrorBoundary>
   );
 }

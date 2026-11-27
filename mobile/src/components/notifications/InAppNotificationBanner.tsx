@@ -3,12 +3,12 @@ import {
   Animated,
   PanResponder,
   Platform,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Heart,
   MessageCircle,
@@ -32,7 +32,6 @@ interface InAppNotificationBannerProps {
 export const InAppNotificationBanner: React.FC<InAppNotificationBannerProps> = ({
   onPressNotification,
 }) => {
-  const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
 
   const [currentNotif, setCurrentNotif] = useState<NotificationItem | null>(null);
@@ -206,7 +205,10 @@ export const InAppNotificationBanner: React.FC<InAppNotificationBannerProps> = (
     }
   };
 
-  const topInset = Math.max(insets.top, Platform.OS === 'android' ? 12 : 24);
+  const topInset =
+    Platform.OS === 'android'
+      ? (StatusBar.currentHeight ? StatusBar.currentHeight + 4 : 14)
+      : 24;
 
   return (
     <Animated.View
