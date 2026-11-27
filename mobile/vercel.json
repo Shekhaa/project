@@ -8,6 +8,10 @@
       "destination": "https://campus-connect-api-us3i.onrender.com/api/:path*"
     },
     {
+      "source": "/media/:path*",
+      "destination": "https://campus-connect-api-us3i.onrender.com/media/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
