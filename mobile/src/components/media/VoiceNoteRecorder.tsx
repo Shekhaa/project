@@ -420,9 +420,9 @@ export const VoiceRecordingBar: React.FC<VoiceRecordingBarProps> = ({
             accessibilityLabel="Send voice note"
           >
             {isFinalizing ? (
-              <ActivityIndicator size="small" color="#ffffff" />
+              <ActivityIndicator size="small" color={colors.onPrimary} />
             ) : (
-              <Send size={15} color="#ffffff" />
+              <Send size={15} color={colors.onPrimary} />
             )}
           </TouchableOpacity>
         )}

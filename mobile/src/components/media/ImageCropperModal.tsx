@@ -628,14 +628,14 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
               style={[styles.headerBtn, { backgroundColor: colors.primary }]}
               accessibilityLabel="Apply crop"
             >
-              <Check size={20} color="#ffffff" />
+              <Check size={20} color={colors.onPrimary} />
             </TouchableOpacity>
           </View>
         </View>
 
         {feedbackNotice && (
           <View style={[styles.noticeToast, { backgroundColor: colors.primary }]}>
-            <Text style={styles.noticeText}>{feedbackNotice}</Text>
+            <Text style={[styles.noticeText, { color: colors.onPrimary }]}>{feedbackNotice}</Text>
           </View>
         )}
 
@@ -834,7 +834,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   noticeText: {
-    color: '#ffffff',
+    color: colors.onPrimary,
     fontSize: 12,
     fontWeight: '600',
   },

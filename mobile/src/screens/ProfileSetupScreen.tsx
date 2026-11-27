@@ -890,7 +890,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
             <Switch
               value={!showGender}
               onValueChange={(val) => setShowGender(!val)}
-              trackColor={{ false: isDark ? '#262626' : '#cbd5e1', true: colors.primary }}
+              trackColor={{ false: isDark ? '#262626' : '#cbd5e1', true: colors.brandAccent }}
               thumbColor="#ffffff"
             />
           </View>
@@ -1503,7 +1503,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   submitBtnText: {
-    color: '#ffffff',
+    color: colors.onPrimary,
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: -0.2,
@@ -1704,7 +1704,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   msTokenConfirmBtnText: {
-    color: '#ffffff',
+    color: colors.onPrimary,
     fontSize: 12.5,
     fontWeight: '700',
   },

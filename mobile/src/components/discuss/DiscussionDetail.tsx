@@ -809,7 +809,7 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
                 onPress={() => onRequireVerify?.('Verify your campus ID or enter an invite code to reply in discussions.')}
                 activeOpacity={0.85}
               >
-                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Verify ID</Text>
+                <Text style={{ color: colors.onPrimary, fontSize: 12, fontWeight: '700' }}>Verify ID</Text>
               </TouchableOpacity>
             </View>
           ) : (

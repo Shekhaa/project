@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
     backgroundColor: colors.primary,
-    color: '#fff',
+    color: colors.onPrimary,
     fontSize: 32,
     fontWeight: '800',
     textAlign: 'center',
@@ -450,7 +450,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   audioAvatarInitial: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontSize: 42,
     fontWeight: '800',
   },

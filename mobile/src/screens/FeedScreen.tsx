@@ -1066,10 +1066,12 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
           Be the first to share an announcement, ask a question, or upload study notes!
         </Text>
         <TouchableOpacity
-          style={styles.emptyCta}
+          style={[styles.emptyCta, { backgroundColor: colors.primary }]}
           onPress={handleOpenComposer}
         >
-          <Text style={styles.emptyCtaText}>{!currentUser ? 'Sign In to Post' : 'Create First Post'}</Text>
+          <Text style={[styles.emptyCtaText, { color: colors.onPrimary }]}>
+            {!currentUser ? 'Sign In to Post' : 'Create First Post'}
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -1125,10 +1127,10 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({
             <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>Could not load campus updates</Text>
             <Text style={[styles.emptySub, { color: colors.textSecondary }]}>{error}</Text>
             <TouchableOpacity
-              style={styles.emptyCta}
+              style={[styles.emptyCta, { backgroundColor: colors.primary }]}
               onPress={() => loadData(false)}
             >
-              <Text style={styles.emptyCtaText}>🔄 Retry Sync</Text>
+              <Text style={[styles.emptyCtaText, { color: colors.onPrimary }]}>🔄 Retry Sync</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -2079,7 +2081,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   createPostBtnText: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -2131,7 +2133,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   emptyCtaText: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontSize: 13,
     fontWeight: '700',
   },

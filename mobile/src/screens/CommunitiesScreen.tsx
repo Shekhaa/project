@@ -1855,7 +1855,7 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
                       style={[
                         styles.typeSelectText,
                         {
-                          color: reportReason === r ? '#ffffff' : colors.textSecondary,
+                          color: reportReason === r ? colors.onPrimary : colors.textSecondary,
                           fontWeight: reportReason === r ? '700' : '600',
                         },
                       ]}
@@ -2688,7 +2688,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   createBtnText: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontWeight: '700',
     fontSize: 12,
   },
@@ -3126,7 +3126,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   confirmBtnText: {
-    color: '#ffffff',
+    color: colors.onPrimary,
     fontSize: 13,
     fontWeight: '700',
   },

@@ -544,7 +544,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
                   }
                 }}
               >
-                <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '700' }}>
+                <Text style={{ color: colors.onPrimary, fontSize: 12.5, fontWeight: '700' }}>
                   {!currentUser ? 'Sign In' : 'Verify ID'}
                 </Text>
               </TouchableOpacity>
@@ -617,9 +617,9 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
                 activeOpacity={0.8}
               >
                 {submitting ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
                 ) : (
-                  <Send size={18} color="#fff" />
+                  <Send size={18} color={colors.onPrimary} />
                 )}
               </TouchableOpacity>
             </View>

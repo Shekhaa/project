@@ -1826,8 +1826,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         {user.full_name}
                       </Text>
                       {isCurrent && (
-                        <View style={styles.currentPill}>
-                          <Text style={styles.currentPillText}>YOU</Text>
+                        <View style={[styles.currentPill, { backgroundColor: colors.primary }]}>
+                          <Text style={[styles.currentPillText, { color: colors.onPrimary }]}>YOU</Text>
                         </View>
                       )}
                     </View>
@@ -1954,7 +1954,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               <TouchableOpacity
                 style={[
                   styles.settingsNavTab,
-                  activeSettingsSection === 'PROFILE' && styles.settingsNavTabActive,
+                  activeSettingsSection === 'PROFILE' && [styles.settingsNavTabActive, { backgroundColor: colors.primary }],
                 ]}
                 onPress={() => setActiveSettingsSection('PROFILE')}
               >
@@ -1962,7 +1962,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   style={[
                     styles.settingsNavText,
                     { color: colors.textSecondary },
-                    activeSettingsSection === 'PROFILE' && styles.settingsNavTextActive,
+                    activeSettingsSection === 'PROFILE' && [styles.settingsNavTextActive, { color: colors.onPrimary }],
                   ]}
                 >
                   👤 Profile
@@ -1972,7 +1972,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               <TouchableOpacity
                 style={[
                   styles.settingsNavTab,
-                  activeSettingsSection === 'PASSWORD' && styles.settingsNavTabActive,
+                  activeSettingsSection === 'PASSWORD' && [styles.settingsNavTabActive, { backgroundColor: colors.primary }],
                 ]}
                 onPress={() => setActiveSettingsSection('PASSWORD')}
               >
@@ -1980,7 +1980,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   style={[
                     styles.settingsNavText,
                     { color: colors.textSecondary },
-                    activeSettingsSection === 'PASSWORD' && styles.settingsNavTextActive,
+                    activeSettingsSection === 'PASSWORD' && [styles.settingsNavTextActive, { color: colors.onPrimary }],
                   ]}
                 >
                   🔒 Password
@@ -1990,7 +1990,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               <TouchableOpacity
                 style={[
                   styles.settingsNavTab,
-                  activeSettingsSection === 'PREFERENCES' && styles.settingsNavTabActive,
+                  activeSettingsSection === 'PREFERENCES' && [styles.settingsNavTabActive, { backgroundColor: colors.primary }],
                 ]}
                 onPress={() => setActiveSettingsSection('PREFERENCES')}
               >
@@ -1998,7 +1998,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   style={[
                     styles.settingsNavText,
                     { color: colors.textSecondary },
-                    activeSettingsSection === 'PREFERENCES' && styles.settingsNavTextActive,
+                    activeSettingsSection === 'PREFERENCES' && [styles.settingsNavTextActive, { color: colors.onPrimary }],
                   ]}
                 >
                   🎨 Theme & Safety
@@ -2009,7 +2009,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 <TouchableOpacity
                   style={[
                     styles.settingsNavTab,
-                    activeSettingsSection === 'AUDIT' && styles.settingsNavTabActive,
+                    activeSettingsSection === 'AUDIT' && [styles.settingsNavTabActive, { backgroundColor: colors.primary }],
                   ]}
                   onPress={() => {
                     setActiveSettingsSection('AUDIT');
@@ -2020,7 +2020,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     style={[
                       styles.settingsNavText,
                       { color: colors.textSecondary },
-                      activeSettingsSection === 'AUDIT' && styles.settingsNavTextActive,
+                      activeSettingsSection === 'AUDIT' && [styles.settingsNavTextActive, { color: colors.onPrimary }],
                     ]}
                   >
                     📋 Audit ({totalStudentsCount || 100})
@@ -2124,7 +2124,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         style={[
                           styles.genderOption,
                           { backgroundColor: colors.surfaceLight, borderColor: colors.cardBorder },
-                          editGender === g && styles.genderOptionActive,
+                          editGender === g && [
+                          styles.genderOptionActive,
+                          {
+                            backgroundColor: isDark ? 'rgba(56, 189, 248, 0.14)' : 'rgba(2, 132, 199, 0.1)',
+                            borderColor: colors.primary,
+                          },
+                        ],
                         ]}
                         onPress={() => setEditGender(g)}
                       >
@@ -2151,7 +2157,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     <Switch
                       value={!editShowGender}
                       onValueChange={(val) => setEditShowGender(!val)}
-                      trackColor={{ false: colors.cardBorder, true: colors.primary }}
+                      trackColor={{ false: colors.cardBorder, true: colors.brandAccent }}
                       thumbColor="#ffffff"
                     />
                   </View>
@@ -2251,7 +2257,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
                   {!resetOtpSent ? (
                     <TouchableOpacity
-                      style={styles.secondaryActionBtn}
+                      style={[
+                        styles.secondaryActionBtn,
+                        {
+                          backgroundColor: isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(2, 132, 199, 0.08)',
+                          borderColor: isDark ? 'rgba(56, 189, 248, 0.35)' : 'rgba(2, 132, 199, 0.3)',
+                        },
+                      ]}
                       onPress={handleSendResetOtp}
                       disabled={sendingResetOtp}
                     >
@@ -3331,7 +3343,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     <TouchableOpacity
                       style={[
                         styles.shapePrefCard,
-                        avatarShape === 'SQUARE' && styles.shapePrefCardActive,
+                        avatarShape === 'SQUARE' && [
+                          styles.shapePrefCardActive,
+                          { backgroundColor: isDark ? 'rgba(56, 189, 248, 0.14)' : 'rgba(2, 132, 199, 0.08)' },
+                        ],
                         { borderColor: avatarShape === 'SQUARE' ? colors.primary : colors.cardBorder },
                       ]}
                       onPress={() => handleToggleAvatarShape('SQUARE')}
@@ -3352,7 +3367,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     <TouchableOpacity
                       style={[
                         styles.shapePrefCard,
-                        avatarShape === 'CIRCLE' && styles.shapePrefCardActive,
+                        avatarShape === 'CIRCLE' && [
+                          styles.shapePrefCardActive,
+                          { backgroundColor: isDark ? 'rgba(56, 189, 248, 0.14)' : 'rgba(2, 132, 199, 0.08)' },
+                        ],
                         { borderColor: avatarShape === 'CIRCLE' ? colors.primary : colors.cardBorder },
                       ]}
                       onPress={() => handleToggleAvatarShape('CIRCLE')}
@@ -3384,7 +3402,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     <Switch
                       value={isPrivateAccount}
                       onValueChange={handleTogglePrivateAccount}
-                      trackColor={{ false: colors.cardBorder, true: colors.primary }}
+                      trackColor={{ false: colors.cardBorder, true: colors.brandAccent }}
                       thumbColor="#fff"
                     />
                   </View>
@@ -3405,7 +3423,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         setEditShowGender(val);
                         profileService.updateProfile({ show_gender: val }).catch(() => {});
                       }}
-                      trackColor={{ false: colors.cardBorder, true: colors.primary }}
+                      trackColor={{ false: colors.cardBorder, true: colors.brandAccent }}
                       thumbColor="#fff"
                     />
                   </View>
@@ -3434,7 +3452,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                           style={[
                             styles.msgPrefOption,
                             isSelected && styles.msgPrefOptionActive,
-                            { backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.12)' : colors.surface, borderColor: isSelected ? colors.primary : colors.cardBorder },
+                            {
+                              backgroundColor: isSelected
+                                ? isDark
+                                  ? 'rgba(56, 189, 248, 0.14)'
+                                  : 'rgba(2, 132, 199, 0.08)'
+                                : colors.surface,
+                              borderColor: isSelected ? colors.primary : colors.cardBorder,
+                            },
                           ]}
                           onPress={() => handleUpdateMessagingPreference(opt.key)}
                         >
@@ -3556,7 +3581,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       value={notifLikes && !notificationsBlocked}
                       disabled={notificationsBlocked}
                       onValueChange={(v) => handleToggleNotifSub('@campus_notif_likes', v, setNotifLikes)}
-                      trackColor={{ false: colors.cardBorder, true: colors.primary }}
+                      trackColor={{ false: colors.cardBorder, true: colors.brandAccent }}
                       thumbColor="#fff"
                     />
                   </View>
@@ -3574,7 +3599,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       value={notifComments && !notificationsBlocked}
                       disabled={notificationsBlocked}
                       onValueChange={(v) => handleToggleNotifSub('@campus_notif_comments', v, setNotifComments)}
-                      trackColor={{ false: colors.cardBorder, true: colors.primary }}
+                      trackColor={{ false: colors.cardBorder, true: colors.brandAccent }}
                       thumbColor="#fff"
                     />
                   </View>
@@ -3592,7 +3617,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       value={notifMessages && !notificationsBlocked}
                       disabled={notificationsBlocked}
                       onValueChange={(v) => handleToggleNotifSub('@campus_notif_messages', v, setNotifMessages)}
-                      trackColor={{ false: colors.cardBorder, true: colors.primary }}
+                      trackColor={{ false: colors.cardBorder, true: colors.brandAccent }}
                       thumbColor="#fff"
                     />
                   </View>
@@ -3916,7 +3941,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   editProfileBtnText: {
-    color: '#ffffff',
+    color: colors.onPrimary,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -3984,7 +4009,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   photoUploadBtnText: {
-    color: '#ffffff',
+    color: colors.onPrimary,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -4134,7 +4159,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   verifyUpgradeBtnText: {
-    color: '#ffffff',
+    color: colors.onPrimary,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -4183,7 +4208,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   copyCodeBtnText: {
-    color: '#ffffff',
+    color: colors.onPrimary,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -4415,7 +4440,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   currentPillText: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontSize: 9,
     fontWeight: '800',
   },
@@ -4524,7 +4549,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalAvatarInitial: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontSize: 16,
     fontWeight: '700',
   },
@@ -4607,7 +4632,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   settingsNavTextActive: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontWeight: '800',
   },
   settingsContentScroll: {
@@ -4679,7 +4704,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   saveChangesText: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -4853,7 +4878,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   refreshAuditBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: colors.surfaceLight,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
@@ -4872,7 +4897,7 @@ const styles = StyleSheet.create({
   },
   auditMetricBox: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: colors.surfaceLight,
     borderWidth: 1,
     borderColor: colors.cardBorder,
     borderRadius: 12,
@@ -4946,7 +4971,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   auditAvatarText: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontSize: 16,
     fontWeight: '800',
   },

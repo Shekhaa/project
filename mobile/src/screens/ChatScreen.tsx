@@ -1566,11 +1566,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             onPress={() => setMessageRequestsVisible(true)}
             activeOpacity={0.8}
           >
-            <MessageSquare size={13} color={pendingRequestsCount > 0 ? '#ffffff' : colors.textSecondary} />
+            <MessageSquare size={13} color={pendingRequestsCount > 0 ? colors.onPrimary : colors.textSecondary} />
             <Text
               style={[
                 styles.requestsPillText,
-                { color: pendingRequestsCount > 0 ? '#ffffff' : colors.textSecondary },
+                { color: pendingRequestsCount > 0 ? colors.onPrimary : colors.textSecondary },
               ]}
             >
               Requests{pendingRequestsCount > 0 ? ` (${pendingRequestsCount})` : ''}

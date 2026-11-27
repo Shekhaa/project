@@ -218,11 +218,11 @@ export const MessageRequestsModal: React.FC<MessageRequestsModalProps> = ({
             activeOpacity={0.8}
           >
             {isBusy ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={themeColors.onPrimary} />
             ) : (
               <>
-                <Check size={14} color="#fff" style={{ marginRight: 4 }} />
-                <Text style={styles.acceptBtnText}>Accept</Text>
+                <Check size={14} color={themeColors.onPrimary} style={{ marginRight: 4 }} />
+                <Text style={[styles.acceptBtnText, { color: themeColors.onPrimary }]}>Accept</Text>
               </>
             )}
           </TouchableOpacity>
@@ -503,7 +503,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   acceptBtnText: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontSize: 13,
     fontWeight: '600',
   },

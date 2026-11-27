@@ -484,8 +484,8 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                         </>
                       ) : (
                         <>
-                          <UserPlus size={16} color="#fff" />
-                          <Text style={styles.actionBtnPrimaryText}>Follow</Text>
+                          <UserPlus size={16} color={colors.onPrimary} />
+                          <Text style={[styles.actionBtnPrimaryText, { color: colors.onPrimary }]}>Follow</Text>
                         </>
                       )}
                     </TouchableOpacity>
@@ -942,7 +942,7 @@ const styles = StyleSheet.create({
   },
   actionBtnPrimary: {},
   actionBtnPrimaryText: {
-    color: '#ffffff',
+    color: colors.onPrimary,
     fontSize: 13,
     fontWeight: '700',
   },

@@ -183,7 +183,7 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
                   <Text
                     style={
                       followersMode === 'requests'
-                        ? styles.subTabTextActive
+                        ? [styles.subTabTextActive, { color: themeColors.onPrimary }]
                         : [styles.subTabText, { color: themeColors.primary }]
                     }
                   >
@@ -223,7 +223,7 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
                     style={[
                       styles.tabBtnText,
                       { color: themeColors.textSecondary },
-                      connectionsTab === tab && styles.tabBtnTextActive,
+                      connectionsTab === tab && [styles.tabBtnTextActive, { color: themeColors.onPrimary }],
                     ]}
                   >
                     {tab === 'connected' ? 'Connected' : tab === 'received' ? 'Received' : 'Sent'}
@@ -327,8 +327,8 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
                           onPress={() => handleRespondFollowRequest(item.id, 'ACCEPT')}
                           disabled={actionLoadingId === item.id}
                         >
-                          <Check size={14} color="#fff" />
-                          <Text style={styles.acceptBtnText}>Confirm</Text>
+                          <Check size={14} color={themeColors.onPrimary} />
+                          <Text style={[styles.acceptBtnText, { color: themeColors.onPrimary }]}>Confirm</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[
@@ -348,8 +348,8 @@ export const SocialListModal: React.FC<SocialListModalProps> = ({
                           onPress={() => handleRespondConnection(userId, 'ACCEPT')}
                           disabled={actionLoadingId === userId}
                         >
-                          <Check size={14} color="#fff" />
-                          <Text style={styles.acceptBtnText}>Accept</Text>
+                          <Check size={14} color={themeColors.onPrimary} />
+                          <Text style={[styles.acceptBtnText, { color: themeColors.onPrimary }]}>Accept</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[
@@ -427,7 +427,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerTitle: {
-    color: '#fff',
+    color: colors.textPrimary,
     fontSize: 18,
     fontWeight: '700',
   },
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(56, 189, 248, 0.25)',
   },
   subTabActive: {
-    backgroundColor: '#0284c7',
+    backgroundColor: colors.primary,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -451,14 +451,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   subTabTextActive: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontSize: 12,
     fontWeight: '700',
   },
   closeBtn: {
     padding: 6,
     borderRadius: 20,
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surfaceLight,
   },
   tabsRow: {
     flexDirection: 'row',
@@ -487,7 +487,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   tabBtnTextActive: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontWeight: '700',
   },
   searchBar: {
@@ -504,7 +504,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    color: '#fff',
+    color: colors.textPrimary,
     fontSize: 14,
     padding: 0,
   },
@@ -582,7 +582,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   acceptBtnText: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontSize: 12,
     fontWeight: '700',
   },

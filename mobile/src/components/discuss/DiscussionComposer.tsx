@@ -354,7 +354,7 @@ export const DiscussionComposer: React.FC<DiscussionComposerProps> = ({
               activeOpacity={0.8}
             >
               <View style={[styles.voiceMicBadge, { backgroundColor: colors.primary }]}>
-                <Mic size={16} color="#ffffff" />
+                <Mic size={16} color={colors.onPrimary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.voiceTriggerTitle, { color: colors.textPrimary }]}>

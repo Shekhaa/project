@@ -182,7 +182,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
       default:
         return (
           <View style={[styles.iconBadge, borderCol, { backgroundColor: themeColors.primary }]}>
-            <Megaphone size={14} color="#fff" />
+            <Megaphone size={14} color={themeColors.onPrimary} />
           </View>
         );
     }
@@ -314,7 +314,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                 style={[
                   styles.filterTabText,
                   { color: themeColors.textSecondary },
-                  filter === 'ALL' && styles.filterTabTextActive,
+                  filter === 'ALL' && [styles.filterTabTextActive, { color: themeColors.onPrimary }],
                 ]}
               >
                 All ({notifications.length})
@@ -336,7 +336,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                 style={[
                   styles.filterTabText,
                   { color: themeColors.textSecondary },
-                  filter === 'UNREAD' && styles.filterTabTextActive,
+                  filter === 'UNREAD' && [styles.filterTabTextActive, { color: themeColors.onPrimary }],
                 ]}
               >
                 Unread ({unreadCount})
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   filterTabTextActive: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontWeight: '700',
   },
   centerContainer: {

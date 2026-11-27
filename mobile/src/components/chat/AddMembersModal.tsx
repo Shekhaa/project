@@ -120,9 +120,9 @@ export const AddMembersModal: React.FC<AddMembersModalProps> = ({
             disabled={selectedIds.length === 0 || submitting}
           >
             {submitting ? (
-              <ActivityIndicator color="#fff" size="small" />
+              <ActivityIndicator color={themeColors.onPrimary} size="small" />
             ) : (
-              <Text style={styles.addBtnText}>
+              <Text style={[styles.addBtnText, { color: themeColors.onPrimary }]}>
                 Add{selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}
               </Text>
             )}
@@ -222,7 +222,7 @@ export const AddMembersModal: React.FC<AddMembersModalProps> = ({
                       },
                     ]}
                   >
-                    {isSelected && <Check size={14} color="#ffffff" strokeWidth={3} />}
+                    {isSelected && <Check size={14} color={themeColors.onPrimary} strokeWidth={3} />}
                   </View>
                 </TouchableOpacity>
               );
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   addBtnText: {
-    color: '#ffffff',
+    color: colors.onPrimary,
     fontSize: 14,
     fontWeight: '700',
   },

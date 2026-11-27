@@ -169,9 +169,9 @@ export const JoinByInviteModal: React.FC<JoinByInviteModalProps> = ({
               disabled={!inputText.trim() || loadingPreview}
             >
               {loadingPreview ? (
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color={colors.onPrimary} size="small" />
               ) : (
-                <ArrowRight size={16} color="#fff" />
+                <ArrowRight size={16} color={colors.onPrimary} />
               )}
             </TouchableOpacity>
           </View>
@@ -227,9 +227,9 @@ export const JoinByInviteModal: React.FC<JoinByInviteModalProps> = ({
                 activeOpacity={0.8}
               >
                 {joining ? (
-                  <ActivityIndicator color="#fff" size="small" />
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
                 ) : (
-                  <Text style={styles.joinBtnText}>
+                  <Text style={[styles.joinBtnText, { color: colors.onPrimary }]}>
                     {preview.is_already_member ? 'Open Group Chat' : 'Join Group'}
                   </Text>
                 )}
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   joinBtnText: {
-    color: '#ffffff',
+    color: colors.onPrimary,
     fontSize: 14,
     fontWeight: '700',
   },

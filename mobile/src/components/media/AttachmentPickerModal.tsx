@@ -680,13 +680,13 @@ export const AttachmentPickerModal: React.FC<AttachmentPickerModalProps> = ({
                         <TouchableOpacity
                           style={[
                             styles.cropBtnBadge,
-                            { backgroundColor: colors.primary, borderColor: '#ffffff' },
+                            { backgroundColor: colors.primary, borderColor: colors.surface },
                           ]}
                           onPress={() => setCroppingImage(file)}
                           activeOpacity={0.8}
                           accessibilityLabel="Crop photo"
                         >
-                          <Crop size={11} color="#ffffff" />
+                          <Crop size={11} color={colors.onPrimary} />
                         </TouchableOpacity>
                       </View>
                     ) : file.type === 'VIDEO' ? (

@@ -1254,7 +1254,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                         <TouchableOpacity
                           style={[
                             styles.stagedCropBadge,
-                            { backgroundColor: colors.primary, borderColor: '#ffffff' },
+                            { backgroundColor: colors.primary, borderColor: colors.surface },
                           ]}
                           onPress={() => {
                             const idx = imageFiles.findIndex((f) => f.id === file.id);
@@ -1264,7 +1264,7 @@ export const PostComposerModal: React.FC<PostComposerModalProps> = ({
                           activeOpacity={0.8}
                           accessibilityLabel="Crop photo"
                         >
-                          <Crop size={11} color="#ffffff" />
+                          <Crop size={11} color={colors.onPrimary} />
                         </TouchableOpacity>
                       </View>
                     ) : file.type === 'VIDEO' ? (

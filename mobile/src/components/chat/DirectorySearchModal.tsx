@@ -92,7 +92,7 @@ export const DirectorySearchModal: React.FC<DirectorySearchModalProps> = ({
           </Text>
         </View>
         <View style={[styles.chatAction, { backgroundColor: colors.primary }]}>
-          <Text style={styles.chatActionText}>Chat</Text>
+          <Text style={[styles.chatActionText, { color: colors.onPrimary }]}>Chat</Text>
         </View>
       </TouchableOpacity>
     );
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   chatActionText: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontSize: 12,
     fontWeight: '700',
   },

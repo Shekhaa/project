@@ -526,7 +526,7 @@ export const AudioPlayerPill: React.FC<AudioPlayerPillProps> = ({
     ? isDark
       ? '#282d46'
       : '#4f46e5'
-    : '#ffffff';
+    : colors.onPrimary;
   const playedBarColor = isBubbleMe ? '#ffffff' : colors.primary;
   const unplayedBarColor = isBubbleMe
     ? 'rgba(255, 255, 255, 0.30)'
