@@ -1,6 +1,7 @@
 import { api } from '../config/api';
 import { Platform, PermissionsAndroid } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isAppForeground, subscribeAppForeground } from '../utils/appState';
 
 export type NotificationType =
   | 'LIKE'
@@ -54,6 +55,7 @@ class NotificationService {
   private unreadCountListeners: Set<UnreadCountListener> = new Set();
   private seenNotificationIds: Set<number> = new Set();
   private pollingTimer: any = null;
+  private foregroundUnsub: (() => void) | null = null;
   private isInitialFetch: boolean = true;
   private lastUnreadCount: number = 0;
   private activeConversationId: string | null = null;
@@ -158,14 +160,21 @@ class NotificationService {
   }
 
   /**
-   * Start polling for notifications across the entire app
+   * Start polling for notifications across the entire app (pauses automatically when backgrounded)
    */
   startPolling(intervalMs: number = 15000) {
     this.stopPolling();
     this.checkNotifications();
     this.pollingTimer = setInterval(() => {
-      this.checkNotifications();
+      if (isAppForeground()) {
+        this.checkNotifications();
+      }
     }, intervalMs);
+    this.foregroundUnsub = subscribeAppForeground((active) => {
+      if (active) {
+        this.checkNotifications();
+      }
+    });
   }
 
   /**
@@ -175,6 +184,10 @@ class NotificationService {
     if (this.pollingTimer) {
       clearInterval(this.pollingTimer);
       this.pollingTimer = null;
+    }
+    if (this.foregroundUnsub) {
+      this.foregroundUnsub();
+      this.foregroundUnsub = null;
     }
     this.isInitialFetch = true;
   }

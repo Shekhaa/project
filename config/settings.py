@@ -17,6 +17,17 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-campus-connect-production-
 
 DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 't')
 
+# Non-default admin portal path (override via DJANGO_ADMIN_PATH in Render env vars)
+_raw_admin_path = os.getenv('DJANGO_ADMIN_PATH', 'vike-portal-9x7k').strip('/')
+DJANGO_ADMIN_PATH = f"{_raw_admin_path}/" if _raw_admin_path else 'vike-portal-9x7k/'
+
+# Production security headers
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+
 allowed_hosts_env = os.getenv('ALLOWED_HOSTS')
 if allowed_hosts_env:
     ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_env.split(',') if h.strip()]

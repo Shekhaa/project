@@ -30,9 +30,27 @@ def create_invalid_file():
 
 class AttachmentTestCase(TestCase):
     def setUp(self):
+        import tempfile
+        from django.test import override_settings
+
+        self._media_dir = tempfile.mkdtemp(prefix="campus_att_sec_")
+        self._override = override_settings(
+            MEDIA_ROOT=self._media_dir,
+            DEFAULT_FILE_STORAGE="django.core.files.storage.FileSystemStorage",
+            STORAGES={
+                "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+                "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+            },
+        )
+        self._override.enable()
         self.user1 = User.objects.create_user(email="student1@campus.edu", password="password123", full_name="Student One")
         self.user2 = User.objects.create_user(email="student2@campus.edu", password="password123", full_name="Student Two")
         self.client = APIClient()
+
+    def tearDown(self):
+        import shutil
+        self._override.disable()
+        shutil.rmtree(self._media_dir, ignore_errors=True)
 
     def test_image_attachment_creation(self):
         img_file = create_test_image()
@@ -77,6 +95,15 @@ class AttachmentTestCase(TestCase):
         response = self.client.get(f"/api/attachments/{attachment.id}/download/")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+        # Signed URL endpoint enforces the exact same permissions
+        signed_denied = self.client.get(f"/api/attachments/{attachment.id}/signed-url/")
+        self.assertEqual(signed_denied.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.client.force_authenticate(user=self.user2)
+        signed_ok = self.client.get(f"/api/attachments/{attachment.id}/signed-url/?preview=true")
+        self.assertEqual(signed_ok.status_code, status.HTTP_200_OK)
+        self.assertIn("url", signed_ok.data)
+
 
 class MediaUploadLimitsAndMetadataTests(TestCase):
     def setUp(self):
@@ -84,7 +111,14 @@ class MediaUploadLimitsAndMetadataTests(TestCase):
         from django.test import override_settings
 
         self._media_dir = tempfile.mkdtemp(prefix="campus_att_test_")
-        self._override = override_settings(MEDIA_ROOT=self._media_dir)
+        self._override = override_settings(
+            MEDIA_ROOT=self._media_dir,
+            DEFAULT_FILE_STORAGE="django.core.files.storage.FileSystemStorage",
+            STORAGES={
+                "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+                "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+            },
+        )
         self._override.enable()
 
         self.user = User.objects.create_user(

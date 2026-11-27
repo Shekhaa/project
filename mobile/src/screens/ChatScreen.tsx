@@ -16,6 +16,7 @@ import {
 import { useTheme } from '../theme/ThemeContext';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { notificationService } from '../services/notificationService';
+import { isAppForeground } from '../utils/appState';
 import {
   chatService,
   Conversation,
@@ -317,8 +318,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     if (convId) {
       loadMessages(convId);
       const pollTimer = setInterval(() => {
-        loadMessages(convId, true);
-      }, 3500);
+        if (isAppForeground()) {
+          loadMessages(convId, true);
+        }
+      }, 4000);
       return () => {
         clearInterval(pollTimer);
         pauseAllActiveVoiceNotes();

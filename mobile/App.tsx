@@ -171,18 +171,59 @@ function AppMain() {
     };
   }, []);
 
-  // Register, start polling and listen for native/web OS push notification taps when signed in
+  // Register, start polling and listen for native/web OS push notification taps & Service Worker when signed in
   useEffect(() => {
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+
     if (currentUser) {
       notificationService.registerForNativePushNotifications().catch(() => {});
       notificationService.startPolling(12000);
       const unsubscribe = notificationService.attachNativeResponseListener((payload) => {
         handleNotificationNavigation(payload);
       });
+
+      // Handle background PWA notification click messages or launch query params
+      let swMessageHandler: any = null;
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        swMessageHandler = (event: MessageEvent) => {
+          if (event.data?.type === 'NOTIFICATION_TAP' && event.data?.payload) {
+            handleNotificationNavigation(event.data.payload);
+          }
+        };
+        navigator.serviceWorker.addEventListener('message', swMessageHandler);
+      }
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.search) {
+        const params = new URLSearchParams(window.location.search);
+        const notifType = params.get('notif_type');
+        const conversationId = params.get('conversation_id');
+        const postId = params.get('post_id');
+        const communitySlug = params.get('community_slug');
+        const userId = params.get('user_id');
+        if (notifType || conversationId || postId || communitySlug || userId) {
+          handleNotificationNavigation({
+            notification_type: notifType || '',
+            data: {
+              conversation_id: conversationId || undefined,
+              post_id: postId ? Number(postId) : undefined,
+              community_slug: communitySlug || undefined,
+              user_id: userId ? Number(userId) : undefined,
+            },
+          });
+          if (window.history?.replaceState) {
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+        }
+      }
+
       return () => {
         notificationService.stopPolling();
         if (typeof unsubscribe === 'function') {
           unsubscribe();
+        }
+        if (swMessageHandler && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+          navigator.serviceWorker.removeEventListener('message', swMessageHandler);
         }
       };
     } else {

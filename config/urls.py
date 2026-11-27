@@ -21,7 +21,7 @@ def health_check(request):
 
 urlpatterns = [
     path('', landing_portal, name='home'),
-    path('admin/', admin.site.urls),
+    path(getattr(settings, 'DJANGO_ADMIN_PATH', 'vike-portal-9x7k/'), admin.site.urls),
     path('api/health/', health_check, name='health-check'),
     path('api/admin-ops/overview/', admin_ops_overview, name='admin-ops-overview'),
 

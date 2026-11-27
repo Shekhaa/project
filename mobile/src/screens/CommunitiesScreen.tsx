@@ -65,6 +65,7 @@ import { InviteLinkModal } from '../components/chat/InviteLinkModal';
 import { JoinByInviteModal } from '../components/chat/JoinByInviteModal';
 import { UserAvatar } from '../components/common/UserAvatar';
 import { backHandlerRegistry } from '../services/backHandlerRegistry';
+import { isAppForeground } from '../utils/appState';
 
 interface CommunitiesScreenProps {
   currentUser?: any;
@@ -502,7 +503,11 @@ export const CommunitiesScreen: React.FC<CommunitiesScreenProps> = ({
     };
 
     fetchChatMessages(false);
-    const interval = setInterval(() => fetchChatMessages(true), 2500);
+    const interval = setInterval(() => {
+      if (isAppForeground()) {
+        fetchChatMessages(true);
+      }
+    }, 4000);
 
     return () => {
       isMounted = false;
