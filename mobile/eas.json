@@ -13,6 +13,24 @@
         "buildType": "apk"
       }
     },
+    "preview-arm64": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "REACT_NATIVE_ARCHITECTURES": "arm64-v8a"
+      }
+    },
+    "preview-devices": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "REACT_NATIVE_ARCHITECTURES": "armeabi-v7a,arm64-v8a"
+      }
+    },
     "production": {
       "android": {
         "buildType": "app-bundle"
