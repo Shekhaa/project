@@ -379,6 +379,12 @@ class LoginView(APIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'auth_login'
 
+    def get(self, request):
+        return Response(
+            {"error": "Login endpoint accepts only HTTP POST requests with identifier and password."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     def post(self, request):
         serializer = LoginWithPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

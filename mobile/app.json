@@ -43,6 +43,17 @@
         {
           "color": "#0284c7"
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "enablePngCrunchInReleaseBuilds": true,
+            "extraProguardRules": "-keep class com.facebook.react.** { *; }\n-keep class com.swmansion.rnscreens.** { *; }\n-keepattributes *Annotation*\n-dontwarn okio.**\n-dontwarn javax.annotation.**"
+          }
+        }
       ]
     ],
     "updates": {

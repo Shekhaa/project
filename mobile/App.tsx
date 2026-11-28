@@ -167,6 +167,21 @@ function AppMain() {
       setActiveTab('FEED');
     });
     checkInitialSession();
+
+    // Background Over-The-Air (OTA) update check
+    if (Platform.OS !== 'web' && !__DEV__) {
+      try {
+        const Updates = require('expo-updates');
+        Updates.checkForUpdateAsync()
+          .then(async (update: any) => {
+            if (update?.isAvailable) {
+              await Updates.fetchUpdateAsync();
+            }
+          })
+          .catch(() => {});
+      } catch {}
+    }
+
     return () => {
       setAuthExpiredListener(null);
     };
